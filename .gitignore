@@ -1,0 +1,19 @@
+# Secrets — never commit real keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Downloaded media (ingest agent scratch space)
+downloads/
+*.mp4
+*.mp3
+*.m4a
