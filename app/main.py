@@ -2,8 +2,8 @@
 Glowby — multi-agent misinformation detection & fact-checking.
 
 v1 scope: paste a link, get a fact-check.
-Current stage: ingest (URL -> transcript) + claim extraction live.
-Next: evidence + verdict agents (Week 2).
+Current stage: ingest + claim extraction + evidence gathering live.
+Next: verdict agent.
 """
 
 from fastapi import FastAPI
@@ -11,12 +11,17 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.agents.claims import ClaimExtractionError, extract_claims
+from app.agents.evidence import gather_evidence
 from app.agents.ingest import IngestError, ingest
+from app.storage import canonical_key, get_cached, save_result
+
+# evidence is gathered for the top N claims by checkability (cost control)
+MAX_CLAIMS_WITH_EVIDENCE = 3
 
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
-    version="0.3.0",
+    version="0.5.0",
 )
 
 
@@ -71,6 +76,8 @@ def home() -> str:
             }
             .ctext { font-size: 0.9rem; line-height: 1.45; color: #c9cdd8; }
             .ctext b { color: #e8eaf0; display: block; margin-bottom: 2px; }
+            .src { margin-top: 7px; font-size: 0.82rem; color: #9aa0b0; line-height: 1.4; }
+            .src a { color: #7c6cf6; text-decoration: none; font-weight: 600; }
             .cat {
                 display: inline-block; font-size: 0.7rem; font-weight: 700;
                 padding: 1px 8px; border-radius: 999px; border: 1px solid #2a2f3d;
@@ -95,7 +102,7 @@ def home() -> str:
                 <button id="go" type="submit">Check</button>
             </form>
             <div id="out"></div>
-            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.3.0 &mdash; transcript + claim extraction live; verdicts coming in Week 2</p>
+            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.5.0 &mdash; transcript + claims + evidence + memory; verdicts next</p>
         </div>
         <script>
             const f = document.getElementById('f');
@@ -106,7 +113,7 @@ def home() -> str:
                 e.preventDefault();
                 go.disabled = true; go.textContent = 'Working...';
                 out.style.display = 'block';
-                out.innerHTML = '<span class="meta">Step 1/2: fetching & transcribing... then Step 2/2: extracting checkable claims. Can take a minute.</span>';
+                out.innerHTML = '<span class="meta">Fetching & transcribing &rarr; extracting claims &rarr; gathering evidence. Can take 1-2 minutes.</span>';
                 try {
                     const r = await fetch('/api/check', {
                         method: 'POST',
@@ -117,20 +124,36 @@ def home() -> str:
                     if (!r.ok) {
                         out.innerHTML = '<span class="err">' + esc(d.detail || 'Something went wrong.') + '</span>';
                     } else {
-                        let html = '<div class="meta">' + esc(d.platform) + ' &middot; ' +
+                        let html = '';
+                        if (d.cached) {
+                            html += '<div class="meta">&#9889; Instant result &mdash; this video was already checked on ' + esc((d.first_checked_at || '').slice(0,10)) + ', served from Glowby\\'s memory at zero cost.</div>';
+                        }
+                        html += '<div class="meta">' + esc(d.platform) + ' &middot; ' +
                             esc(d.title) + ' &middot; ' + esc(d.uploader) + ' &middot; ' +
                             esc(d.duration_seconds) + 's &middot; transcript: ' + esc(d.transcript_source) + '</div>';
                         if (d.claims.length === 0) {
                             html += '<p>No checkable factual claims found in this video.</p>';
                         } else {
                             html += '<div class="meta"><b>' + d.claims.length + ' checkable claim' + (d.claims.length>1?'s':'') + ' found</b> (score = checkability, 0.0&ndash;10.0)</div>';
+                            const stanceIcon = {supports:'&#10003;', refutes:'&#10007;', mixed:'&#9888;', context:'&#8505;'};
                             for (const c of d.claims) {
+                                let ev = '';
+                                const fcs = (c.evidence && c.evidence.fact_checks) || [];
+                                const webs = (c.evidence && c.evidence.web_sources) || [];
+                                for (const fc of fcs) {
+                                    ev += '<div class="src">&#128221; <a href="' + esc(fc.url) + '" target="_blank" rel="noopener">' + esc(fc.publisher) + '</a>: rated &ldquo;' + esc(fc.rating) + '&rdquo;</div>';
+                                }
+                                for (const w of webs) {
+                                    ev += '<div class="src">' + (stanceIcon[w.stance] || '&#8505;') + ' <a href="' + esc(w.url) + '" target="_blank" rel="noopener">' + esc(w.source) + '</a> (' + esc(w.stance) + '): &ldquo;' + esc(w.quote) + '&rdquo;</div>';
+                                }
+                                if (c.evidence && !ev) ev = '<div class="src meta">No sources found yet.</div>';
                                 html += '<div class="claim">' +
                                     '<div class="score">' + esc(c.checkability.toFixed(1)) + '</div>' +
                                     '<div class="ctext"><b>' + esc(c.claim) + '</b>' +
                                     '&ldquo;' + esc(c.quote) + '&rdquo;' +
                                     '<br><span class="cat">' + esc(c.category) + '</span> ' +
-                                    '<span class="meta">' + esc(c.why_checkable) + '</span></div></div>';
+                                    '<span class="meta">' + esc(c.why_checkable) + '</span>' +
+                                    ev + '</div></div>';
                             }
                         }
                         html += '<details><summary>Full transcript</summary><div class="tr">' + esc(d.transcript) + '</div></details>';
@@ -157,6 +180,13 @@ def api_check(req: CheckRequest):
 
     Synchronous for Week 1-2 dev testing; moves to a job queue in Week 3.
     """
+    # cache first: if anyone already checked this video, serve the stored
+    # result instantly — zero API cost.
+    url_key = canonical_key(req.url)
+    cached = get_cached(url_key)
+    if cached is not None:
+        return cached
+
     try:
         result = ingest(req.url)
     except IngestError as e:
@@ -179,7 +209,19 @@ def api_check(req: CheckRequest):
             content={"detail": "Unexpected error while extracting claims."},
         )
 
+    # gather evidence for the top claims by checkability (cost control)
+    ranked = sorted(
+        range(len(claims)), key=lambda i: claims[i]["checkability"], reverse=True
+    )
+    for i in ranked[:MAX_CLAIMS_WITH_EVIDENCE]:
+        try:
+            claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
+        except Exception:
+            claims[i]["evidence"] = {"fact_checks": [], "web_sources": []}
+
     result["claims"] = claims
+    result["cached"] = False
+    save_result(url_key, req.url, result)
     return result
 
 
@@ -200,4 +242,4 @@ def api_ingest(req: CheckRequest):
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
-    return {"status": "ok", "service": "glowby", "version": "0.3.0"}
+    return {"status": "ok", "service": "glowby", "version": "0.5.0"}
