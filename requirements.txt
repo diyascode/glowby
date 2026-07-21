@@ -5,3 +5,4 @@ yt-dlp>=2026.7.4
 openai>=1.40
 anthropic>=0.40
 psycopg[binary]>=3.1
+youtube-transcript-api>=1.0
