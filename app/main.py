@@ -1,31 +1,31 @@
 """
 Glowby — multi-agent misinformation detection & fact-checking.
-
+ 
 v1 scope: paste a link, get a fact-check.
 Current stage: ingest + claim extraction + evidence gathering live.
 Next: verdict agent.
 """
-
+ 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
-
+ 
 from app.agents.claims import ClaimExtractionError, extract_claims
 from app.agents.evidence import gather_evidence
 from app.agents.ingest import IngestError, ingest
 from app.agents.verdict import judge_claim
 from app.storage import canonical_key, get_cached, save_result
-
+ 
 # evidence is gathered for the top N claims by checkability (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
-
+ 
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
     version="0.6.0",
 )
-
-
+ 
+ 
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     """Homepage — dev test form for the pipeline built so far."""
@@ -187,16 +187,16 @@ def home() -> str:
     </body>
     </html>
     """
-
-
+ 
+ 
 class CheckRequest(BaseModel):
     url: str
-
-
+ 
+ 
 @app.post("/api/check")
 def api_check(req: CheckRequest):
     """Full pipeline so far: URL -> transcript -> checkable claims.
-
+ 
     Synchronous for Week 1-2 dev testing; moves to a job queue in Week 3.
     """
     # cache first: if anyone already checked this video, serve the stored
@@ -205,7 +205,7 @@ def api_check(req: CheckRequest):
     cached = get_cached(url_key)
     if cached is not None:
         return cached
-
+ 
     try:
         result = ingest(req.url)
     except IngestError as e:
@@ -215,7 +215,7 @@ def api_check(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while fetching this link."},
         )
-
+ 
     try:
         claims = extract_claims(
             result["transcript"], title=result["title"], platform=result["platform"]
@@ -227,8 +227,8 @@ def api_check(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while extracting claims."},
         )
-
-    # gather evidence + verdict for the top claims by checkability (cost control)
+ 
+    # gather evidence for the top claims by checkability (cost control)
     ranked = sorted(
         range(len(claims)), key=lambda i: claims[i]["checkability"], reverse=True
     )
@@ -246,13 +246,13 @@ def api_check(req: CheckRequest):
                 "summary": "Verdict step failed; try again.",
                 "key_sources": [],
             }
-
+ 
     result["claims"] = claims
     result["cached"] = False
     save_result(url_key, req.url, result)
     return result
-
-
+ 
+ 
 @app.post("/api/ingest")
 def api_ingest(req: CheckRequest):
     """Transcript only (kept for testing the ingest stage in isolation)."""
@@ -265,8 +265,8 @@ def api_ingest(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while processing this link."},
         )
-
-
+ 
+ 
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
