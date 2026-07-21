@@ -1,30 +1,31 @@
 """
 Glowby — multi-agent misinformation detection & fact-checking.
- 
+
 v1 scope: paste a link, get a fact-check.
 Current stage: ingest + claim extraction + evidence gathering live.
 Next: verdict agent.
 """
- 
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
- 
+
 from app.agents.claims import ClaimExtractionError, extract_claims
 from app.agents.evidence import gather_evidence
 from app.agents.ingest import IngestError, ingest
+from app.agents.verdict import judge_claim
 from app.storage import canonical_key, get_cached, save_result
- 
+
 # evidence is gathered for the top N claims by checkability (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
- 
+
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
-    version="0.5.1",
+    version="0.6.0",
 )
- 
- 
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     """Homepage — dev test form for the pipeline built so far."""
@@ -78,6 +79,16 @@ def home() -> str:
             .ctext b { color: #e8eaf0; display: block; margin-bottom: 2px; }
             .src { margin-top: 7px; font-size: 0.82rem; color: #9aa0b0; line-height: 1.4; }
             .src a { color: #7c6cf6; text-decoration: none; font-weight: 600; }
+            .verdict {
+                display: inline-flex; align-items: center; gap: 6px;
+                font-size: 0.8rem; font-weight: 800; padding: 3px 10px;
+                border-radius: 999px; margin-top: 7px; border: 1px solid;
+            }
+            .v-true, .v-mostly_true { color: #4ade80; border-color: #4ade80; }
+            .v-misleading { color: #fab219; border-color: #fab219; }
+            .v-false { color: #f87171; border-color: #f87171; }
+            .v-unverifiable { color: #9aa0b0; border-color: #9aa0b0; }
+            .vsum { margin-top: 6px; font-size: 0.84rem; color: #c9cdd8; }
             .cat {
                 display: inline-block; font-size: 0.7rem; font-weight: 700;
                 padding: 1px 8px; border-radius: 999px; border: 1px solid #2a2f3d;
@@ -102,7 +113,7 @@ def home() -> str:
                 <button id="go" type="submit">Check</button>
             </form>
             <div id="out"></div>
-            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.5.1 &mdash; transcript + claims + evidence + memory; verdicts next</p>
+            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.6.0 &mdash; full pipeline: transcript, claims, evidence, VERDICTS, memory</p>
         </div>
         <script>
             const f = document.getElementById('f');
@@ -136,7 +147,15 @@ def home() -> str:
                         } else {
                             html += '<div class="meta"><b>' + d.claims.length + ' checkable claim' + (d.claims.length>1?'s':'') + ' found</b> (score = checkability, 0.0&ndash;10.0)</div>';
                             const stanceIcon = {supports:'&#10003;', refutes:'&#10007;', mixed:'&#9888;', context:'&#8505;'};
+                            const vLabel = {true:'&#10003; True', mostly_true:'&#10003; Mostly true', misleading:'&#9888; Misleading', false:'&#10007; False', unverifiable:'? Unverifiable'};
                             for (const c of d.claims) {
+                                let vd = '';
+                                if (c.verdict) {
+                                    vd = '<br><span class="verdict v-' + esc(c.verdict.rating) + '">' +
+                                        (vLabel[c.verdict.rating] || esc(c.verdict.rating)) +
+                                        ' &middot; ' + esc(c.verdict.confidence.toFixed(1)) + '/10</span>' +
+                                        '<div class="vsum">' + esc(c.verdict.summary) + '</div>';
+                                }
                                 let ev = '';
                                 const fcs = (c.evidence && c.evidence.fact_checks) || [];
                                 const webs = (c.evidence && c.evidence.web_sources) || [];
@@ -153,7 +172,7 @@ def home() -> str:
                                     '&ldquo;' + esc(c.quote) + '&rdquo;' +
                                     '<br><span class="cat">' + esc(c.category) + '</span> ' +
                                     '<span class="meta">' + esc(c.why_checkable) + '</span>' +
-                                    ev + '</div></div>';
+                                    vd + ev + '</div></div>';
                             }
                         }
                         html += '<details><summary>Full transcript</summary><div class="tr">' + esc(d.transcript) + '</div></details>';
@@ -168,16 +187,16 @@ def home() -> str:
     </body>
     </html>
     """
- 
- 
+
+
 class CheckRequest(BaseModel):
     url: str
- 
- 
+
+
 @app.post("/api/check")
 def api_check(req: CheckRequest):
     """Full pipeline so far: URL -> transcript -> checkable claims.
- 
+
     Synchronous for Week 1-2 dev testing; moves to a job queue in Week 3.
     """
     # cache first: if anyone already checked this video, serve the stored
@@ -186,7 +205,7 @@ def api_check(req: CheckRequest):
     cached = get_cached(url_key)
     if cached is not None:
         return cached
- 
+
     try:
         result = ingest(req.url)
     except IngestError as e:
@@ -196,7 +215,7 @@ def api_check(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while fetching this link."},
         )
- 
+
     try:
         claims = extract_claims(
             result["transcript"], title=result["title"], platform=result["platform"]
@@ -208,8 +227,8 @@ def api_check(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while extracting claims."},
         )
- 
-    # gather evidence for the top claims by checkability (cost control)
+
+    # gather evidence + verdict for the top claims by checkability (cost control)
     ranked = sorted(
         range(len(claims)), key=lambda i: claims[i]["checkability"], reverse=True
     )
@@ -218,13 +237,22 @@ def api_check(req: CheckRequest):
             claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
         except Exception:
             claims[i]["evidence"] = {"fact_checks": [], "web_sources": []}
- 
+        try:
+            claims[i]["verdict"] = judge_claim(claims[i]["claim"], claims[i]["evidence"])
+        except Exception:
+            claims[i]["verdict"] = {
+                "rating": "unverifiable",
+                "confidence": 0.0,
+                "summary": "Verdict step failed; try again.",
+                "key_sources": [],
+            }
+
     result["claims"] = claims
     result["cached"] = False
     save_result(url_key, req.url, result)
     return result
- 
- 
+
+
 @app.post("/api/ingest")
 def api_ingest(req: CheckRequest):
     """Transcript only (kept for testing the ingest stage in isolation)."""
@@ -237,9 +265,9 @@ def api_ingest(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while processing this link."},
         )
- 
- 
+
+
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
-    return {"status": "ok", "service": "glowby", "version": "0.5.1"}
+    return {"status": "ok", "service": "glowby", "version": "0.6.0"}
