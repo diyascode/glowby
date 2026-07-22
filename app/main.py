@@ -1,31 +1,37 @@
 """
 Glowby — multi-agent misinformation detection & fact-checking.
- 
+
 v1 scope: paste a link, get a fact-check.
-Current stage: ingest + claim extraction + evidence gathering live.
-Next: verdict agent.
+Current stage: full fleet front half — ingest -> Sorting Gate/Router
+(13 buckets, spec v1.2) -> evidence -> verdict. Next: category judge engine.
 """
- 
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
- 
-from app.agents.claims import ClaimExtractionError, extract_claims
+
 from app.agents.evidence import gather_evidence
 from app.agents.ingest import IngestError, ingest
+from app.agents.router import (
+    MODEL as ROUTER_MODEL,
+    TAXONOMY_VERSION,
+    RouterError,
+    route_claims,
+    select_for_verification,
+)
 from app.agents.verdict import judge_claim
-from app.storage import canonical_key, get_cached, save_result
- 
+from app.storage import canonical_key, get_cached, save_result, save_route_audit
+
 # evidence is gathered for the top N claims by checkability (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
- 
+
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
-    version="0.6.0",
+    version="0.7.0",
 )
- 
- 
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     """Homepage — dev test form for the pipeline built so far."""
@@ -113,7 +119,7 @@ def home() -> str:
                 <button id="go" type="submit">Check</button>
             </form>
             <div id="out"></div>
-            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.6.0 &mdash; full pipeline: transcript, claims, evidence, VERDICTS, memory</p>
+            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.7.0 &mdash; Sorting Gate/Router live: gate labels, 13-bucket routing, risk levels</p>
         </div>
         <script>
             const f = document.getElementById('f');
@@ -124,7 +130,7 @@ def home() -> str:
                 e.preventDefault();
                 go.disabled = true; go.textContent = 'Working...';
                 out.style.display = 'block';
-                out.innerHTML = '<span class="meta">Fetching & transcribing &rarr; extracting claims &rarr; gathering evidence. Can take 1-2 minutes.</span>';
+                out.innerHTML = '<span class="meta">Fetching & transcribing &rarr; gating & routing claims &rarr; gathering evidence &rarr; judging. Can take 1-2 minutes.</span>';
                 try {
                     const r = await fetch('/api/check', {
                         method: 'POST',
@@ -145,16 +151,32 @@ def home() -> str:
                         if (d.claims.length === 0) {
                             html += '<p>No checkable factual claims found in this video.</p>';
                         } else {
-                            html += '<div class="meta"><b>' + d.claims.length + ' checkable claim' + (d.claims.length>1?'s':'') + ' found</b> (score = checkability, 0.0&ndash;10.0)</div>';
                             const stanceIcon = {supports:'&#10003;', refutes:'&#10007;', mixed:'&#9888;', context:'&#8505;'};
                             const vLabel = {true:'&#10003; True', mostly_true:'&#10003; Mostly true', misleading:'&#9888; Misleading', false:'&#10007; False', unverifiable:'? Unverifiable'};
-                            for (const c of d.claims) {
+                            const riskColor = {critical:'#f87171', high:'#ec835a'};
+                            const fwd = (c) => c.gate_label === 'factual' || c.gate_label === 'prediction';
+                            const checked = d.claims.filter(c => c.verdict);
+                            const waiting = d.claims.filter(c => !c.verdict && fwd(c));
+                            const parked = d.claims.filter(c => !c.verdict && !fwd(c));
+                            html += '<div class="meta"><b>' + d.claims.length + ' claim unit' + (d.claims.length>1?'s':'') + '</b> &middot; ' + checked.length + ' verified &middot; ' + parked.length + ' parked by the gate</div>';
+                            const chips = (c) => {
+                                let h = '<span class="cat">' + esc(c.bucket) + '</span>';
+                                if (c.secondary_bucket) h += ' <span class="cat">+ ' + esc(c.secondary_bucket) + '</span>';
+                                if (riskColor[c.risk_level]) h += ' <span class="cat" style="color:' + riskColor[c.risk_level] + '; border-color:' + riskColor[c.risk_level] + ';">' + esc(c.risk_level) + ' risk</span>';
+                                if (c.developing_story) h += ' <span class="cat">&#9203; developing</span>';
+                                if (c.gate_label === 'prediction') h += ' <span class="cat">prediction</span>';
+                                if (c.public_safety_risk) h += ' <span class="cat" style="color:#f87171; border-color:#f87171;">&#9888; public safety</span>';
+                                return h;
+                            };
+                            for (const c of [...checked, ...waiting]) {
                                 let vd = '';
                                 if (c.verdict) {
                                     vd = '<br><span class="verdict v-' + esc(c.verdict.rating) + '">' +
                                         (vLabel[c.verdict.rating] || esc(c.verdict.rating)) +
                                         ' &middot; ' + esc(c.verdict.confidence.toFixed(1)) + '/10</span>' +
                                         '<div class="vsum">' + esc(c.verdict.summary) + '</div>';
+                                } else {
+                                    vd = '<br><span class="meta">Routed; not verified in this pass (highest-risk claims go first).</span>';
                                 }
                                 let ev = '';
                                 const fcs = (c.evidence && c.evidence.fact_checks) || [];
@@ -166,13 +188,20 @@ def home() -> str:
                                     ev += '<div class="src">' + (stanceIcon[w.stance] || '&#8505;') + ' <a href="' + esc(w.url) + '" target="_blank" rel="noopener">' + esc(w.source) + '</a> (' + esc(w.stance) + '): &ldquo;' + esc(w.quote) + '&rdquo;</div>';
                                 }
                                 if (c.evidence && !ev) ev = '<div class="src meta">No sources found yet.</div>';
-                                html += '<div class="claim">' +
-                                    '<div class="score">' + esc(c.checkability.toFixed(1)) + '</div>' +
+                                const circle = c.verdict ? '<div class="score">' + esc(c.verdict.confidence.toFixed(1)) + '</div>' : '<div class="score">&middot;&middot;&middot;</div>';
+                                html += '<div class="claim">' + circle +
                                     '<div class="ctext"><b>' + esc(c.claim) + '</b>' +
                                     '&ldquo;' + esc(c.quote) + '&rdquo;' +
-                                    '<br><span class="cat">' + esc(c.category) + '</span> ' +
-                                    '<span class="meta">' + esc(c.why_checkable) + '</span>' +
+                                    '<br>' + chips(c) + ' <span class="meta">' + esc(c.reason || '') + '</span>' +
                                     vd + ev + '</div></div>';
+                            }
+                            if (parked.length) {
+                                html += '<div class="meta" style="margin-top:14px;"><b>Parked by the gate</b> &mdash; opinion, satire, and other non-factual content Glowby deliberately does not judge:</div>';
+                                for (const c of parked) {
+                                    html += '<div class="claim"><div class="ctext"><b>' + esc(c.claim) + '</b>' +
+                                        '<span class="cat">' + esc(c.gate_label) + '</span> ' +
+                                        '<span class="meta">' + esc(c.reason || '') + '</span></div></div>';
+                                }
                             }
                         }
                         html += '<details><summary>Full transcript</summary><div class="tr">' + esc(d.transcript) + '</div></details>';
@@ -187,16 +216,16 @@ def home() -> str:
     </body>
     </html>
     """
- 
- 
+
+
 class CheckRequest(BaseModel):
     url: str
- 
- 
+
+
 @app.post("/api/check")
 def api_check(req: CheckRequest):
     """Full pipeline so far: URL -> transcript -> checkable claims.
- 
+
     Synchronous for Week 1-2 dev testing; moves to a job queue in Week 3.
     """
     # cache first: if anyone already checked this video, serve the stored
@@ -205,7 +234,7 @@ def api_check(req: CheckRequest):
     cached = get_cached(url_key)
     if cached is not None:
         return cached
- 
+
     try:
         result = ingest(req.url)
     except IngestError as e:
@@ -215,24 +244,31 @@ def api_check(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while fetching this link."},
         )
- 
+
     try:
-        claims = extract_claims(
-            result["transcript"], title=result["title"], platform=result["platform"]
+        claims = route_claims(
+            result["transcript"],
+            title=result["title"],
+            platform=result["platform"],
+            uploader=result["uploader"],
         )
-    except ClaimExtractionError as e:
+    except RouterError as e:
         return JSONResponse(status_code=422, content={"detail": str(e)})
     except Exception:
         return JSONResponse(
             status_code=500,
-            content={"detail": "Unexpected error while extracting claims."},
+            content={"detail": "Unexpected error while routing claims."},
         )
- 
-    # gather evidence for the top claims by checkability (cost control)
-    ranked = sorted(
-        range(len(claims)), key=lambda i: claims[i]["checkability"], reverse=True
-    )
-    for i in ranked[:MAX_CLAIMS_WITH_EVIDENCE]:
+
+    # audit record for every routed claim (router spec section 3.10)
+    try:
+        save_route_audit(url_key, req.url, claims, ROUTER_MODEL, TAXONOMY_VERSION)
+    except Exception:
+        pass
+
+    # verify the top forward claims: risk level first, then routing
+    # confidence (cost control; parked claims are never "debunked")
+    for i in select_for_verification(claims, MAX_CLAIMS_WITH_EVIDENCE):
         try:
             claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
         except Exception:
@@ -246,13 +282,13 @@ def api_check(req: CheckRequest):
                 "summary": "Verdict step failed; try again.",
                 "key_sources": [],
             }
- 
+
     result["claims"] = claims
     result["cached"] = False
     save_result(url_key, req.url, result)
     return result
- 
- 
+
+
 @app.post("/api/ingest")
 def api_ingest(req: CheckRequest):
     """Transcript only (kept for testing the ingest stage in isolation)."""
@@ -265,9 +301,9 @@ def api_ingest(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while processing this link."},
         )
- 
- 
+
+
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
-    return {"status": "ok", "service": "glowby", "version": "0.6.0"}
+    return {"status": "ok", "service": "glowby", "version": "0.7.0"}
