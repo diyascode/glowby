@@ -153,3 +153,65 @@ def save_result(url_key: str, url: str, result: dict) -> None:
             )
     except Exception:
         pass
+
+
+# ------------------------------------------------------------ route audits
+# Spec §3.10: every classification explainable and reproducible.
+
+
+def save_route_audit(item_key: str, url: str, claims: list,
+                     model_version: str, taxonomy_version: str) -> None:
+    """Store one audit row per routed claim. Silently no-ops on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS route_audits (
+                    id BIGSERIAL PRIMARY KEY,
+                    item_key TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    claim_id INTEGER NOT NULL,
+                    claim_text TEXT NOT NULL,
+                    gate_label TEXT,
+                    primary_bucket TEXT,
+                    secondary_bucket TEXT,
+                    confidence REAL,
+                    risk_level TEXT,
+                    developing_story BOOLEAN,
+                    public_safety_risk BOOLEAN,
+                    reason_for_bucket TEXT,
+                    signals_used TEXT,
+                    model_version TEXT,
+                    taxonomy_version TEXT,
+                    human_review_required BOOLEAN,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+            for idx, c in enumerate(claims):
+                cur.execute(
+                    """
+                    INSERT INTO route_audits (
+                        item_key, url, claim_id, claim_text, gate_label,
+                        primary_bucket, secondary_bucket, confidence,
+                        risk_level, developing_story, public_safety_risk,
+                        reason_for_bucket, signals_used, model_version,
+                        taxonomy_version, human_review_required
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        item_key, url, idx, c.get("claim", ""),
+                        c.get("gate_label"), c.get("bucket"),
+                        c.get("secondary_bucket"), c.get("confidence"),
+                        c.get("risk_level"), c.get("developing_story", False),
+                        c.get("public_safety_risk", False),
+                        c.get("reason", ""), "ai_routing",
+                        model_version, taxonomy_version,
+                        c.get("human_review_required", False),
+                    ),
+                )
+    except Exception:
+        pass
