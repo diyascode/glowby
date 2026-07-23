@@ -32,6 +32,50 @@ class IngestError(Exception):
     """Raised when a URL cannot be ingested. Message is user-facing."""
 
 
+# ---------------------------------------------------------------- proxy
+# YouTube bot-challenges datacenter IPs. A residential proxy makes our
+# requests come from a normal-home address. Two config options:
+#   WEBSHARE_PROXY_USERNAME / WEBSHARE_PROXY_PASSWORD  (recommended:
+#     Webshare rotating residential)
+#   PROXY_URL  (any provider, e.g. http://user:pass@host:port)
+# With neither set, everything works exactly as before (no proxy).
+
+
+def _proxy_url():
+    user = os.environ.get("WEBSHARE_PROXY_USERNAME")
+    pw = os.environ.get("WEBSHARE_PROXY_PASSWORD")
+    if user and pw:
+        return f"http://{user}-rotate:{pw}@p.webshare.io:80"
+    return os.environ.get("PROXY_URL") or None
+
+
+def _yta_client():
+    """youtube-transcript-api client, proxied when configured."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    user = os.environ.get("WEBSHARE_PROXY_USERNAME")
+    pw = os.environ.get("WEBSHARE_PROXY_PASSWORD")
+    generic = os.environ.get("PROXY_URL")
+    try:
+        if user and pw:
+            from youtube_transcript_api.proxies import WebshareProxyConfig
+
+            return YouTubeTranscriptApi(
+                proxy_config=WebshareProxyConfig(proxy_username=user,
+                                                 proxy_password=pw)
+            )
+        if generic:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+
+            return YouTubeTranscriptApi(
+                proxy_config=GenericProxyConfig(http_url=generic,
+                                                https_url=generic)
+            )
+    except Exception:
+        pass  # fall through to unproxied client
+    return YouTubeTranscriptApi()
+
+
 def detect_platform(url: str) -> str:
     host = re.sub(r"^www\.", "", (re.findall(r"https?://([^/]+)", url) or [""])[0]).lower()
     if "youtube.com" in host or "youtu.be" in host:
@@ -58,6 +102,8 @@ def ingest(url: str) -> dict:
         # android/ios player clients are challenged far less often
         "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
     }
+    if _proxy_url():
+        ydl_opts["proxy"] = _proxy_url()
     info = None
     bot_blocked = False
     try:
@@ -143,12 +189,13 @@ def _youtube_fallback(url: str):
     # transcript (works for videos with captions, incl. auto-captions)
     text = None
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-
+        api = _yta_client()
         try:  # v1.x API
-            fetched = YouTubeTranscriptApi().fetch(video_id)
+            fetched = api.fetch(video_id)
             segments = getattr(fetched, "snippets", fetched)
         except AttributeError:  # pre-1.0 API
+            from youtube_transcript_api import YouTubeTranscriptApi
+
             segments = YouTubeTranscriptApi.get_transcript(video_id)
         parts = []
         for seg in segments:
@@ -260,6 +307,7 @@ def _transcript_from_whisper(url: str) -> str:
             "noplaylist": True,
             "format": "bestaudio[ext=m4a]/bestaudio/best",
             "outtmpl": outpath,
+            **({"proxy": _proxy_url()} if _proxy_url() else {}),
             # convert whatever the site serves (HLS streams, .ts, etc.)
             # into MP3 — Whisper only accepts a fixed list of formats
             "postprocessors": [{
