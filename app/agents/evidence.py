@@ -100,6 +100,8 @@ sources say. Prefer scientific bodies, major news organizations, government \
 agencies, and academic sources. Look for evidence AGAINST the claim as well \
 as for it — do not stop at the first agreeing source.
 
+If the claim is about what a LAW, RULING, STUDY, or DOCUMENT says: search snippets are NOT enough — use web_fetch to OPEN the primary source page and read it before quoting. Quote the document's OPERATIVE text — the part that directly addresses the claim's core assertion (e.g. for a statute: the clause listing prohibited acts, starting from its first sentence — not just penalty clauses). Partial quotes of the wrong section create false verdicts downstream.
+
 Claim: "{claim}"
 
 After searching, respond with ONLY a JSON array (no prose, no code fences) \
@@ -131,7 +133,16 @@ def search_web_evidence(claim: str) -> list:
                     "type": "web_search_20250305",
                     "name": "web_search",
                     "max_uses": MAX_WEB_SEARCHES,
-                }
+                },
+                {
+                    # lets the agent OPEN a page and read it in full —
+                    # search snippets alone caused a wrong verdict once
+                    # (18 USC 112: snippets skipped the operative clause)
+                    "type": "web_fetch_20250910",
+                    "name": "web_fetch",
+                    "max_uses": 2,
+                    "max_content_tokens": 40000,
+                },
             ],
             messages=[
                 {

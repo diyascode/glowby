@@ -105,6 +105,13 @@ be null. Refusing to score is correct in those cases.
 - The verdict sentence is plain language a teenager understands, and must \
 reflect what the evidence shows, including caution words required by the \
 rubric (e.g. presumption language for accusations).
+- ABSENCE IS NOT CONTRADICTION: never rule "contradicted" because the \
+evidence quotes do not mention the claim's assertion — partial quotes prove \
+nothing about what the full source says. "contradicted" requires a source \
+explicitly stating the OPPOSITE of the claim. If the evidence does not \
+directly address the claim's core assertion, rule "insufficient" or \
+"unverifiable" instead. Never assert what a document "does not say" unless \
+the evidence includes the document's complete relevant section.
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
