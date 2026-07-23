@@ -2,8 +2,9 @@
 Glowby — multi-agent misinformation detection & fact-checking.
 
 v1 scope: paste a link, get a fact-check.
-Current stage: full fleet front half — ingest -> Sorting Gate/Router
-(13 buckets, spec v1.2) -> evidence -> verdict. Next: category judge engine.
+Current stage: ingest -> Sorting Gate/Router (13 buckets) -> evidence ->
+CATEGORY JUDGE ENGINE (13 rubrics from app/specs/, truth score 0.0-9.9).
+Next: output agent + real UI.
 """
 
 from fastapi import FastAPI
@@ -19,7 +20,7 @@ from app.agents.router import (
     route_claims,
     select_for_verification,
 )
-from app.agents.verdict import judge_claim
+from app.agents.judge import judge_with_rubric
 from app.storage import canonical_key, get_cached, save_result, save_route_audit
 
 # evidence is gathered for the top N claims by checkability (cost control)
@@ -28,7 +29,7 @@ MAX_CLAIMS_WITH_EVIDENCE = 3
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
-    version="0.7.0",
+    version="0.8.0",
 )
 
 
@@ -119,7 +120,7 @@ def home() -> str:
                 <button id="go" type="submit">Check</button>
             </form>
             <div id="out"></div>
-            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.7.0 &mdash; Sorting Gate/Router live: gate labels, 13-bucket routing, risk levels</p>
+            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.8.0 &mdash; 13 category judges live: one number = the TRUTH SCORE (0.0&ndash;9.9)</p>
         </div>
         <script>
             const f = document.getElementById('f');
@@ -152,7 +153,9 @@ def home() -> str:
                             html += '<p>No checkable factual claims found in this video.</p>';
                         } else {
                             const stanceIcon = {supports:'&#10003;', refutes:'&#10007;', mixed:'&#9888;', context:'&#8505;'};
-                            const vLabel = {true:'&#10003; True', mostly_true:'&#10003; Mostly true', misleading:'&#9888; Misleading', false:'&#10007; False', unverifiable:'? Unverifiable'};
+                            const vLabel = {supported:'&#10003; Supported', partly_supported:'&#9888; Partly supported', provisional:'&#9203; Provisional', insufficient:'&#9888; Insufficient evidence', contradicted:'&#10007; Contradicted', unverifiable:'? Unverifiable', not_scoreable:'&#8709; Not scoreable'};
+                            const vClass = {supported:'v-true', partly_supported:'v-misleading', provisional:'v-misleading', insufficient:'v-misleading', contradicted:'v-false', unverifiable:'v-unverifiable', not_scoreable:'v-unverifiable'};
+                            const ringColor = (s) => s === null ? '#9aa0b0' : (s >= 7.5 ? '#4ade80' : (s >= 4.0 ? '#fab219' : '#f87171'));
                             const riskColor = {critical:'#f87171', high:'#ec835a'};
                             const fwd = (c) => c.gate_label === 'factual' || c.gate_label === 'prediction';
                             const checked = d.claims.filter(c => c.verdict);
@@ -171,10 +174,10 @@ def home() -> str:
                             for (const c of [...checked, ...waiting]) {
                                 let vd = '';
                                 if (c.verdict) {
-                                    vd = '<br><span class="verdict v-' + esc(c.verdict.rating) + '">' +
-                                        (vLabel[c.verdict.rating] || esc(c.verdict.rating)) +
-                                        ' &middot; ' + esc(c.verdict.confidence.toFixed(1)) + '/10</span>' +
-                                        '<div class="vsum">' + esc(c.verdict.summary) + '</div>';
+                                    vd = '<br><span class="verdict ' + (vClass[c.verdict.verdict_state] || 'v-unverifiable') + '">' +
+                                        (vLabel[c.verdict.verdict_state] || esc(c.verdict.verdict_state)) + '</span>' +
+                                        '<div class="vsum">' + esc(c.verdict.verdict) +
+                                        ' <span class="meta">(evidence: ' + esc(c.verdict.evidence_strength) + ')</span></div>';
                                 } else {
                                     vd = '<br><span class="meta">Routed; not verified in this pass (highest-risk claims go first).</span>';
                                 }
@@ -188,7 +191,12 @@ def home() -> str:
                                     ev += '<div class="src">' + (stanceIcon[w.stance] || '&#8505;') + ' <a href="' + esc(w.url) + '" target="_blank" rel="noopener">' + esc(w.source) + '</a> (' + esc(w.stance) + '): &ldquo;' + esc(w.quote) + '&rdquo;</div>';
                                 }
                                 if (c.evidence && !ev) ev = '<div class="src meta">No sources found yet.</div>';
-                                const circle = c.verdict ? '<div class="score">' + esc(c.verdict.confidence.toFixed(1)) + '</div>' : '<div class="score">&middot;&middot;&middot;</div>';
+                                let circle = '<div class="score">&middot;&middot;&middot;</div>';
+                                if (c.verdict) {
+                                    const ts = c.verdict.truth_score;
+                                    const col = ringColor(ts);
+                                    circle = '<div class="score" style="border-color:' + col + '; color:' + col + ';">' + (ts === null ? '&mdash;' : esc(ts.toFixed(1))) + '</div>';
+                                }
                                 html += '<div class="claim">' + circle +
                                     '<div class="ctext"><b>' + esc(c.claim) + '</b>' +
                                     '&ldquo;' + esc(c.quote) + '&rdquo;' +
@@ -274,12 +282,13 @@ def api_check(req: CheckRequest):
         except Exception:
             claims[i]["evidence"] = {"fact_checks": [], "web_sources": []}
         try:
-            claims[i]["verdict"] = judge_claim(claims[i]["claim"], claims[i]["evidence"])
+            claims[i]["verdict"] = judge_with_rubric(claims[i], claims[i]["evidence"])
         except Exception:
             claims[i]["verdict"] = {
-                "rating": "unverifiable",
-                "confidence": 0.0,
-                "summary": "Verdict step failed; try again.",
+                "truth_score": None,
+                "verdict_state": "unverifiable",
+                "verdict": "Judge step failed; try again.",
+                "evidence_strength": "none",
                 "key_sources": [],
             }
 
@@ -306,4 +315,4 @@ def api_ingest(req: CheckRequest):
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
-    return {"status": "ok", "service": "glowby", "version": "0.7.0"}
+    return {"status": "ok", "service": "glowby", "version": "0.8.0"}
