@@ -148,7 +148,8 @@ def save_result(url_key: str, url: str, result: dict) -> None:
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO checks (url_key, url, result) VALUES (%s, %s, %s) "
-                "ON CONFLICT (url_key) DO NOTHING",
+                "ON CONFLICT (url_key) DO UPDATE SET result = EXCLUDED.result, "
+                "created_at = now()",
                 (url_key, url, json.dumps(clean)),
             )
     except Exception:

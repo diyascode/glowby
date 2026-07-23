@@ -32,7 +32,7 @@ from app.agents.router import (
 )
 from app.storage import canonical_key, get_cached, save_result, save_route_audit
 
-VERSION = "0.9.0"
+VERSION = "0.9.2"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -143,13 +143,14 @@ def permalink_page(key: str) -> str:
 
 class CheckRequest(BaseModel):
     url: str
+    force: bool = False  # true = ignore the cache and re-run (recheck)
 
 
 @app.post("/api/check")
 def api_check(req: CheckRequest):
     """Start a check. Cached -> full result immediately; else a job id."""
     url_key = canonical_key(req.url)
-    cached = get_cached(url_key)
+    cached = None if req.force else get_cached(url_key)
     if cached is not None:
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
