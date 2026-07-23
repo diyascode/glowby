@@ -32,7 +32,7 @@ from app.agents.router import (
 )
 from app.storage import canonical_key, get_cached, save_result, save_route_audit
 
-VERSION = "0.9.2"
+VERSION = "0.9.3"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
