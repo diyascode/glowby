@@ -32,11 +32,17 @@ VALID_STANCES = {"supports", "refutes", "mixed", "context"}
 
 
 def gather_evidence(claim: str) -> dict:
-    """Main entry point: one claim in, evidence bundle out."""
-    return {
-        "fact_checks": search_fact_check_db(claim),
-        "web_sources": search_web_evidence(claim),
-    }
+    """Main entry point: one claim in, evidence bundle out.
+
+    The two evidence hunts (fact-check database + web search) run in
+    parallel — they are independent network calls.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fc = ex.submit(search_fact_check_db, claim)
+        web = ex.submit(search_web_evidence, claim)
+        return {"fact_checks": fc.result(), "web_sources": web.result()}
 
 
 # ------------------------------------------------ Google Fact Check Tools
