@@ -31,7 +31,7 @@ MAX_CLAIMS_WITH_EVIDENCE = 3
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
-    version="0.8.1",
+    version="0.8.2",
 )
 
 
@@ -122,7 +122,7 @@ def home() -> str:
                 <button id="go" type="submit">Check</button>
             </form>
             <div id="out"></div>
-            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.8.1 &mdash; 13 category judges, ONE truth score, parallel verification (faster)</p>
+            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.8.2 &mdash; 13 judges, ONE truth score, parallel &amp; tidy (unjudged claims tucked away)</p>
         </div>
         <script>
             const f = document.getElementById('f');
@@ -173,7 +173,7 @@ def home() -> str:
                                 if (c.public_safety_risk) h += ' <span class="cat" style="color:#f87171; border-color:#f87171;">&#9888; public safety</span>';
                                 return h;
                             };
-                            for (const c of [...checked, ...waiting]) {
+                            const buildCard = (c) => {
                                 let vd = '';
                                 if (c.verdict) {
                                     vd = '<br><span class="verdict ' + (vClass[c.verdict.verdict_state] || 'v-unverifiable') + '">' +
@@ -199,11 +199,17 @@ def home() -> str:
                                     const col = ringColor(ts);
                                     circle = '<div class="score" style="border-color:' + col + '; color:' + col + ';">' + (ts === null ? '&mdash;' : esc(ts.toFixed(1))) + '</div>';
                                 }
-                                html += '<div class="claim">' + circle +
+                                return '<div class="claim">' + circle +
                                     '<div class="ctext"><b>' + esc(c.claim) + '</b>' +
                                     '&ldquo;' + esc(c.quote) + '&rdquo;' +
                                     '<br>' + chips(c) + ' <span class="meta">' + esc(c.reason || '') + '</span>' +
                                     vd + ev + '</div></div>';
+                            };
+                            for (const c of checked) { html += buildCard(c); }
+                            if (waiting.length) {
+                                html += '<details><summary>&#128269; Found, not judged (' + waiting.length + ') &mdash; click to view</summary>';
+                                for (const c of waiting) { html += buildCard(c); }
+                                html += '</details>';
                             }
                             if (parked.length) {
                                 html += '<div class="meta" style="margin-top:14px;"><b>Parked by the gate</b> &mdash; opinion, satire, and other non-factual content Glowby deliberately does not judge:</div>';
@@ -324,4 +330,4 @@ def api_ingest(req: CheckRequest):
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
-    return {"status": "ok", "service": "glowby", "version": "0.8.1"}
+    return {"status": "ok", "service": "glowby", "version": "0.8.2"}
