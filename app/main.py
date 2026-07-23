@@ -7,6 +7,8 @@ CATEGORY JUDGE ENGINE (13 rubrics from app/specs/, truth score 0.0-9.9).
 Next: output agent + real UI.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
@@ -29,7 +31,7 @@ MAX_CLAIMS_WITH_EVIDENCE = 3
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
-    version="0.8.0",
+    version="0.8.1",
 )
 
 
@@ -120,7 +122,7 @@ def home() -> str:
                 <button id="go" type="submit">Check</button>
             </form>
             <div id="out"></div>
-            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.8.0 &mdash; 13 category judges live: one number = the TRUTH SCORE (0.0&ndash;9.9)</p>
+            <p style="margin-top:1.5rem; font-size:0.85rem;">v0.8.1 &mdash; 13 category judges, ONE truth score, parallel verification (faster)</p>
         </div>
         <script>
             const f = document.getElementById('f');
@@ -275,8 +277,10 @@ def api_check(req: CheckRequest):
         pass
 
     # verify the top forward claims: risk level first, then routing
-    # confidence (cost control; parked claims are never "debunked")
-    for i in select_for_verification(claims, MAX_CLAIMS_WITH_EVIDENCE):
+    # confidence (cost control; parked claims are never "debunked").
+    # All selected claims are verified IN PARALLEL — evidence hunts and
+    # judgments are independent, so three claims cost the time of one.
+    def _verify(i: int) -> None:
         try:
             claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
         except Exception:
@@ -291,6 +295,11 @@ def api_check(req: CheckRequest):
                 "evidence_strength": "none",
                 "key_sources": [],
             }
+
+    selected = select_for_verification(claims, MAX_CLAIMS_WITH_EVIDENCE)
+    if selected:
+        with ThreadPoolExecutor(max_workers=len(selected)) as ex:
+            list(ex.map(_verify, selected))
 
     result["claims"] = claims
     result["cached"] = False
@@ -315,4 +324,4 @@ def api_ingest(req: CheckRequest):
 @app.get("/health")
 def health() -> dict:
     """Health check endpoint — Railway uses this to confirm the app is up."""
-    return {"status": "ok", "service": "glowby", "version": "0.8.0"}
+    return {"status": "ok", "service": "glowby", "version": "0.8.1"}
