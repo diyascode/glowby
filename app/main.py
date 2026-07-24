@@ -12,10 +12,12 @@ reel toggle, shareable permalinks (/r/<key>), report-a-mistake.
 
 import os
 import threading
+import time
 import uuid
+from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -30,12 +32,82 @@ from app.agents.router import (
     route_claims,
     select_for_verification,
 )
-from app.storage import canonical_key, get_cached, save_result, save_route_audit
+from app.storage import (
+    add_usage,
+    canonical_key,
+    get_cached,
+    save_result,
+    save_route_audit,
+    today_usage,
+)
 
-VERSION = "0.9.3"
+VERSION = "0.10.2"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
+
+# ---- armor knobs (all overridable via Railway Variables) ----
+DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "10"))
+COST_PER_CHECK_EST = float(os.environ.get("GLOWBY_COST_PER_CHECK_EST", "0.15"))
+RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "8"))
+JOB_TIMEOUT_SECONDS = int(os.environ.get("GLOWBY_JOB_TIMEOUT_SECONDS", "480"))
+
+# ---- bot protection (Cloudflare Turnstile) ----
+# Dormant until BOTH keys are set as Railway Variables:
+#   TURNSTILE_SITE_KEY   (public, goes into the page)
+#   TURNSTILE_SECRET_KEY (secret, used server-side to verify)
+TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
+
+
+def _verify_turnstile(token: str, ip: str) -> bool:
+    """Server-side captcha check. True when valid or captcha disabled."""
+    if not TURNSTILE_SECRET_KEY:
+        return True
+    if not token:
+        return False
+    import json as _json
+    import urllib.parse as _up
+    import urllib.request as _ur
+
+    try:
+        data = _up.urlencode({
+            "secret": TURNSTILE_SECRET_KEY,
+            "response": token,
+            "remoteip": ip,
+        }).encode()
+        req = _ur.Request(
+            "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+            data=data,
+        )
+        with _ur.urlopen(req, timeout=10) as resp:
+            out = _json.loads(resp.read().decode())
+        return bool(out.get("success"))
+    except Exception:
+        return False
+
+# per-IP sliding-window rate limiter (in-process; fine at beta scale)
+_hits = defaultdict(deque)
+_hits_lock = threading.Lock()
+
+
+def _client_ip(request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limited(ip: str) -> bool:
+    now = time.time()
+    with _hits_lock:
+        q = _hits[ip]
+        while q and now - q[0] > 3600:
+            q.popleft()
+        if len(q) >= RATE_LIMIT_PER_HOUR:
+            return True
+        q.append(now)
+        return False
 
 app = FastAPI(
     title="Glowby",
@@ -51,7 +123,9 @@ def _page() -> str:
     global _template_cache
     if _template_cache is None:
         with open(_TEMPLATE_PATH, encoding="utf-8") as f:
-            _template_cache = f.read()
+            _template_cache = f.read().replace(
+                "__TURNSTILE_SITE_KEY__", TURNSTILE_SITE_KEY
+            )
     return _template_cache
 
 
@@ -144,10 +218,11 @@ def permalink_page(key: str) -> str:
 class CheckRequest(BaseModel):
     url: str
     force: bool = False  # true = ignore the cache and re-run (recheck)
+    captcha_token: str = ""  # Turnstile token (required when captcha is on)
 
 
 @app.post("/api/check")
-def api_check(req: CheckRequest):
+def api_check(req: CheckRequest, request: Request):
     """Start a check. Cached -> full result immediately; else a job id."""
     url_key = canonical_key(req.url)
     cached = None if req.force else get_cached(url_key)
@@ -157,8 +232,39 @@ def api_check(req: CheckRequest):
             build_report(cached)
         return cached
 
+    # ---- armor: cached results above stay free & unlimited; fresh runs
+    # must pass the bot check, per-visitor rate limit, and daily budget ----
+    if not _verify_turnstile(req.captcha_token, _client_ip(request)):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": (
+                "Bot check failed — please try again (the checkbox may "
+                "have expired)."
+            )},
+        )
+    if _rate_limited(_client_ip(request)):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": (
+                f"You've reached the limit of {RATE_LIMIT_PER_HOUR} new "
+                "checks per hour. Already-checked videos are always "
+                "available instantly — or come back in a bit."
+            )},
+        )
+    _, spent = today_usage()
+    if spent >= DAILY_BUDGET_USD:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": (
+                "Glowby has reached its daily budget for new checks — "
+                "they'll resume tomorrow. Already-checked videos still "
+                "load instantly."
+            )},
+        )
+    add_usage(COST_PER_CHECK_EST)
+
     job_id = uuid.uuid4().hex[:12]
-    _set_job(job_id, status="queued", stage="fetching")
+    _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
         target=_run_pipeline, args=(job_id, req.url, url_key), daemon=True
     ).start()
@@ -171,6 +277,13 @@ def api_job(job_id: str):
         job = dict(_jobs.get(job_id) or {})
     if not job:
         return JSONResponse(status_code=404, content={"detail": "Unknown job."})
+    # watchdog: a job stuck past the timeout reports an honest error
+    started = job.get("started")
+    if job.get("status") in ("queued", "running") and started             and time.time() - started > JOB_TIMEOUT_SECONDS:
+        job = {"status": "error",
+               "error": "This check took too long and was stopped. "
+                        "Please try again."}
+    job.pop("started", None)
     return job
 
 

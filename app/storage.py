@@ -216,3 +216,51 @@ def save_route_audit(item_key: str, url: str, claims: list,
                 )
     except Exception:
         pass
+
+
+# ------------------------------------------------------------ daily usage
+# Armor: the cost kill-switch needs to know how much was spent today.
+
+
+def add_usage(est_cost: float) -> None:
+    """Record one fresh check's estimated cost. No-ops on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_usage (
+                    day DATE PRIMARY KEY,
+                    checks INTEGER NOT NULL DEFAULT 0,
+                    est_cost NUMERIC NOT NULL DEFAULT 0
+                )
+                """
+            )
+            cur.execute(
+                "INSERT INTO daily_usage (day, checks, est_cost) "
+                "VALUES (CURRENT_DATE, 1, %s) "
+                "ON CONFLICT (day) DO UPDATE SET "
+                "checks = daily_usage.checks + 1, "
+                "est_cost = daily_usage.est_cost + EXCLUDED.est_cost",
+                (est_cost,),
+            )
+    except Exception:
+        pass
+
+
+def today_usage():
+    """(checks, est_cost) for today. (0, 0.0) if unavailable."""
+    conn = _get_conn()
+    if conn is None:
+        return (0, 0.0)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT checks, est_cost FROM daily_usage WHERE day = CURRENT_DATE"
+            )
+            row = cur.fetchone()
+        return (row[0], float(row[1])) if row else (0, 0.0)
+    except Exception:
+        return (0, 0.0)
