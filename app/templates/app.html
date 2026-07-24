@@ -89,6 +89,7 @@
     <input type="url" id="url" placeholder="Paste a YouTube, TikTok or news video link..." required>
     <button id="go" type="submit">Check</button>
   </form>
+  <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
   <div id="steps">
     <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
@@ -98,7 +99,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.9.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
+  <footer>v0.10.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
 </div>
 
 <script>
@@ -111,6 +112,17 @@ const stanceIcon={supports:'✓',refutes:'✗',mixed:'⚠',context:'ℹ'};
 const riskColor={critical:'#f87171',high:'#ec835a'};
 const ringColor=(s)=>s===null||s===undefined?'#9aa0b0':(s>=7.5?'#4ade80':(s>=4.0?'#fab219':'#f87171'));
 let currentResult=null, currentView='list';
+// ---- bot protection (Cloudflare Turnstile); dormant without a site key ----
+const TS_KEY='__TURNSTILE_SITE_KEY__';
+const tsOn=TS_KEY && !TS_KEY.startsWith('__');
+if(tsOn){
+  const s=document.createElement('script');
+  s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?onload=tsReady';
+  s.async=true;document.head.appendChild(s);
+  window.tsReady=()=>{turnstile.render('#ts',{sitekey:TS_KEY,theme:'dark'});};
+}
+const tsToken=()=>tsOn&&window.turnstile?(turnstile.getResponse()||''):'';
+const tsReset=()=>{if(tsOn&&window.turnstile)try{turnstile.reset();}catch(e){}};
 
 function ringSVG(score,size,width){
   const r=(size/2)-width-1, c=2*Math.PI*r;
@@ -136,6 +148,7 @@ function claimCard(c){
   let badge='';
   if(c.verdict){
     badge='<br><span class="verdict '+(vClass[c.verdict.verdict_state]||'v-n')+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'</span>';
+    if(c.verdict.why_unverifiable)badge+='<div class="vsum" style="color:var(--muted)">Why: '+(whyLabel[c.verdict.why_unverifiable]||esc(c.verdict.why_unverifiable))+'.</div>';
   }else{
     badge='<br><span class="meta">Not verified in this pass.</span>';
   }
@@ -217,7 +230,7 @@ function render(){
     if(!confirm('Re-run the full fact-check for this video? This replaces the stored result.'))return;
     $('out').style.display='none';setStage('fetching');
     try{
-      const r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:currentResult.url||$('url').value,force:true})});
+      const r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:currentResult.url||$('url').value,force:true,captcha_token:tsToken()})});
       const d=await r.json();
       currentResult=d.job_id?await poll(d.job_id):d;
       $('steps').style.display='none';currentView='list';render();
@@ -249,7 +262,7 @@ $('f').addEventListener('submit',async(e)=>{
   const go=$('go');go.disabled=true;go.textContent='Working...';
   $('out').style.display='none';setStage('fetching');
   try{
-    const r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value})});
+    const r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value,captcha_token:tsToken()})});
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'Something went wrong.');
     currentResult=d.job_id?await poll(d.job_id):d;
@@ -260,7 +273,7 @@ $('f').addEventListener('submit',async(e)=>{
     $('out').style.display='block';
     $('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';
   }
-  go.disabled=false;go.textContent='Check';
+  go.disabled=false;go.textContent='Check';tsReset();
 });
 // permalink mode: /r/<key> pages preload the stored result
 (async function(){
