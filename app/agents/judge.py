@@ -125,7 +125,15 @@ Evidence — web sources (stance toward the claim):
 Respond with ONLY a JSON object (no prose, no code fences):
 {{"truth_score": 8.2 or null, "verdict_state": "...", "verdict": "one \
 sentence", "evidence_strength": "strong|moderate|thin|none", \
-"key_sources": ["url1", "url2"]}}
+"key_sources": ["url1", "url2"], "why_unverifiable": null}}
+why_unverifiable: null unless verdict_state is unverifiable/not_scoreable — \
+then exactly one of: "no_sources_found" (nothing relevant surfaced), \
+"sources_dont_address_claim" (sources exist but none speak to the core \
+assertion), "conflicting_sources" (credible sources disagree without \
+resolution), "too_new_to_verify" (developing story; reliable sources \
+haven't caught up), "speculation_no_data" (unanchored prediction, no data \
+basis), "depends_on_definition" (superlative/undefined terms), \
+"guilt_gate" (allegation awaiting official findings).
 key_sources: up to {max_sources} URLs copied EXACTLY from the evidence \
 above — never invent one."""
 
@@ -142,6 +150,7 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
             "were found for this claim, so Glowby won't guess.",
             "evidence_strength": "none",
             "key_sources": [],
+            "why_unverifiable": "no_sources_found",
         }
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -291,10 +300,24 @@ def parse_judge_response(raw: str, allowed_urls=None):
         if len(sources) >= MAX_KEY_SOURCES:
             break
 
+    WHY_VOCAB = {
+        "no_sources_found", "sources_dont_address_claim",
+        "conflicting_sources", "too_new_to_verify", "speculation_no_data",
+        "depends_on_definition", "guilt_gate",
+    }
+    why = data.get("why_unverifiable")
+    if state in NULL_SCORE_STATES:
+        why = str(why or "").lower().strip()
+        if why not in WHY_VOCAB:
+            why = "no_sources_found"
+    else:
+        why = None
+
     return {
         "truth_score": score,
         "verdict_state": state,
         "verdict": str(data.get("verdict", "")).strip()[:500],
         "evidence_strength": strength,
         "key_sources": sources,
+        "why_unverifiable": why,
     }
