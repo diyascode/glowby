@@ -27,6 +27,9 @@ import os
 import re
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
+# routing is sorting, not judging — a faster model cuts this stage from
+# ~8s to ~2-3s; on ANY failure we automatically retry with the main model
+FAST_MODEL = os.environ.get("GLOWBY_ROUTER_MODEL", "claude-haiku-4-5")
 TAXONOMY_VERSION = "glowby-13buckets-v1"
 MAX_CLAIMS = 5
 CONFIDENCE_REVIEW_THRESHOLD = 0.70  # spec §8 knob
@@ -185,14 +188,20 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
         transcript=transcript[:15000],
     )
     client = anthropic.Anthropic(api_key=api_key)
-    try:
-        message = client.messages.create(
-            model=MODEL,
-            max_tokens=2500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-    except Exception as e:
-        raise RouterError(f"The router failed to run. (Details: {str(e)[:200]})")
+    message, last_err = None, None
+    for mdl in dict.fromkeys([FAST_MODEL, MODEL]):  # fast first, then main
+        try:
+            message = client.messages.create(
+                model=mdl,
+                max_tokens=2500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            break
+        except Exception as e:
+            last_err = e
+    if message is None:
+        raise RouterError(
+            f"The router failed to run. (Details: {str(last_err)[:200]})")
 
     raw = "".join(
         b.text for b in message.content if getattr(b, "type", "") == "text"

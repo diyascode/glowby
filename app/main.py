@@ -21,7 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.agents.evidence import gather_evidence
+from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
 from app.agents.output import build_report
@@ -43,7 +43,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.14.0"
+VERSION = "0.15.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -203,20 +203,41 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
         t_route = time.time() - t0 - t_fetch
 
         def _verify(i: int) -> None:
-            try:
-                claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
-            except Exception:
-                claims[i]["evidence"] = {"fact_checks": [], "web_sources": []}
-            try:
-                claims[i]["verdict"] = judge_with_rubric(claims[i], claims[i]["evidence"])
-            except Exception:
-                claims[i]["verdict"] = {
-                    "truth_score": None,
-                    "verdict_state": "unverifiable",
-                    "verdict": "Judge step failed; try again.",
-                    "evidence_strength": "none",
-                    "key_sources": [],
-                }
+            done = False
+            if url_key.startswith("text:"):
+                # FAST LANE (typed claims): professional fact-checkers may
+                # have already reviewed this exact claim — a ~1s database
+                # lookup. If their review squarely settles it (a score AND
+                # strong evidence), skip the slow web hunt entirely.
+                # Anything less falls through to the full search.
+                try:
+                    fcs = search_fact_check_db(claims[i]["claim"])
+                    if fcs:
+                        ev = {"fact_checks": fcs, "web_sources": [],
+                              "fast_lane": True}
+                        v = judge_with_rubric(claims[i], ev)
+                        if (v.get("truth_score") is not None
+                                and v.get("evidence_strength") == "strong"):
+                            claims[i]["evidence"] = ev
+                            claims[i]["verdict"] = v
+                            done = True
+                except Exception:
+                    done = False
+            if not done:
+                try:
+                    claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
+                except Exception:
+                    claims[i]["evidence"] = {"fact_checks": [], "web_sources": []}
+                try:
+                    claims[i]["verdict"] = judge_with_rubric(claims[i], claims[i]["evidence"])
+                except Exception:
+                    claims[i]["verdict"] = {
+                        "truth_score": None,
+                        "verdict_state": "unverifiable",
+                        "verdict": "Judge step failed; try again.",
+                        "evidence_strength": "none",
+                        "key_sources": [],
+                    }
             # live update: this claim's card fills in immediately
             claims[i]["verifying"] = False
             _publish_partial(job_id, result, claims)
@@ -384,3 +405,15 @@ def api_ingest(req: CheckRequest):
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "glowby", "version": VERSION}
+
+
+# ------------------------------------------------------------ pre-check
+# Trending news videos get fact-checked BEFORE anyone pastes them, so
+# the most-likely pastes are cache hits (~1s). See app/precheck.py.
+
+from app.precheck import start_precheck  # noqa: E402
+
+
+@app.on_event("startup")
+def _startup_precheck() -> None:
+    start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST)
