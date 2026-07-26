@@ -1,26 +1,26 @@
 """
 Glowby — multi-agent misinformation detection & fact-checking.
- 
+
 v1 scope: paste a link, get a fact-check.
 Pipeline: ingest -> Sorting Gate/Router (13 buckets) -> evidence (parallel)
 -> category judge engine (13 rubrics, truth score 0.0-9.9) -> Output agent
 (headline = MIN, safety collapse) -> Postgres cache + permalinks.
- 
+
 v0.9: async job queue with progress stages, Design 2 list UI with Design 3
 reel toggle, shareable permalinks (/r/<key>), report-a-mistake.
 """
- 
+
 import os
 import threading
 import time
 import uuid
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
- 
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
- 
+
 from app.agents.evidence import gather_evidence
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -36,30 +36,32 @@ from app.storage import (
     add_usage,
     canonical_key,
     get_cached,
+    looks_like_url,
     save_result,
     save_route_audit,
+    text_key,
     today_usage,
 )
- 
-VERSION = "0.10.3"
- 
+
+VERSION = "0.11.0"
+
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
- 
+
 # ---- armor knobs (all overridable via Railway Variables) ----
 DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "10"))
 COST_PER_CHECK_EST = float(os.environ.get("GLOWBY_COST_PER_CHECK_EST", "0.15"))
 RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "8"))
 JOB_TIMEOUT_SECONDS = int(os.environ.get("GLOWBY_JOB_TIMEOUT_SECONDS", "480"))
- 
+
 # ---- bot protection (Cloudflare Turnstile) ----
 # Dormant until BOTH keys are set as Railway Variables:
 #   TURNSTILE_SITE_KEY   (public, goes into the page)
 #   TURNSTILE_SECRET_KEY (secret, used server-side to verify)
 TURNSTILE_SITE_KEY = os.environ.get("TURNSTILE_SITE_KEY", "")
 TURNSTILE_SECRET_KEY = os.environ.get("TURNSTILE_SECRET_KEY", "")
- 
- 
+
+
 def _verify_turnstile(token: str, ip: str) -> bool:
     """Server-side captcha check. True when valid or captcha disabled."""
     if not TURNSTILE_SECRET_KEY:
@@ -69,7 +71,7 @@ def _verify_turnstile(token: str, ip: str) -> bool:
     import json as _json
     import urllib.parse as _up
     import urllib.request as _ur
- 
+
     try:
         data = _up.urlencode({
             "secret": TURNSTILE_SECRET_KEY,
@@ -85,19 +87,19 @@ def _verify_turnstile(token: str, ip: str) -> bool:
         return bool(out.get("success"))
     except Exception:
         return False
- 
+
 # per-IP sliding-window rate limiter (in-process; fine at beta scale)
 _hits = defaultdict(deque)
 _hits_lock = threading.Lock()
- 
- 
+
+
 def _client_ip(request) -> str:
     fwd = request.headers.get("x-forwarded-for")
     if fwd:
         return fwd.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
- 
- 
+
+
 def _rate_limited(ip: str) -> bool:
     now = time.time()
     with _hits_lock:
@@ -108,17 +110,17 @@ def _rate_limited(ip: str) -> bool:
             return True
         q.append(now)
         return False
- 
+
 app = FastAPI(
     title="Glowby",
     description="Paste a link, get a fact-check.",
     version=VERSION,
 )
- 
+
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "app.html")
 _template_cache = None
- 
- 
+
+
 def _page() -> str:
     global _template_cache
     if _template_cache is None:
@@ -127,17 +129,17 @@ def _page() -> str:
                 "__TURNSTILE_SITE_KEY__", TURNSTILE_SITE_KEY
             )
     return _template_cache
- 
- 
+
+
 # ------------------------------------------------------------ job queue
 # In-process queue: fine for beta scale; jobs live ~2 minutes. A crashed
 # deploy loses in-flight jobs only — results are cached in Postgres.
- 
+
 _jobs: dict = {}
 _jobs_lock = threading.Lock()
 MAX_JOBS_KEPT = 500
- 
- 
+
+
 def _set_job(job_id: str, **fields) -> None:
     with _jobs_lock:
         job = _jobs.setdefault(job_id, {})
@@ -145,14 +147,28 @@ def _set_job(job_id: str, **fields) -> None:
         if len(_jobs) > MAX_JOBS_KEPT:  # drop oldest
             for k in list(_jobs)[: len(_jobs) - MAX_JOBS_KEPT]:
                 _jobs.pop(k, None)
- 
- 
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
     try:
-        _set_job(job_id, status="running", stage="fetching")
-        result = ingest(url)
+        if url_key.startswith("text:"):
+            # typed claim: no video to fetch — enter at the router
+            _set_job(job_id, status="running", stage="routing")
+            text = url.strip()
+            result = {
+                "url": None,
+                "platform": "typed claim",
+                "title": (text[:90] + "…") if len(text) > 90 else text,
+                "uploader": "typed into Glowby",
+                "duration_seconds": 0,
+                "transcript": text,
+                "transcript_source": "typed",
+            }
+        else:
+            _set_job(job_id, status="running", stage="fetching")
+            result = ingest(url)
         result["url_key"] = url_key
- 
+
         _set_job(job_id, stage="routing")
         claims = route_claims(
             result["transcript"],
@@ -164,9 +180,9 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
             save_route_audit(url_key, url, claims, ROUTER_MODEL, TAXONOMY_VERSION)
         except Exception:
             pass
- 
+
         _set_job(job_id, stage="judging")
- 
+
         def _verify(i: int) -> None:
             try:
                 claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
@@ -182,12 +198,20 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
                     "evidence_strength": "none",
                     "key_sources": [],
                 }
- 
+
         selected = select_for_verification(claims, MAX_CLAIMS_WITH_EVIDENCE)
         if selected:
+            # stagger launches ~1.2s apart: a burst of simultaneous API
+            # calls trips new accounts' rate limits (the Lindsey Graham
+            # incident — two of three searches silently 429'd)
+            def _verify_staggered(args):
+                pos, idx = args
+                time.sleep(pos * 1.2)
+                _verify(idx)
+
             with ThreadPoolExecutor(max_workers=len(selected)) as ex:
-                list(ex.map(_verify, selected))
- 
+                list(ex.map(_verify_staggered, enumerate(selected)))
+
         _set_job(job_id, stage="assembling")
         result["claims"] = claims
         result = build_report(result)
@@ -199,39 +223,49 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
     except Exception:
         _set_job(job_id, status="error",
                  error="Unexpected error while checking this link.")
- 
- 
+
+
 # ------------------------------------------------------------ routes
- 
- 
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     return _page()
- 
- 
+
+
 @app.get("/r/{key:path}", response_class=HTMLResponse)
 def permalink_page(key: str) -> str:
     # same single-page app; its JS loads /api/result/<key>
     return _page()
- 
- 
+
+
 class CheckRequest(BaseModel):
     url: str
     force: bool = False  # true = ignore the cache and re-run (recheck)
     captcha_token: str = ""  # Turnstile token (required when captcha is on)
- 
- 
+
+
 @app.post("/api/check")
 def api_check(req: CheckRequest, request: Request):
-    """Start a check. Cached -> full result immediately; else a job id."""
-    url_key = canonical_key(req.url)
+    """Start a check of a video URL OR a typed claim."""
+    raw = (req.url or "").strip()
+    if not looks_like_url(raw):
+        if len(raw) < 12:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "Type a full claim to check (a sentence), "
+                                   "or paste a video link."},
+            )
+        url_key = text_key(raw)
+    else:
+        url_key = canonical_key(raw)
     cached = None if req.force else get_cached(url_key)
     if cached is not None:
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
             build_report(cached)
         return cached
- 
+
     # ---- armor: cached results above stay free & unlimited; fresh runs
     # must pass the bot check, per-visitor rate limit, and daily budget ----
     if not _verify_turnstile(req.captcha_token, _client_ip(request)):
@@ -262,15 +296,15 @@ def api_check(req: CheckRequest, request: Request):
             )},
         )
     add_usage(COST_PER_CHECK_EST)
- 
+
     job_id = uuid.uuid4().hex[:12]
     _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
         target=_run_pipeline, args=(job_id, req.url, url_key), daemon=True
     ).start()
     return {"job_id": job_id}
- 
- 
+
+
 @app.get("/api/job/{job_id}")
 def api_job(job_id: str):
     with _jobs_lock:
@@ -285,8 +319,8 @@ def api_job(job_id: str):
                         "Please try again."}
     job.pop("started", None)
     return job
- 
- 
+
+
 @app.get("/api/result/{key:path}")
 def api_result(key: str):
     cached = get_cached(key)
@@ -296,8 +330,8 @@ def api_result(key: str):
     if "report" not in cached:
         build_report(cached)
     return cached
- 
- 
+
+
 @app.post("/api/ingest")
 def api_ingest(req: CheckRequest):
     """Transcript only (kept for testing the ingest stage in isolation)."""
@@ -310,9 +344,8 @@ def api_ingest(req: CheckRequest):
             status_code=500,
             content={"detail": "Unexpected error while processing this link."},
         )
- 
- 
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "glowby", "version": VERSION}
- 

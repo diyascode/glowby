@@ -70,6 +70,23 @@ def canonical_key(url: str) -> str:
     return f"url:{host}{path.rstrip('/')}" + (f"?{clean_query}" if clean_query else "")
 
 
+def text_key(text: str) -> str:
+    """Stable cache key for a TYPED claim: normalized, hashed.
+    'The moon is cheese' and '  the MOON is cheese ' share one key."""
+    import hashlib
+
+    norm = re.sub(r"\s+", " ", (text or "").strip().lower())
+    return "text:" + hashlib.sha256(norm.encode("utf-8")).hexdigest()[:20]
+
+
+def looks_like_url(s: str) -> bool:
+    s = (s or "").strip()
+    if s.startswith(("http://", "https://")):
+        return True
+    # bare domains like youtube.com/watch?v=... typed without the scheme
+    return bool(re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(/|$)", s.lower()))
+
+
 # ------------------------------------------------------------ postgres cache
 
 
