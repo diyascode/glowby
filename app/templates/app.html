@@ -99,7 +99,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.12.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
+  <footer>v0.13.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
 </div>
 
 <script>
@@ -140,6 +140,7 @@ function chips(c){
   if(c.secondary_bucket)h+=' <span class="cat">+ '+esc(c.secondary_bucket)+'</span>';
   if(riskColor[c.risk_level])h+=' <span class="cat" style="color:'+riskColor[c.risk_level]+';border-color:'+riskColor[c.risk_level]+'">'+esc(c.risk_level)+' risk</span>';
   if(c.developing_story)h+=' <span class="cat">⏳ developing</span>';
+  if(c.central===false)h+=' <span class="cat">side detail</span>';
   if(c.gate_label==='prediction')h+=' <span class="cat">prediction</span>';
   if(c.public_safety_risk)h+=' <span class="cat" style="color:var(--bad);border-color:var(--bad)">⚠ public safety</span>';
   return h;

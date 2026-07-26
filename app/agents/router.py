@@ -115,6 +115,10 @@ Dual-tag when a claim genuinely touches two buckets (one fact, two \
 lenses): set secondary_bucket. A tear between two buckets IS the answer.
 
 Also per claim:
+- central: true if this claim expresses or directly supports the video's \
+MAIN message — the thing the video exists to say; false for asides, \
+background details, and passing mentions. Judge by the video's emphasis, \
+NOT by what a manipulative creator might frame as minor.
 - confidence: 0.0-1.0 that the primary bucket is right
 - risk_level: "low" | "medium" | "high" | "critical". Elevate for: medical \
 instruction, election mechanics, emergency instruction, named-person \
@@ -138,8 +142,8 @@ Respond with ONLY a JSON array (no prose, no code fences), one element per \
 claim unit:
 {{"claim": "...", "quote": "verbatim-ish words from transcript", \
 "gate_label": "...", "bucket": "...", "secondary_bucket": null, \
-"confidence": 0.0, "risk_level": "...", "public_safety_risk": false, \
-"developing_story": false, "reason": "..."}}
+"central": true, "confidence": 0.0, "risk_level": "...", \
+"public_safety_risk": false, "developing_story": false, "reason": "..."}}
 For parked units (opinion/satire/etc.) still include the element with its \
 gate_label; bucket may be "other". If the transcript contains nothing worth \
 examining, return []."""
@@ -271,6 +275,9 @@ def parse_router_response(raw: str):
             "gate_label": gate,
             "bucket": bucket,
             "secondary_bucket": secondary,
+            # default True: unlabeled claims COUNT toward the headline —
+            # the safe failure mode (centrality can't be gamed downward)
+            "central": bool(item.get("central", True)),
             "confidence": round(conf, 2),
             "risk_level": risk,
             "public_safety_risk": bool(item.get("public_safety_risk", False)),

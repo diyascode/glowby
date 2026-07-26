@@ -77,12 +77,24 @@ def build_report(result: dict) -> dict:
         if v.get("verdict"):
             v["verdict"] = BANNED_INTENSIFIERS.sub("", v["verdict"]).strip()
 
-    scores = [
-        c["verdict"]["truth_score"]
-        for c in judged
-        if c["verdict"].get("truth_score") is not None
+    # CENTRALITY-GATED MIN: the headline is set by the video's MAIN-point
+    # claims, plus any side claim that is high/critical risk (dangerous
+    # asides always count — the anti-smuggling backstop). Harmless side
+    # details are judged and shown but don't drag the headline.
+    scored = [c for c in judged if c["verdict"].get("truth_score") is not None]
+    counting = [
+        c for c in scored
+        if c.get("central", True) or c.get("risk_level") in ("high", "critical")
     ]
+    if not counting:  # nothing central was scorable — fall back to all
+        counting = scored
+    scores = [c["verdict"]["truth_score"] for c in counting]
     headline = round(min(scores), 1) if scores else None
+    # disclosure: a non-counting side claim scored lower than the headline
+    side_lower = headline is not None and any(
+        c["verdict"]["truth_score"] < headline
+        for c in scored if c not in counting
+    )
 
     # safety collapse (spec: named critical protocol)
     safety_notice = None
@@ -103,6 +115,8 @@ def build_report(result: dict) -> dict:
             if headline >= cutoff:
                 state, label = s, text
                 break
+        if side_lower:
+            label += " A side detail scored lower - see below."
 
     title = (result.get("title") or "this video").strip()
     if headline is None:
