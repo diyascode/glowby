@@ -46,8 +46,19 @@ def gather_evidence(claim: str) -> dict:
         web_result = web.result()
     if web_result is None:  # technical failure after retries
         return {"fact_checks": fc.result(), "web_sources": [],
-                "search_failed": True}
-    return {"fact_checks": fc.result(), "web_sources": web_result}
+                "search_failed": True, "search_rounds": 1}
+    fact_checks = fc.result()
+    if web_result or fact_checks:
+        return {"fact_checks": fact_checks, "web_sources": web_result,
+                "search_rounds": 1}
+    # ROUND 2 — escalation: round one found nothing at all. Hunt again,
+    # harder, from different angles, before any verdict is reached.
+    deeper = search_web_evidence(claim, deep=True)
+    if deeper is None:
+        return {"fact_checks": fact_checks, "web_sources": [],
+                "search_failed": True, "search_rounds": 2}
+    return {"fact_checks": fact_checks, "web_sources": deeper,
+            "search_rounds": 2}
 
 
 # ------------------------------------------------ Google Fact Check Tools
@@ -138,12 +149,29 @@ SEARCH_TOOLS_FULL = [
 SEARCH_TOOLS_BASIC = SEARCH_TOOLS_FULL[:1]  # web_search only
 
 
-def search_web_evidence(claim: str):
+DEEP_PROMPT_SUFFIX = """
+
+THIS IS A SECOND-ROUND DEEP SEARCH — the first round found NOTHING. Before \
+concluding nothing exists: (1) rephrase the claim into 2-3 different search \
+angles (key entities, alternate wordings, the event it implies); (2) \
+explicitly search for hoax/debunk coverage ("<claim topic> hoax", "<claim \
+topic> fact check", "did <event> happen"); (3) check whether the claim is \
+the KIND that would certainly produce major coverage if true (a death of a \
+public figure, a disaster, a new law) — if so and you still find silence, \
+return a "context" source documenting what you searched and found absent, \
+quoting the most relevant page you DID find (e.g. the person's live \
+official page, recent news about them). Only return [] if you truly \
+exhausted these angles."""
+
+
+def search_web_evidence(claim: str, deep: bool = False):
     """Ask Claude (with web search) for stance-tagged sources.
 
     Returns a list (possibly empty = genuinely nothing found), or None
     when every attempt failed TECHNICALLY (rate limit, tool rejection).
     Retry ladder: full tools -> wait -> full tools -> basic tools.
+    deep=True runs the escalated second-round hunt (more searches,
+    reformulated angles, hoax checks).
     """
     import time as _time
 
@@ -159,7 +187,13 @@ def search_web_evidence(claim: str):
         (SEARCH_TOOLS_FULL, 8),   # rate-limit windows are short; wait it out
         (SEARCH_TOOLS_BASIC, 4),  # in case the fetch tool itself is rejected
     ]
+    prompt_text = PROMPT.format(claim=claim[:500], max_sources=MAX_WEB_SOURCES)
+    if deep:
+        prompt_text += DEEP_PROMPT_SUFFIX
     for tools, wait in attempts:
+        if deep:  # deeper round gets more searches
+            tools = [dict(t) for t in tools]
+            tools[0]["max_uses"] = 6
         if wait:
             _time.sleep(wait)
         try:
@@ -167,14 +201,7 @@ def search_web_evidence(claim: str):
                 model=MODEL,
                 max_tokens=2500,
                 tools=tools,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": PROMPT.format(
-                            claim=claim[:500], max_sources=MAX_WEB_SOURCES
-                        ),
-                    }
-                ],
+                messages=[{"role": "user", "content": prompt_text}],
             )
         except Exception:
             continue

@@ -112,6 +112,16 @@ explicitly stating the OPPOSITE of the claim. If the evidence does not \
 directly address the claim's core assertion, rule "insufficient" or \
 "unverifiable" instead. Never assert what a document "does not say" unless \
 the evidence includes the document's complete relevant section.
+- BUT SILENCE CAN SPEAK (expected-coverage test): when the claim is of a \
+kind that would CERTAINLY produce major, easily-findable coverage if true \
+(the death of a public figure, a major disaster, a landmark law, a \
+record-shattering event) AND a two-round search ({search_rounds} rounds ran \
+for this claim) still found no trace of it, that silence is genuine \
+evidence AGAINST the claim: rule "insufficient" with a LOW score (1.5-3.5) \
+and say plainly: "if this were true, major coverage would exist — none was \
+found." This applies ONLY to would-be-big-news claims. For quiet, local, or \
+niche claims where silence is expected either way, "unverifiable" remains \
+correct. Reserve "unverifiable" for exactly those cases — not as a default.
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
@@ -186,6 +196,7 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
         fact_checks=_format_fact_checks(evidence),
         web_sources=_format_web_sources(evidence),
         max_sources=MAX_KEY_SOURCES,
+        search_rounds=evidence.get("search_rounds", 1) if isinstance(evidence, dict) else 1,
     )
 
     client = anthropic.Anthropic(api_key=api_key)
