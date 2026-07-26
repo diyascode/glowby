@@ -18,7 +18,7 @@
   .tag{color:var(--muted);margin:0 0 6px}
   .alive{display:inline-block;padding:.35rem .9rem;border-radius:999px;background:#16351f;color:var(--good);font-weight:600;font-size:.85rem}
   form{margin-top:1.6rem;display:flex;gap:.5rem}
-  input[type=url]{flex:1;padding:.8rem 1rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:1rem}
+  input[type=text]{flex:1;padding:.8rem 1rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:1rem}
   button{padding:.8rem 1.3rem;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:1rem;font-weight:700;cursor:pointer}
   button:disabled{opacity:.5;cursor:wait}
   /* progress stepper */
@@ -82,26 +82,26 @@
 <body>
 <div class="wrap">
   <h1>Glowby</h1>
-  <p class="tag">Paste a link, get a fact-check.</p>
+  <p class="tag">Paste a link or type a claim — get a fact-check.</p>
   <div class="alive">&#9679; Glowby is alive</div>
- 
+
   <form id="f">
-    <input type="url" id="url" placeholder="Paste a YouTube, TikTok or news video link..." required>
+    <input type="text" id="url" placeholder="Paste a video link — or type any claim to fact-check..." required>
     <button id="go" type="submit">Check</button>
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
- 
+
   <div id="steps">
     <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
     <div class="step" id="st1"><div class="dot"></div><span>Sorting claims into categories (the gate &amp; router)</span></div>
     <div class="step" id="st2"><div class="dot"></div><span>Hunting evidence &amp; judging under category rulebooks</span></div>
     <div class="step" id="st3"><div class="dot"></div><span>Assembling your report</span></div>
   </div>
- 
+
   <div id="out"></div>
-  <footer>v0.10.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
+  <footer>v0.11.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
 </div>
- 
+
 <script>
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -110,7 +110,7 @@ const vLabel={supported:'✓ Supported',partly_supported:'⚠ Partly supported',
 const vClass={supported:'v-g',partly_supported:'v-a',provisional:'v-a',insufficient:'v-a',contradicted:'v-r',unverifiable:'v-n',not_scoreable:'v-n'};
 const stanceIcon={supports:'✓',refutes:'✗',mixed:'⚠',context:'ℹ'};
 const riskColor={critical:'#f87171',high:'#ec835a'};
-const whyLabel={no_sources_found:'no reliable sources could be found',sources_dont_address_claim:'the sources found don\u2019t speak to this exact claim',conflicting_sources:'credible sources conflict without resolution',too_new_to_verify:'this is developing \u2014 reliable sources haven\u2019t caught up yet',speculation_no_data:'it\u2019s speculation with no data to check against',depends_on_definition:'it depends on whose definition you use',guilt_gate:'it\u2019s an allegation awaiting official findings \u2014 Glowby doesn\u2019t judge guilt'};
+const whyLabel={no_sources_found:'no reliable sources could be found',sources_dont_address_claim:'the sources found don\u2019t speak to this exact claim',conflicting_sources:'credible sources conflict without resolution',too_new_to_verify:'this is developing \u2014 reliable sources haven\u2019t caught up yet',speculation_no_data:'it\u2019s speculation with no data to check against',depends_on_definition:'it depends on whose definition you use',guilt_gate:'it\u2019s an allegation awaiting official findings \u2014 Glowby doesn\u2019t judge guilt',search_error:'the evidence search hit a technical problem \u2014 use Re-check to try again'};
 const ringColor=(s)=>s===null||s===undefined?'#9aa0b0':(s>=7.5?'#4ade80':(s>=4.0?'#fab219':'#f87171'));
 let currentResult=null, currentView='list';
 // ---- bot protection (Cloudflare Turnstile); dormant without a site key ----
@@ -124,7 +124,7 @@ if(tsOn){
 }
 const tsToken=()=>tsOn&&window.turnstile?(turnstile.getResponse()||''):'';
 const tsReset=()=>{if(tsOn&&window.turnstile)try{turnstile.reset();}catch(e){}};
- 
+
 function ringSVG(score,size,width){
   const r=(size/2)-width-1, c=2*Math.PI*r;
   const frac=(score===null||score===undefined)?0:Math.max(.03,score/9.9);
@@ -291,4 +291,3 @@ $('f').addEventListener('submit',async(e)=>{
 </script>
 </body>
 </html>
- 
