@@ -99,7 +99,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.13.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
+  <footer>v0.13.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
 </div>
 
 <script>
@@ -174,7 +174,7 @@ function renderList(d){
   const rep=d.report||{};
   let html='';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
-  html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+' · transcript: '+esc(d.transcript_source)+'</div>';
+  html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+'</div>';
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
   const cnt=rep.counts||{};
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+

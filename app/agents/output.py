@@ -61,6 +61,10 @@ SAFETY_LABEL = (
 UNSAFE_VERDICT_STATES = {"unverifiable", "insufficient", "contradicted",
                          "not_scoreable", "provisional"}
 
+# a low-risk side detail can cap the headline down to this floor, but
+# never below it — "mostly checks out" is the worst a wrong aside can do
+SIDE_DETAIL_FLOOR = 7.5
+
 
 def build_report(result: dict) -> dict:
     """Attach the assembled report to a pipeline result. Returns result."""
@@ -77,23 +81,39 @@ def build_report(result: dict) -> dict:
         if v.get("verdict"):
             v["verdict"] = BANNED_INTENSIFIERS.sub("", v["verdict"]).strip()
 
-    # CENTRALITY-GATED MIN: the headline is set by the video's MAIN-point
-    # claims, plus any side claim that is high/critical risk (dangerous
-    # asides always count — the anti-smuggling backstop). Harmless side
-    # details are judged and shown but don't drag the headline.
+    # CENTRALITY-GATED MIN WITH SIDE-DETAIL CAP: main-point claims (plus
+    # any high/critical-risk side claim — the anti-smuggling backstop)
+    # count at FULL weight. A harmless side detail can't drag the video
+    # into "mixed/misleading" territory... but it DOES cap the headline
+    # at SIDE_DETAIL_FLOOR ("mostly checks out"): a video with a wrong
+    # side detail can be green, never near-perfect.
     scored = [c for c in judged if c["verdict"].get("truth_score") is not None]
     counting = [
         c for c in scored
         if c.get("central", True) or c.get("risk_level") in ("high", "critical")
     ]
-    if not counting:  # nothing central was scorable — fall back to all
-        counting = scored
-    scores = [c["verdict"]["truth_score"] for c in counting]
-    headline = round(min(scores), 1) if scores else None
-    # disclosure: a non-counting side claim scored lower than the headline
+    if counting:
+        # sides that fully check out (accurate band, >= 8.0) leave the
+        # headline alone; a questionable side enters the MIN clamped up
+        # to the floor — it caps, never craters
+        effective = [c["verdict"]["truth_score"] for c in counting] + [
+            max(c["verdict"]["truth_score"], SIDE_DETAIL_FLOOR)
+            for c in scored
+            if c not in counting and c["verdict"]["truth_score"] < 8.0
+        ]
+    else:  # nothing central was scorable — every side claim counts fully
+        effective = [c["verdict"]["truth_score"] for c in scored]
+    headline = round(min(effective), 1) if effective else None
+    # disclosure: a side claim scored below the headline (raw), i.e. it
+    # was softened by the floor or simply sits under the main claims
     side_lower = headline is not None and any(
         c["verdict"]["truth_score"] < headline
         for c in scored if c not in counting
+    )
+    side_capped = (
+        headline is not None and counting
+        and headline < round(min(
+            c["verdict"]["truth_score"] for c in counting), 1)
     )
 
     # safety collapse (spec: named critical protocol)
@@ -115,7 +135,10 @@ def build_report(result: dict) -> dict:
             if headline >= cutoff:
                 state, label = s, text
                 break
-        if side_lower:
+        if side_capped:
+            label += (" The score is capped because a side detail didn't "
+                      "fully check out - see below.")
+        elif side_lower:
             label += " A side detail scored lower - see below."
 
     title = (result.get("title") or "this video").strip()

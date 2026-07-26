@@ -43,7 +43,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.13.0"
+VERSION = "0.13.2"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -170,12 +170,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
         result["url_key"] = url_key
 
         _set_job(job_id, stage="routing")
+        posted = result.get("posted_date")
         claims = route_claims(
             result["transcript"],
             title=result["title"],
             platform=result["platform"],
             uploader=result["uploader"],
         )
+        for c in claims:
+            c["posted_date"] = posted
         try:
             save_route_audit(url_key, url, claims, ROUTER_MODEL, TAXONOMY_VERSION)
         except Exception:

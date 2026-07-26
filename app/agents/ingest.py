@@ -135,12 +135,18 @@ def ingest(url: str) -> dict:
             f"videos up to {MAX_DURATION_SECONDS // 60} minutes."
         )
 
+    raw_date = str(info.get("upload_date") or "")  # yt-dlp: YYYYMMDD
+    posted = (
+        f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+        if len(raw_date) == 8 else None
+    )
     result = {
         "url": url,
         "platform": platform,
         "title": info.get("title") or "(untitled)",
         "uploader": info.get("uploader") or info.get("channel") or "(unknown)",
         "duration_seconds": duration,
+        "posted_date": posted,
         "transcript": None,
         "transcript_source": None,
     }
@@ -231,6 +237,7 @@ def _youtube_fallback(url: str):
         "title": title,
         "uploader": uploader,
         "duration_seconds": 0,  # unknown via this door
+        "posted_date": None,
         "transcript": text,
         "transcript_source": "captions",
     }

@@ -219,6 +219,7 @@ def select_for_verification(claims: list, limit: int = 3) -> list:
     forward.sort(
         key=lambda i: (
             RISK_ORDER.get(claims[i].get("risk_level", "low"), 3),
+            not claims[i].get("central", True),  # main-point claims first
             -float(claims[i].get("confidence", 0.0)),
         )
     )

@@ -134,6 +134,15 @@ matters with no public record, claims too vague to pin down, or quiet \
 local/niche matters where silence proves nothing either way. It is the \
 exception, never the default.
 
+- TEMPORAL FAIRNESS: the truth score protects a viewer acting on this \
+claim TODAY. But when the claim was accurate at the time the video was \
+posted (posted: {posted_date}) and was later outdated by events, the \
+verdict sentence MUST say so ("accurate when this video was posted; \
+outdated since ..."). Expired truth reads as partly_supported with a \
+mid-high score; a claim that was NEVER true reads much lower. Also watch \
+the reverse trick: old footage or old claims resurfacing as if current — \
+if the posting date makes "recent"-sounding claims stale, say that.
+
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
 
@@ -204,6 +213,7 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
         web_sources=_format_web_sources(evidence),
         max_sources=MAX_KEY_SOURCES,
         search_rounds=evidence.get("search_rounds", 1) if isinstance(evidence, dict) else 1,
+        posted_date=claim.get("posted_date") or "unknown",
     )
 
     client = anthropic.Anthropic(api_key=api_key)
