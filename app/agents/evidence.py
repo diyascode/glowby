@@ -35,14 +35,19 @@ def gather_evidence(claim: str) -> dict:
     """Main entry point: one claim in, evidence bundle out.
 
     The two evidence hunts (fact-check database + web search) run in
-    parallel — they are independent network calls.
+    parallel. A TECHNICAL failure of the web search is reported as
+    search_failed=True — never disguised as "no sources found."
     """
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=2) as ex:
         fc = ex.submit(search_fact_check_db, claim)
         web = ex.submit(search_web_evidence, claim)
-        return {"fact_checks": fc.result(), "web_sources": web.result()}
+        web_result = web.result()
+    if web_result is None:  # technical failure after retries
+        return {"fact_checks": fc.result(), "web_sources": [],
+                "search_failed": True}
+    return {"fact_checks": fc.result(), "web_sources": web_result}
 
 
 # ------------------------------------------------ Google Fact Check Tools
@@ -115,51 +120,69 @@ true; context = background that helps judge it. Use only URLs that appeared \
 in your search results. If you find no relevant sources, return []."""
 
 
-def search_web_evidence(claim: str) -> list:
-    """Ask Claude (with web search) for stance-tagged sources. [] on failure."""
+SEARCH_TOOLS_FULL = [
+    {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": MAX_WEB_SEARCHES,
+    },
+    {
+        # lets the agent OPEN a page and read it in full — search
+        # snippets alone caused a wrong verdict once (18 USC 112)
+        "type": "web_fetch_20250910",
+        "name": "web_fetch",
+        "max_uses": 2,
+        "max_content_tokens": 40000,
+    },
+]
+SEARCH_TOOLS_BASIC = SEARCH_TOOLS_FULL[:1]  # web_search only
+
+
+def search_web_evidence(claim: str):
+    """Ask Claude (with web search) for stance-tagged sources.
+
+    Returns a list (possibly empty = genuinely nothing found), or None
+    when every attempt failed TECHNICALLY (rate limit, tool rejection).
+    Retry ladder: full tools -> wait -> full tools -> basic tools.
+    """
+    import time as _time
+
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        return []
+        return None
 
     import anthropic
 
     client = anthropic.Anthropic(api_key=api_key)
-    try:
-        message = client.messages.create(
-            model=MODEL,
-            max_tokens=2500,
-            tools=[
-                {
-                    "type": "web_search_20250305",
-                    "name": "web_search",
-                    "max_uses": MAX_WEB_SEARCHES,
-                },
-                {
-                    # lets the agent OPEN a page and read it in full —
-                    # search snippets alone caused a wrong verdict once
-                    # (18 USC 112: snippets skipped the operative clause)
-                    "type": "web_fetch_20250910",
-                    "name": "web_fetch",
-                    "max_uses": 2,
-                    "max_content_tokens": 40000,
-                },
-            ],
-            messages=[
-                {
-                    "role": "user",
-                    "content": PROMPT.format(
-                        claim=claim[:500], max_sources=MAX_WEB_SOURCES
-                    ),
-                }
-            ],
+    attempts = [
+        (SEARCH_TOOLS_FULL, 0),
+        (SEARCH_TOOLS_FULL, 8),   # rate-limit windows are short; wait it out
+        (SEARCH_TOOLS_BASIC, 4),  # in case the fetch tool itself is rejected
+    ]
+    for tools, wait in attempts:
+        if wait:
+            _time.sleep(wait)
+        try:
+            message = client.messages.create(
+                model=MODEL,
+                max_tokens=2500,
+                tools=tools,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": PROMPT.format(
+                            claim=claim[:500], max_sources=MAX_WEB_SOURCES
+                        ),
+                    }
+                ],
+            )
+        except Exception:
+            continue
+        raw = "".join(
+            b.text for b in message.content if getattr(b, "type", "") == "text"
         )
-    except Exception:
-        return []
-
-    raw = "".join(
-        block.text for block in message.content if getattr(block, "type", "") == "text"
-    )
-    return parse_web_evidence(raw)
+        return parse_web_evidence(raw)
+    return None
 
 
 def parse_web_evidence(raw: str) -> list:

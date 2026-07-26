@@ -143,6 +143,17 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
     bucket = claim.get("bucket", "other")
 
     if _no_evidence(evidence):
+        if isinstance(evidence, dict) and evidence.get("search_failed"):
+            return {
+                "truth_score": None,
+                "verdict_state": "unverifiable",
+                "verdict": "Glowby's evidence search hit a technical problem "
+                "for this claim — this is not a judgment about the claim. "
+                "Use 'Re-check this video' to try again.",
+                "evidence_strength": "none",
+                "key_sources": [],
+                "why_unverifiable": "search_error",
+            }
         return {
             "truth_score": None,
             "verdict_state": "unverifiable",
@@ -303,7 +314,7 @@ def parse_judge_response(raw: str, allowed_urls=None):
     WHY_VOCAB = {
         "no_sources_found", "sources_dont_address_claim",
         "conflicting_sources", "too_new_to_verify", "speculation_no_data",
-        "depends_on_definition", "guilt_gate",
+        "depends_on_definition", "guilt_gate", "search_error",
     }
     why = data.get("why_unverifiable")
     if state in NULL_SCORE_STATES:
