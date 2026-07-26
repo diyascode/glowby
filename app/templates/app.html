@@ -99,7 +99,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.13.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
+  <footer>v0.14.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
 </div>
 
 <script>
@@ -151,6 +151,8 @@ function claimCard(c){
   if(c.verdict){
     badge='<br><span class="verdict '+(vClass[c.verdict.verdict_state]||'v-n')+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'</span>';
     if(c.verdict.why_unverifiable)badge+='<div class="vsum" style="color:var(--muted)">Why: '+(whyLabel[c.verdict.why_unverifiable]||esc(c.verdict.why_unverifiable))+'.</div>';
+  }else if(c.verifying){
+    badge='<br><span class="verdict v-n" style="animation:pulse 1s infinite alternate">🔎 Checking sources…</span>';
   }else{
     badge='<br><span class="meta">Not verified in this pass.</span>';
   }
@@ -167,14 +169,14 @@ function claimCard(c){
   detail+=ev+'</div></details>';
   const circle=c.verdict
     ?'<div style="flex:0 0 auto">'+ringSVG(c.verdict.truth_score===null?null:c.verdict.truth_score,46,4)+'</div>'
-    :'<div class="score">···</div>';
+    :'<div class="score"'+(c.verifying?' style="animation:pulse 1s infinite alternate"':'')+'>···</div>';
   return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b>'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
 }
 function renderList(d){
   const rep=d.report||{};
   let html='';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
-  html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+'</div>';
+  html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
   const cnt=rep.counts||{};
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
@@ -248,14 +250,27 @@ function setStage(stage){
   $('steps').style.display='block';
   for(let i=0;i<4;i++){const el=$('st'+i);el.className='step'+(i<idx?' done':(i===idx?' on':''));}
 }
+function renderLive(p){
+  const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
+  const show=(p.claims||[]).filter(fwd);
+  const queued=show.filter(c=>c.verdict||c.verifying);
+  const done=show.filter(c=>c.verdict).length;
+  let html='<div class="meta">'+esc(p.platform||'')+' · '+esc(p.title||'')+' · '+esc(p.uploader||'')+(p.posted_date?' · posted '+esc(p.posted_date):'')+'</div>';
+  html+='<div class="headline"><div class="hero-ring">'+ringSVG(undefined,170,12)+'</div>'+
+    '<div class="hl-label">Verifying claims — '+done+' of '+(queued.length||show.length)+' judged…</div>'+
+    '<div class="hl-sub">Results appear live · the score arrives when the last claim is judged</div></div>';
+  for(const c of show)html+=claimCard(c);
+  return html;
+}
 async function poll(jobId){
-  for(let i=0;i<150;i++){
-    await new Promise(r=>setTimeout(r,2000));
+  for(let i=0;i<250;i++){
+    await new Promise(r=>setTimeout(r,1200));
     let j;
     try{j=await(await fetch('/api/job/'+jobId)).json();}catch(e){continue;}
     if(j.status==='done'){return j.result;}
     if(j.status==='error'){throw new Error(j.error||'Something went wrong.');}
     setStage(j.stage);
+    if(j.partial){$('out').style.display='block';$('out').innerHTML=renderLive(j.partial);}
   }
   throw new Error('Timed out. Please try again.');
 }

@@ -43,7 +43,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.13.2"
+VERSION = "0.14.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -149,8 +149,23 @@ def _set_job(job_id: str, **fields) -> None:
                 _jobs.pop(k, None)
 
 
+def _publish_partial(job_id: str, result: dict, claims: list) -> None:
+    """Push a live snapshot so the UI can show claims as they finish."""
+    import copy
+
+    _set_job(job_id, partial={
+        "platform": result.get("platform"),
+        "title": result.get("title"),
+        "uploader": result.get("uploader"),
+        "posted_date": result.get("posted_date"),
+        "transcript_source": result.get("transcript_source"),
+        "claims": copy.deepcopy(claims),
+    })
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
     try:
+        t0 = time.time()
         if url_key.startswith("text:"):
             # typed claim: no video to fetch — enter at the router
             _set_job(job_id, status="running", stage="routing")
@@ -168,6 +183,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
             _set_job(job_id, status="running", stage="fetching")
             result = ingest(url)
         result["url_key"] = url_key
+        t_fetch = time.time() - t0
 
         _set_job(job_id, stage="routing")
         posted = result.get("posted_date")
@@ -184,7 +200,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
         except Exception:
             pass
 
-        _set_job(job_id, stage="judging")
+        t_route = time.time() - t0 - t_fetch
 
         def _verify(i: int) -> None:
             try:
@@ -201,23 +217,39 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
                     "evidence_strength": "none",
                     "key_sources": [],
                 }
+            # live update: this claim's card fills in immediately
+            claims[i]["verifying"] = False
+            _publish_partial(job_id, result, claims)
 
         selected = select_for_verification(claims, MAX_CLAIMS_WITH_EVIDENCE)
+        for i in selected:
+            claims[i]["verifying"] = True
+        _set_job(job_id, stage="judging")
+        _publish_partial(job_id, result, claims)
         if selected:
-            # stagger launches ~1.2s apart: a burst of simultaneous API
-            # calls trips new accounts' rate limits (the Lindsey Graham
-            # incident — two of three searches silently 429'd)
+            # stagger launches ~0.5s apart: a burst of simultaneous API
+            # calls can trip rate limits (the Lindsey Graham incident);
+            # the evidence agent's retry ladder covers the rest
             def _verify_staggered(args):
                 pos, idx = args
-                time.sleep(pos * 1.2)
+                time.sleep(pos * 0.5)
                 _verify(idx)
 
             with ThreadPoolExecutor(max_workers=len(selected)) as ex:
                 list(ex.map(_verify_staggered, enumerate(selected)))
 
         _set_job(job_id, stage="assembling")
+        t_verify = time.time() - t0 - t_fetch - t_route
+        for c in claims:
+            c.pop("verifying", None)
         result["claims"] = claims
         result = build_report(result)
+        result["timings"] = {
+            "fetch_s": round(t_fetch, 1),
+            "route_s": round(t_route, 1),
+            "verify_s": round(t_verify, 1),
+            "total_s": round(time.time() - t0, 1),
+        }
         result["cached"] = False
         save_result(url_key, url, result)
         _set_job(job_id, status="done", result=result)
