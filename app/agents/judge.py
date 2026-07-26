@@ -119,9 +119,20 @@ record-shattering event) AND a two-round search ({search_rounds} rounds ran \
 for this claim) still found no trace of it, that silence is genuine \
 evidence AGAINST the claim: rule "insufficient" with a LOW score (1.5-3.5) \
 and say plainly: "if this were true, major coverage would exist — none was \
-found." This applies ONLY to would-be-big-news claims. For quiet, local, or \
-niche claims where silence is expected either way, "unverifiable" remains \
-correct. Reserve "unverifiable" for exactly those cases — not as a default.
+found."
+- BURDEN OF PROOF ON ASSERTIONS: a claim that asserts something WORKS, IS \
+TRUE, or HAPPENED carries the burden of proof. If the hunt (after \
+{search_rounds} rounds) found no supporting evidence for an asserted \
+treatment effect, product claim, or factual assertion whose evidence \
+SHOULD exist if real (studies, records, coverage), rule "insufficient" \
+with a low score (2.0-3.5): "no evidence supports this claim" IS a \
+verdict, not a shrug. Note this cuts one way: lack of support lowers the \
+score; it never justifies "contradicted" without an explicitly refuting \
+source.
+- RESERVE "unverifiable" for the genuinely uninvestigable: private/personal \
+matters with no public record, claims too vague to pin down, or quiet \
+local/niche matters where silence proves nothing either way. It is the \
+exception, never the default.
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
@@ -152,27 +163,23 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
     """Judge one routed claim under its category rubric."""
     bucket = claim.get("bucket", "other")
 
-    if _no_evidence(evidence):
-        if isinstance(evidence, dict) and evidence.get("search_failed"):
-            return {
-                "truth_score": None,
-                "verdict_state": "unverifiable",
-                "verdict": "Glowby's evidence search hit a technical problem "
-                "for this claim — this is not a judgment about the claim. "
-                "Use 'Re-check this video' to try again.",
-                "evidence_strength": "none",
-                "key_sources": [],
-                "why_unverifiable": "search_error",
-            }
+    # a TECHNICAL search failure still short-circuits — no judge can rule
+    # on a hunt that never ran
+    if isinstance(evidence, dict) and evidence.get("search_failed"):
         return {
             "truth_score": None,
             "verdict_state": "unverifiable",
-            "verdict": "No professional fact-checks or credible web sources "
-            "were found for this claim, so Glowby won't guess.",
+            "verdict": "Glowby's evidence search hit a technical problem "
+            "for this claim — this is not a judgment about the claim. "
+            "Use 'Re-check this video' to try again.",
             "evidence_strength": "none",
             "key_sources": [],
-            "why_unverifiable": "no_sources_found",
+            "why_unverifiable": "search_error",
         }
+    # NOTE: an EMPTY-but-successful hunt no longer short-circuits. The
+    # category judge rules on it under its rubric's burden-of-proof
+    # logic (the peptide lesson: "no evidence supports this" is a LOW
+    # SCORE for an asserted treatment claim, not a shrug).
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:

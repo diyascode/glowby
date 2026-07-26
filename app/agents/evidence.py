@@ -155,8 +155,10 @@ THIS IS A SECOND-ROUND DEEP SEARCH — the first round found NOTHING. Before \
 concluding nothing exists: (1) rephrase the claim into 2-3 different search \
 angles (key entities, alternate wordings, the event it implies); (2) \
 explicitly search for hoax/debunk coverage ("<claim topic> hoax", "<claim \
-topic> fact check", "did <event> happen"); (3) check whether the claim is \
-the KIND that would certainly produce major coverage if true (a death of a \
+topic> fact check", "did <event> happen"); (3) hunt SMALL and LOCAL sources — local newspapers, school/city \
+meeting minutes, niche journals and preprints, PDFs, specialist forums \
+with named authors: obscure-but-true claims live there; (4) check whether \
+the claim is the KIND that would certainly produce major coverage if true (a death of a \
 public figure, a disaster, a new law) — if so and you still find silence, \
 return a "context" source documenting what you searched and found absent, \
 quoting the most relevant page you DID find (e.g. the person's live \
