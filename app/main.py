@@ -44,7 +44,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.16.1"
+VERSION = "0.16.2"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -151,17 +151,25 @@ def _set_job(job_id: str, **fields) -> None:
 
 
 def _publish_partial(job_id: str, result: dict, claims: list) -> None:
-    """Push a live snapshot so the UI can show claims as they finish."""
+    """Push a live snapshot so the UI can show claims as they finish.
+
+    Never raises: verifier threads mutate `claims` concurrently, and a
+    rare mid-copy race must not kill the whole check — the next
+    snapshot (or the final result) supersedes a skipped one anyway.
+    """
     import copy
 
-    _set_job(job_id, partial={
-        "platform": result.get("platform"),
-        "title": result.get("title"),
-        "uploader": result.get("uploader"),
-        "posted_date": result.get("posted_date"),
-        "transcript_source": result.get("transcript_source"),
-        "claims": copy.deepcopy(claims),
-    })
+    try:
+        _set_job(job_id, partial={
+            "platform": result.get("platform"),
+            "title": result.get("title"),
+            "uploader": result.get("uploader"),
+            "posted_date": result.get("posted_date"),
+            "transcript_source": result.get("transcript_source"),
+            "claims": copy.deepcopy(claims),
+        })
+    except Exception:
+        pass
 
 
 def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
@@ -425,8 +433,20 @@ def api_result(key: str):
 
 
 @app.post("/api/ingest")
-def api_ingest(req: CheckRequest):
-    """Transcript only (kept for testing the ingest stage in isolation)."""
+def api_ingest(req: CheckRequest, request: Request):
+    """Transcript only (kept for testing the ingest stage in isolation).
+
+    Armored like /api/check: this endpoint triggers paid downloads and
+    Whisper transcription, so it must never be a free side door around
+    the bot check, rate limit, and daily budget.
+    """
+    if not _verify_turnstile(req.captcha_token, _client_ip(request)):
+        return JSONResponse(status_code=403, content={"detail": "Bot check failed."})
+    if _rate_limited(_client_ip(request)):
+        return JSONResponse(status_code=429, content={"detail": "Rate limit reached."})
+    _, spent = today_usage()
+    if spent >= DAILY_BUDGET_USD:
+        return JSONResponse(status_code=503, content={"detail": "Daily budget reached."})
     try:
         return ingest(req.url)
     except IngestError as e:

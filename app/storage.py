@@ -49,14 +49,18 @@ def canonical_key(url: str) -> str:
         if m:
             return f"youtube:{m.group(2)}"
 
-    # --- TikTok: /@user/video/1234567890, vm.tiktok.com/SHORTCODE
+    # --- TikTok: /@user/video/1234567890, /t/SHORTCODE, vm.tiktok.com/CODE
     if host.endswith("tiktok.com"):
-        m = re.search(r"/video/(\d+)", path)
+        m = re.search(r"/(?:video|photo)/(\d+)", path)
         if m:
             return f"tiktok:{m.group(1)}"
-        code = path.strip("/").split("/")[0]
-        if code:
-            return f"tiktok:{code}"
+        segs = [s for s in path.split("/") if s]
+        # short-link prefixes: the CODE is the next segment, never the
+        # prefix itself (/t/ABC and /t/XYZ are DIFFERENT videos)
+        if len(segs) > 1 and segs[0].lower() in ("t", "v", "embed"):
+            return f"tiktok:{segs[1]}"
+        if segs:
+            return f"tiktok:{segs[0]}"
 
     # --- X / Twitter: /user/status/1234567890
     if host in ("x.com", "twitter.com") or host.endswith(".twitter.com"):
