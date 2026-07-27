@@ -156,6 +156,30 @@ For parked units (opinion/satire/etc.) still include the element with its \
 gate_label; bucket may be "other". If the transcript contains nothing worth \
 examining, return []."""
 
+TYPED_RULE = """
+
+TYPED-CLAIM RULE (this input is NOT a video): the text above was typed \
+directly into the fact-checker by a user asking for verification. Treat it \
+as an intended factual assertion: gate it "factual" unless it is \
+unmistakably pure opinion with no factual core, a question, or explicit \
+satire. Vague or missing context (partial names, an unnamed show or place) \
+is NEVER grounds to park a typed claim — forward it and let the evidence \
+hunt resolve who or what it refers to."""
+
+
+def build_prompt(transcript: str, title: str, platform: str,
+                 uploader: str) -> str:
+    p = PROMPT.format(
+        max_claims=MAX_CLAIMS,
+        title=title or "(unknown)",
+        platform=platform or "(unknown)",
+        uploader=uploader or "(unknown)",
+        transcript=transcript[:15000],
+    )
+    if (platform or "").strip().lower() == "typed claim":
+        p += TYPED_RULE
+    return p
+
 
 def route_claims(transcript: str, title: str = "", platform: str = "",
                  uploader: str = "") -> list:
@@ -185,13 +209,7 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
 
     import anthropic
 
-    prompt = PROMPT.format(
-        max_claims=MAX_CLAIMS,
-        title=title or "(unknown)",
-        platform=platform or "(unknown)",
-        uploader=uploader or "(unknown)",
-        transcript=transcript[:15000],
-    )
+    prompt = build_prompt(transcript, title, platform, uploader)
     client = anthropic.Anthropic(api_key=api_key)
     last_err = None
     got_unreadable = False
@@ -200,6 +218,7 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
             message = client.messages.create(
                 model=mdl,
                 max_tokens=4000,
+                temperature=0,  # same input -> same gate/routing decision
                 messages=[{"role": "user", "content": prompt}],
             )
         except Exception as e:

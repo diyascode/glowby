@@ -221,6 +221,7 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
         message = client.messages.create(
             model=MODEL,
             max_tokens=1200,
+            temperature=0,  # same claim + same evidence -> same verdict
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception:
