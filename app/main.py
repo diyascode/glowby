@@ -43,7 +43,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.15.0"
+VERSION = "0.15.1"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -287,6 +287,20 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
     return _page()
+
+
+_TRUST_PATH = os.path.join(os.path.dirname(__file__), "templates", "trust.html")
+_trust_cache = None
+
+
+@app.get("/about", response_class=HTMLResponse)
+def about() -> str:
+    """Trust pages: methodology, ratings, corrections, terms, privacy."""
+    global _trust_cache
+    if _trust_cache is None:
+        with open(_TRUST_PATH, encoding="utf-8") as f:
+            _trust_cache = f.read()
+    return _trust_cache
 
 
 @app.get("/r/{key:path}", response_class=HTMLResponse)
