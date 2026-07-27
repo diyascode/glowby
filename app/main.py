@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from app.agents.answer import answer_question
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -44,7 +45,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.17.1"
+VERSION = "0.18.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -229,6 +230,42 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
             save_route_audit(url_key, url, claims, ROUTER_MODEL, TAXONOMY_VERSION)
         except Exception:
             pass
+
+        # ANSWER MODE: a typed QUESTION gets a sourced answer, not a
+        # rating — a question isn't true or false. Statements still get
+        # the full judging pipeline below.
+        if (url_key.startswith("text:") and claims
+                and any(c.get("gate_label") == "question" for c in claims)
+                and not any(c.get("gate_label") in ("factual", "prediction")
+                            for c in claims)):
+            _set_job(job_id, stage="judging")
+            q = result["transcript"]
+            try:
+                evidence = gather_evidence(q)
+            except Exception:
+                evidence = {"fact_checks": [], "web_sources": []}
+            ans = answer_question(q, evidence)
+            result["claims"] = claims
+            result["answer_mode"] = True
+            result["question"] = q
+            result["answer"] = ans or (
+                "Glowby couldn't find enough reliable evidence to answer "
+                "this question — try rephrasing it, or check back later.")
+            result["evidence"] = evidence
+            result["report"] = {
+                "headline_score": None,
+                "headline_state": "answer",
+                "headline_label": "Answer",
+                "share_text": f"Glowby answered: “{q}”",
+                "counts": {"claim_units": len(claims), "judged": 0,
+                           "not_judged": 0, "parked": len(claims)},
+                "safety_notice": None,
+            }
+            result["timings"] = {"total_s": round(time.time() - t0, 1)}
+            result["cached"] = False
+            save_result(url_key, url, result)
+            _set_job(job_id, status="done", result=result)
+            return
 
         t_route = time.time() - t0 - t_fetch
 

@@ -100,7 +100,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.17.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.18.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -179,6 +179,18 @@ function renderList(d){
   let html='';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
   html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
+  if(d.answer_mode){
+    html+='<div class="headline"><div style="font-size:1.9rem;margin-bottom:6px">💡</div>'+
+      '<div class="hl-label">'+esc(d.answer||'')+'</div>'+
+      '<div class="hl-sub">Answer from sources — questions get answers, statements get ratings</div></div>';
+    let aev='';
+    const afcs=(d.evidence&&d.evidence.fact_checks)||[], awebs=(d.evidence&&d.evidence.web_sources)||[];
+    for(const fc of afcs)aev+='<div class="src">📝 <a href="'+esc(fc.url)+'" target="_blank" rel="noopener">'+esc(fc.publisher)+'</a>: rated “'+esc(fc.rating)+'”</div>';
+    for(const w of awebs)aev+='<div class="src">'+(stanceIcon[w.stance]||'ℹ')+' <a href="'+esc(w.url)+'" target="_blank" rel="noopener">'+esc(w.source)+'</a>: “'+esc(w.quote)+'”</div>';
+    if(aev)html+='<div class="claim"><div class="ctext" style="flex:1"><b>Sources</b>'+aev+'</div></div>';
+    else html+='<div class="meta">No sources could be gathered for this answer.</div>';
+    return html;
+  }
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
   const cnt=rep.counts||{};
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
