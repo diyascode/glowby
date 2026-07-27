@@ -188,28 +188,31 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
         transcript=transcript[:15000],
     )
     client = anthropic.Anthropic(api_key=api_key)
-    message, last_err = None, None
+    last_err = None
+    got_unreadable = False
     for mdl in dict.fromkeys([FAST_MODEL, MODEL]):  # fast first, then main
         try:
             message = client.messages.create(
                 model=mdl,
-                max_tokens=2500,
+                max_tokens=4000,
                 messages=[{"role": "user", "content": prompt}],
             )
-            break
         except Exception as e:
             last_err = e
-    if message is None:
-        raise RouterError(
-            f"The router failed to run. (Details: {str(last_err)[:200]})")
-
-    raw = "".join(
-        b.text for b in message.content if getattr(b, "type", "") == "text"
-    )
-    claims = parse_router_response(raw)
-    if claims is None:
+            continue
+        raw = "".join(
+            b.text for b in message.content if getattr(b, "type", "") == "text"
+        )
+        claims = parse_router_response(raw)
+        if claims is not None:
+            return claims
+        # unreadable output ALSO falls through to the next model — the
+        # fast model answering badly must never kill the whole check
+        got_unreadable = True
+    if got_unreadable:
         raise RouterError("The router returned an unreadable response.")
-    return claims
+    raise RouterError(
+        f"The router failed to run. (Details: {str(last_err)[:200]})")
 
 
 def _is_known_satire(text: str) -> bool:
@@ -253,7 +256,15 @@ def parse_router_response(raw: str):
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return None
+        # salvage a truncated array (output cut off mid-claim): keep
+        # every complete claim object, drop the broken tail
+        last = text.rfind("}")
+        if last == -1:
+            return None
+        try:
+            data = json.loads(text[: last + 1] + "]")
+        except json.JSONDecodeError:
+            return None
     if not isinstance(data, list):
         return None
 
