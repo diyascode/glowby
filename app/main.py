@@ -44,7 +44,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.16.2"
+VERSION = "0.17.1"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -278,12 +278,12 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
         _set_job(job_id, stage="judging")
         _publish_partial(job_id, result, claims)
         if selected:
-            # stagger launches ~0.5s apart: a burst of simultaneous API
+            # stagger launches ~0.3s apart: a burst of simultaneous API
             # calls can trip rate limits (the Lindsey Graham incident);
             # the evidence agent's retry ladder covers the rest
             def _verify_staggered(args):
                 pos, idx = args
-                time.sleep(pos * 0.5)
+                time.sleep(pos * 0.3)
                 _verify(idx)
 
             with ThreadPoolExecutor(max_workers=len(selected)) as ex:

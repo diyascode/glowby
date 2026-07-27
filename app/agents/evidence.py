@@ -24,7 +24,10 @@ import urllib.parse
 import urllib.request
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
-MAX_WEB_SEARCHES = 3
+# round one is LEAN (easy claims finish fast); the deep second round —
+# which now also fires on weak evidence, not just empty — carries the
+# hard claims. Speed for the easy 80%, MORE scrutiny for the hard 20%.
+MAX_WEB_SEARCHES = 2
 MAX_WEB_SOURCES = 4
 MAX_FACT_CHECKS = 3
 
@@ -48,12 +51,23 @@ def gather_evidence(claim: str) -> dict:
         return {"fact_checks": fc.result(), "web_sources": [],
                 "search_failed": True, "search_rounds": 1}
     fact_checks = fc.result()
-    if web_result or fact_checks:
+    # STRONG-ENOUGH TEST: real evidence = a professional fact-check, or
+    # at least one web source that actually supports/refutes/mixes.
+    # Background-only ("context") findings are NOT enough to judge on.
+    stances = {w.get("stance") for w in (web_result or [])}
+    strong_enough = bool(fact_checks) or bool(stances & {"supports", "refutes", "mixed"})
+    if strong_enough:
         return {"fact_checks": fact_checks, "web_sources": web_result,
                 "search_rounds": 1}
-    # ROUND 2 — escalation: round one found nothing at all. Hunt again,
-    # harder, from different angles, before any verdict is reached.
+    # ROUND 2 — escalation: round one found nothing, or found only weak
+    # background. Hunt again, harder, from different angles, before any
+    # verdict is reached.
     deeper = search_web_evidence(claim, deep=True)
+    if deeper is not None and web_result:
+        # keep round one's context sources alongside the deep findings
+        seen = {w["url"] for w in deeper}
+        deeper = deeper + [w for w in web_result if w["url"] not in seen]
+        deeper = deeper[:MAX_WEB_SOURCES]
     if deeper is None:
         return {"fact_checks": fact_checks, "web_sources": [],
                 "search_failed": True, "search_rounds": 2}
@@ -142,8 +156,8 @@ SEARCH_TOOLS_FULL = [
         # snippets alone caused a wrong verdict once (18 USC 112)
         "type": "web_fetch_20250910",
         "name": "web_fetch",
-        "max_uses": 2,
-        "max_content_tokens": 40000,
+        "max_uses": 1,
+        "max_content_tokens": 20000,
     },
 ]
 SEARCH_TOOLS_BASIC = SEARCH_TOOLS_FULL[:1]  # web_search only
@@ -193,9 +207,11 @@ def search_web_evidence(claim: str, deep: bool = False):
     if deep:
         prompt_text += DEEP_PROMPT_SUFFIX
     for tools, wait in attempts:
-        if deep:  # deeper round gets more searches
+        if deep:  # deeper round gets more searches AND more page-reads
             tools = [dict(t) for t in tools]
             tools[0]["max_uses"] = 6
+            if len(tools) > 1:
+                tools[1]["max_uses"] = 2
         if wait:
             _time.sleep(wait)
         try:

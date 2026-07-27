@@ -159,27 +159,27 @@ def ingest(url: str) -> dict:
     }
 
     # --- Path 1: caption tracks (free) ---
-    whisper_err = None
     transcript = _transcript_from_captions(info)
     if transcript:
         result["transcript"] = transcript
         result["transcript_source"] = "captions"
-    else:
-        # --- Path 2: Whisper transcription (paid fallback) ---
-        try:
-            result["transcript"] = _transcript_from_whisper(url)
-            result["transcript_source"] = "whisper"
-        except IngestError as e:
-            # don't give up yet — the video may still SHOW its claims
-            whisper_err = e
-            result["transcript"] = ""
-            result["transcript_source"] = "none"
+        if _is_thin(transcript):  # rare: caption track is just music tags
+            frames = _frames_from_video(url)
+            if frames:
+                result["frames"] = frames
+        return result
 
-    # --- Path 3: the eyes. Little or no speech? Sample frames so the
-    # vision agent can read what the video SHOWS (diagrams, charts,
-    # on-screen text, trajectories). ---
+    # --- Path 2+3 combined: no captions -> download the video ONCE and
+    # feed both the ears (audio -> Whisper) and the eyes (frames).
+    # v0.16 downloaded twice for silent videos; this is the speed fix.
+    text, frames, whisper_err = _transcribe_and_see(url)
+    if text:
+        result["transcript"] = text
+        result["transcript_source"] = "whisper"
+    else:
+        result["transcript"] = ""
+        result["transcript_source"] = "none"
     if _is_thin(result["transcript"]):
-        frames = _frames_from_video(url)
         if frames:
             result["frames"] = frames
         elif not result["transcript"]:
@@ -194,6 +194,119 @@ def ingest(url: str) -> dict:
 def _is_thin(text) -> bool:
     """A transcript too thin to carry the video's claims by itself."""
     return len((text or "").split()) < 20
+
+
+def _transcribe_and_see(url: str, max_frames: int = 6):
+    """Download the video ONCE; feed both ears and eyes from it.
+
+    Returns (transcript, frames, error): transcript is None when audio
+    failed or was silent; frames may still be present (silent videos
+    make their claims visually); error is the user-facing IngestError
+    explaining the audio side, for when frames can't save the check.
+    """
+    import subprocess
+
+    import yt_dlp
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        outpath = os.path.join(tmpdir, "vid.%(ext)s")
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "format": "best[height<=480]/worst/bestvideo+bestaudio/best",
+            "outtmpl": outpath,
+            **({"proxy": _proxy_url()} if _proxy_url() else {}),
+        }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            if detect_platform(url) == "tiktok":
+                return None, [], IngestError(
+                    "TikTok blocked this particular video — that happens "
+                    "with some TikToks (they fight automated tools hard, "
+                    "and photo slideshows can't be read at all). Try again "
+                    "in a few minutes, or try a different link.")
+            return None, [], IngestError(
+                "This video has no captions and could not be downloaded "
+                f"for analysis. (Details: {str(e)[:200]})")
+        vids = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
+        if not vids:
+            return None, [], IngestError("The video download produced no file.")
+        vid = max(vids, key=os.path.getsize)
+
+        frames = _sample_frames(vid, tmpdir, max_frames)
+
+        # audio track -> mp3 -> Whisper
+        audio = os.path.join(tmpdir, "audio.mp3")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-i", vid, "-vn", "-acodec", "libmp3lame",
+                 "-q:a", "5", "-y", audio],
+                capture_output=True, timeout=120)
+        except Exception:
+            pass
+        if not os.path.exists(audio) or os.path.getsize(audio) == 0:
+            return None, frames, IngestError(
+                "This video's audio could not be extracted (it may be silent).")
+        if os.path.getsize(audio) > 25 * 1024 * 1024:
+            return None, frames, IngestError(
+                "The audio for this video is too large to transcribe (over 25MB).")
+        try:
+            return _whisper_file(audio), frames, None
+        except IngestError as e:
+            return None, frames, e
+
+
+def _whisper_file(audio_file: str):
+    """Transcribe one audio file with Whisper. None when it hears nothing."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise IngestError(
+            "This video has no captions, and Whisper transcription is not "
+            "configured (missing OPENAI_API_KEY).")
+
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key)
+    try:
+        with open(audio_file, "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1", file=f)
+    except Exception as e:
+        raise IngestError(f"Transcription failed. (Details: {str(e)[:200]})")
+    return (transcription.text or "").strip() or None
+
+
+def _sample_frames(vid: str, tmpdir: str, max_frames: int = 6) -> list:
+    """Sample frames evenly from a downloaded video file -> base64 JPEGs."""
+    import base64
+    import subprocess
+
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", vid],
+            capture_output=True, text=True, timeout=30)
+        duration = max(1.0, float(probe.stdout.strip()))
+    except Exception:
+        duration = 30.0
+    frames = []
+    for i in range(max_frames):
+        t = duration * (i + 0.5) / max_frames
+        fp = os.path.join(tmpdir, f"frame{i}.jpg")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v", "1",
+                 "-vf", "scale=640:-2", "-q:v", "5", "-y", fp],
+                capture_output=True, timeout=30)
+        except Exception:
+            continue
+        if os.path.exists(fp) and os.path.getsize(fp) > 0:
+            with open(fp, "rb") as fh:
+                frames.append(base64.b64encode(fh.read()).decode())
+    return frames
 
 
 def _frames_from_video(url: str, max_frames: int = 6) -> list:
@@ -224,27 +337,7 @@ def _frames_from_video(url: str, max_frames: int = 6) -> list:
             if not vids:
                 return []
             vid = max(vids, key=os.path.getsize)
-            try:
-                probe = subprocess.run(
-                    ["ffprobe", "-v", "error", "-show_entries",
-                     "format=duration", "-of",
-                     "default=noprint_wrappers=1:nokey=1", vid],
-                    capture_output=True, text=True, timeout=30)
-                duration = max(1.0, float(probe.stdout.strip()))
-            except Exception:
-                duration = 30.0
-            frames = []
-            for i in range(max_frames):
-                t = duration * (i + 0.5) / max_frames
-                fp = os.path.join(tmpdir, f"frame{i}.jpg")
-                subprocess.run(
-                    ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v",
-                     "1", "-vf", "scale=640:-2", "-q:v", "5", "-y", fp],
-                    capture_output=True, timeout=30)
-                if os.path.exists(fp) and os.path.getsize(fp) > 0:
-                    with open(fp, "rb") as fh:
-                        frames.append(base64.b64encode(fh.read()).decode())
-            return frames
+            return _sample_frames(vid, tmpdir, max_frames)
     except Exception:
         return []
 
@@ -376,78 +469,3 @@ def parse_json3_captions(data: dict):
     return text or None
 
 
-# ---------------------------------------------------------------- whisper
-
-
-def _transcript_from_whisper(url: str) -> str:
-    """Download the audio track and transcribe it with OpenAI Whisper."""
-    import yt_dlp
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise IngestError(
-            "This video has no captions, and Whisper transcription is not "
-            "configured (missing OPENAI_API_KEY)."
-        )
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        outpath = os.path.join(tmpdir, "audio.%(ext)s")
-        ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "outtmpl": outpath,
-            **({"proxy": _proxy_url()} if _proxy_url() else {}),
-            # convert whatever the site serves (HLS streams, .ts, etc.)
-            # into MP3 — Whisper only accepts a fixed list of formats
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "96",
-            }],
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        except Exception as e:
-            raise IngestError(
-                f"This video has no captions and the audio could not be "
-                f"downloaded for transcription. (Details: {str(e)[:200]})"
-            )
-
-        audio_files = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
-        if not audio_files:
-            raise IngestError("Audio download produced no file.")
-        # prefer a Whisper-supported format if several files were produced
-        supported = {".flac", ".m4a", ".mp3", ".mp4", ".mpeg", ".mpga",
-                     ".oga", ".ogg", ".wav", ".webm"}
-        preferred = [f for f in audio_files
-                     if os.path.splitext(f)[1].lower() in supported]
-        if not preferred:
-            raise IngestError(
-                "This site's audio format isn't supported yet. Try a "
-                "YouTube link for this story instead."
-            )
-        audio_file = preferred[0]
-
-        if os.path.getsize(audio_file) > 25 * 1024 * 1024:
-            raise IngestError(
-                "The audio for this video is too large to transcribe (over 25MB)."
-            )
-
-        from openai import OpenAI
-
-        client = OpenAI(api_key=api_key)
-        try:
-            with open(audio_file, "rb") as f:
-                transcription = client.audio.transcriptions.create(
-                    model="whisper-1", file=f
-                )
-        except Exception as e:
-            raise IngestError(f"Transcription failed. (Details: {str(e)[:200]})")
-
-    text = (transcription.text or "").strip()
-    if not text:
-        raise IngestError("Transcription produced no text (silent video?).")
-    return text
