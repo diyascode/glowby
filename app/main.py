@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
+from app.agents.vision import describe_frames
 from app.agents.output import build_report
 from app.agents.router import (
     MODEL as ROUTER_MODEL,
@@ -43,7 +44,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.15.3"
+VERSION = "0.16.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -183,6 +184,27 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
             _set_job(job_id, status="running", stage="fetching")
             result = ingest(url)
         result["url_key"] = url_key
+
+        # THE EYES: a thin transcript with sampled frames means the video
+        # makes its claims visually (animation, chart, on-screen text).
+        # The vision agent describes what the video asserts; that
+        # description enters the pipeline like any transcript.
+        frames = result.pop("frames", None)
+        if frames:
+            desc = describe_frames(
+                frames, result.get("title") or "", result.get("uploader") or "")
+            if desc:
+                base = (result.get("transcript") or "").strip()
+                visual = "[WHAT THE VIDEO VISUALLY SHOWS] " + desc
+                result["transcript"] = (base + "\n\n" + visual) if base else visual
+                result["transcript_source"] = (
+                    (result.get("transcript_source") or "none").replace("none", "")
+                    + "+visual analysis").lstrip("+")
+            elif not (result.get("transcript") or "").strip():
+                _set_job(job_id, status="error", error=(
+                    "This video has no speech or captions, and its visuals "
+                    "don't assert anything checkable."))
+                return
         t_fetch = time.time() - t0
 
         _set_job(job_id, stage="routing")

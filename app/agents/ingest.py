@@ -123,6 +123,13 @@ def ingest(url: str) -> dict:
                 "bot?'). This usually passes in a few minutes — please try "
                 "again shortly, or try a different video."
             )
+        if platform == "tiktok":
+            raise IngestError(
+                "TikTok blocked this particular video — that happens with "
+                "some TikToks (they fight automated tools hard, and photo "
+                "slideshows can't be read at all). Try again in a few "
+                "minutes, or try a different link."
+            )
         raise IngestError(
             f"Could not read this {platform} link. It may be private, deleted, "
             f"age-restricted, or an unsupported URL. (Details: {err_text[:200]})"
@@ -152,17 +159,94 @@ def ingest(url: str) -> dict:
     }
 
     # --- Path 1: caption tracks (free) ---
+    whisper_err = None
     transcript = _transcript_from_captions(info)
     if transcript:
         result["transcript"] = transcript
         result["transcript_source"] = "captions"
-        return result
+    else:
+        # --- Path 2: Whisper transcription (paid fallback) ---
+        try:
+            result["transcript"] = _transcript_from_whisper(url)
+            result["transcript_source"] = "whisper"
+        except IngestError as e:
+            # don't give up yet — the video may still SHOW its claims
+            whisper_err = e
+            result["transcript"] = ""
+            result["transcript_source"] = "none"
 
-    # --- Path 2: Whisper transcription (paid fallback) ---
-    transcript = _transcript_from_whisper(url)
-    result["transcript"] = transcript
-    result["transcript_source"] = "whisper"
+    # --- Path 3: the eyes. Little or no speech? Sample frames so the
+    # vision agent can read what the video SHOWS (diagrams, charts,
+    # on-screen text, trajectories). ---
+    if _is_thin(result["transcript"]):
+        frames = _frames_from_video(url)
+        if frames:
+            result["frames"] = frames
+        elif not result["transcript"]:
+            # no speech, no captions, no readable frames — now it's over
+            raise whisper_err or IngestError(
+                "This video has no captions or speech, and its visuals "
+                "could not be read either."
+            )
     return result
+
+
+def _is_thin(text) -> bool:
+    """A transcript too thin to carry the video's claims by itself."""
+    return len((text or "").split()) < 20
+
+
+def _frames_from_video(url: str, max_frames: int = 6) -> list:
+    """Download the video (lowest usable quality) and sample frames.
+
+    Returns a list of base64 JPEG strings, [] on any failure — vision is
+    an enhancement, never a reason to kill a check.
+    """
+    import base64
+    import subprocess
+
+    import yt_dlp
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outpath = os.path.join(tmpdir, "vid.%(ext)s")
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+                "format": "worst[height>=240]/worst/bestvideo+bestaudio/best",
+                "outtmpl": outpath,
+                **({"proxy": _proxy_url()} if _proxy_url() else {}),
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            vids = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
+            if not vids:
+                return []
+            vid = max(vids, key=os.path.getsize)
+            try:
+                probe = subprocess.run(
+                    ["ffprobe", "-v", "error", "-show_entries",
+                     "format=duration", "-of",
+                     "default=noprint_wrappers=1:nokey=1", vid],
+                    capture_output=True, text=True, timeout=30)
+                duration = max(1.0, float(probe.stdout.strip()))
+            except Exception:
+                duration = 30.0
+            frames = []
+            for i in range(max_frames):
+                t = duration * (i + 0.5) / max_frames
+                fp = os.path.join(tmpdir, f"frame{i}.jpg")
+                subprocess.run(
+                    ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v",
+                     "1", "-vf", "scale=640:-2", "-q:v", "5", "-y", fp],
+                    capture_output=True, timeout=30)
+                if os.path.exists(fp) and os.path.getsize(fp) > 0:
+                    with open(fp, "rb") as fh:
+                        frames.append(base64.b64encode(fh.read()).decode())
+            return frames
+    except Exception:
+        return []
 
 
 # ------------------------------------------------------- youtube fallback
