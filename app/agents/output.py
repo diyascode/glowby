@@ -52,6 +52,17 @@ UNVERIFIED_LABEL = (
     "evidence was found either way."
 )
 
+NO_CLAIMS_LABEL = (
+    "Glowby found no checkable factual claims in this video — "
+    "nothing to verify."
+)
+
+ALL_PARKED_LABEL = (
+    "This video contains only opinion, satire, or other non-factual "
+    "content — nothing here can be true or false, so there is nothing "
+    "to fact-check."
+)
+
 SAFETY_LABEL = (
     "⚠ This video contains emergency or safety instructions that could "
     "NOT be confirmed through official channels. Do not act on it; check "
@@ -128,7 +139,14 @@ def build_report(result: dict) -> dict:
     if safety_notice:
         state, label = "safety_alert", SAFETY_LABEL
     elif headline is None:
-        state, label = "unverified", UNVERIFIED_LABEL
+        # say the TRUE reason there's no score: no claims at all, only
+        # non-factual content, or real claims that couldn't be verified
+        if not claims:
+            state, label = "unverified", NO_CLAIMS_LABEL
+        elif not forward:
+            state, label = "unverified", ALL_PARKED_LABEL
+        else:
+            state, label = "unverified", UNVERIFIED_LABEL
     else:
         state, label = "misleading", STATE_BANDS[-1][2]
         for cutoff, s, text in STATE_BANDS:
@@ -143,7 +161,9 @@ def build_report(result: dict) -> dict:
 
     title = (result.get("title") or "this video").strip()
     if headline is None:
-        share_text = f"Glowby checked “{title}”: unverified — no reliable evidence found."
+        tail = ("no checkable claims found" if not forward
+                else "unverified — no reliable evidence found")
+        share_text = f"Glowby checked “{title}”: {tail}."
     else:
         share_text = (
             f"Glowby checked “{title}”: {headline}/10 — {state.replace('_', ' ')}."

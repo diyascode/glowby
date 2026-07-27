@@ -100,7 +100,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.15.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.15.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -183,7 +183,7 @@ function renderList(d){
   const cnt=rep.counts||{};
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-sub">Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score</div></div>';
+    '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div></div>';
   const claims=d.claims||[];
   const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
   const checked=claims.filter(c=>c.verdict);

@@ -69,6 +69,11 @@ assertions worth examining (most consequential first; health/safety first). \
 SEMANTIC UNITY RULE: conditional statements (if X then Y), comparative \
 dependencies, and causal claims ("X caused Y") are ONE claim unit — never \
 split a linkage into fragments; route by the core action clause or dual-tag.
+CAPTION RULE: the video title/caption is content too. Many short videos put \
+the actual claim in the caption or on-screen text while the audio is just \
+music or vibes. If the title/caption asserts a checkable claim the spoken \
+transcript doesn't, extract it as a claim unit (use the caption text as the \
+quote). If the transcript is only lyrics or filler, rely on the title/caption.
 
 STEP 2 — GATE each unit with exactly one label:
 - "factual": a checkable assertion about the world → moves forward
