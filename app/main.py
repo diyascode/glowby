@@ -45,7 +45,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.18.0"
+VERSION = "0.18.1"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -200,7 +200,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
         # description enters the pipeline like any transcript.
         frames = result.pop("frames", None)
         if frames:
-            desc = describe_frames(
+            # speculative vision may have already looked during ingest
+            desc = result.pop("visual_desc", None) or describe_frames(
                 frames, result.get("title") or "", result.get("uploader") or "")
             if desc:
                 base = (result.get("transcript") or "").strip()

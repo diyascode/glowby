@@ -170,9 +170,10 @@ def ingest(url: str) -> dict:
         return result
 
     # --- Path 2+3 combined: no captions -> download the video ONCE and
-    # feed both the ears (audio -> Whisper) and the eyes (frames).
-    # v0.16 downloaded twice for silent videos; this is the speed fix.
-    text, frames, whisper_err = _transcribe_and_see(url)
+    # feed both the ears (audio -> Whisper) and the eyes (frames) — in
+    # PARALLEL. Silent videos no longer wait for the ears to finish
+    # before the eyes start.
+    text, frames, visual_desc, whisper_err = _transcribe_and_see(url)
     if text:
         result["transcript"] = text
         result["transcript_source"] = "whisper"
@@ -182,6 +183,8 @@ def ingest(url: str) -> dict:
     if _is_thin(result["transcript"]):
         if frames:
             result["frames"] = frames
+            if visual_desc:
+                result["visual_desc"] = visual_desc
         elif not result["transcript"]:
             # no speech, no captions, no readable frames — now it's over
             raise whisper_err or IngestError(
@@ -196,15 +199,26 @@ def _is_thin(text) -> bool:
     return len((text or "").split()) < 20
 
 
-def _transcribe_and_see(url: str, max_frames: int = 6):
-    """Download the video ONCE; feed both ears and eyes from it.
+# speculative vision: on no-caption videos, run the EYES while Whisper
+# is still listening (parallel, not sequential). If the audio turns out
+# rich, the visual description is simply discarded (~1 cent). Silent
+# videos — which need it anyway — save the whole listening wait.
+SPECULATIVE_VISION = os.environ.get(
+    "GLOWBY_SPECULATIVE_VISION", "on").lower() in ("on", "true", "1", "yes")
 
-    Returns (transcript, frames, error): transcript is None when audio
-    failed or was silent; frames may still be present (silent videos
-    make their claims visually); error is the user-facing IngestError
-    explaining the audio side, for when frames can't save the check.
+
+def _transcribe_and_see(url: str, max_frames: int = 6):
+    """Download the video ONCE; feed both ears and eyes from it — at
+    the same time.
+
+    Returns (transcript, frames, visual_desc, error): transcript is None
+    when audio failed or was silent; frames may still be present (silent
+    videos make their claims visually); visual_desc is the eyes' report
+    when speculative vision ran (None otherwise); error is the
+    user-facing IngestError explaining the audio side.
     """
     import subprocess
+    from concurrent.futures import ThreadPoolExecutor
 
     import yt_dlp
 
@@ -223,22 +237,23 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
                 ydl.download([url])
         except Exception as e:
             if detect_platform(url) == "tiktok":
-                return None, [], IngestError(
+                return None, [], None, IngestError(
                     "TikTok blocked this particular video — that happens "
                     "with some TikToks (they fight automated tools hard, "
                     "and photo slideshows can't be read at all). Try again "
                     "in a few minutes, or try a different link.")
-            return None, [], IngestError(
+            return None, [], None, IngestError(
                 "This video has no captions and could not be downloaded "
                 f"for analysis. (Details: {str(e)[:200]})")
         vids = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
         if not vids:
-            return None, [], IngestError("The video download produced no file.")
+            return None, [], None, IngestError(
+                "The video download produced no file.")
         vid = max(vids, key=os.path.getsize)
 
         frames = _sample_frames(vid, tmpdir, max_frames)
 
-        # audio track -> mp3 -> Whisper
+        # audio track -> mp3
         audio = os.path.join(tmpdir, "audio.mp3")
         try:
             subprocess.run(
@@ -247,16 +262,45 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
                 capture_output=True, timeout=120)
         except Exception:
             pass
+
+        # eyes start looking NOW, in parallel with whatever the ears do
+        vision_future = None
+        if frames and SPECULATIVE_VISION:
+            pool = ThreadPoolExecutor(max_workers=1)
+            vision_future = pool.submit(_describe_safely, frames)
+            pool.shutdown(wait=False)
+
+        def _vision_result():
+            if vision_future is None:
+                return None
+            try:
+                return vision_future.result(timeout=60)
+            except Exception:
+                return None
+
         if not os.path.exists(audio) or os.path.getsize(audio) == 0:
-            return None, frames, IngestError(
+            return None, frames, _vision_result(), IngestError(
                 "This video's audio could not be extracted (it may be silent).")
         if os.path.getsize(audio) > 25 * 1024 * 1024:
-            return None, frames, IngestError(
+            return None, frames, _vision_result(), IngestError(
                 "The audio for this video is too large to transcribe (over 25MB).")
         try:
-            return _whisper_file(audio), frames, None
+            text = _whisper_file(audio)
         except IngestError as e:
-            return None, frames, e
+            return None, frames, _vision_result(), e
+        # rich speech -> the speculative description is discarded unread
+        desc = _vision_result() if _is_thin(text) else None
+        return text, frames, desc, None
+
+
+def _describe_safely(frames: list):
+    """Vision call that never raises (runs on a worker thread)."""
+    try:
+        from app.agents.vision import describe_frames
+
+        return describe_frames(frames)
+    except Exception:
+        return None
 
 
 def _whisper_file(audio_file: str):
