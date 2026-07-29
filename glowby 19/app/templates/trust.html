@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glowby — how it works &amp; the fine print</title>
+<style>
+  :root{color-scheme:dark;
+    --page:#0d0d0d;--surface:#171b26;--surface2:#0f1117;--ink:#e8eaf0;--ink2:#c9cdd8;
+    --muted:#9aa0b0;--border:#2a2f3d;--good:#4ade80;--warn:#fab219;--bad:#f87171;--brand:#7c6cf6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface2);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    display:flex;justify-content:center;min-height:100vh}
+  .wrap{width:100%;max-width:720px;padding:40px 18px 60px}
+  a{color:var(--brand)}
+  h1{font-size:1.9rem;margin:0 0 2px}
+  h2{font-size:1.2rem;margin:2.2rem 0 .5rem;padding-top:.5rem;border-top:1px solid var(--border)}
+  h3{font-size:.95rem;margin:1.1rem 0 .3rem;color:var(--ink)}
+  p,li{font-size:.92rem;line-height:1.6;color:var(--ink2)}
+  .muted{color:var(--muted);font-size:.85rem}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:10px 0}
+  .band{display:flex;gap:10px;align-items:baseline;margin:6px 0}
+  .band b{min-width:86px;font-size:.95rem}
+  .g{color:var(--good)} .y{color:var(--warn)} .r{color:var(--bad)} .n{color:var(--muted)}
+  .beta{display:inline-block;padding:.2rem .7rem;border-radius:999px;border:1px solid var(--warn);color:var(--warn);font-weight:700;font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
+  footer{margin-top:2.5rem;color:var(--muted);font-size:.8rem;border-top:1px solid var(--border);padding-top:1rem}
+  nav{margin:.8rem 0 0;font-size:.85rem}
+  nav a{margin-right:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Glowby</h1>
+  <p class="muted">Paste a link or type a claim — get a fact-check. <span class="beta">Public beta</span></p>
+  <nav>
+    <a href="/">← Back to Glowby</a>
+    <a href="#methodology">Methodology</a>
+    <a href="#ratings">The score</a>
+    <a href="#corrections">Corrections</a>
+    <a href="#terms">Terms</a>
+    <a href="#privacy">Privacy</a>
+  </nav>
+
+  <h2 id="methodology">How Glowby works</h2>
+  <p>Glowby is a multi-agent AI fact-checking system. Every check runs the same
+  pipeline, every time:</p>
+  <div class="card">
+    <p><b>1. Ingest.</b> Glowby fetches the video and gets its words — from the
+    platform's own captions when they exist, or by transcribing the audio.</p>
+    <p><b>2. The gate &amp; router.</b> The transcript is split into individual
+    claims. Opinions, satire, questions, jokes, ads, and personal stories are
+    <i>parked</i> — labeled and shown, but never "debunked," because they aren't
+    factual claims. Real checkable claims are filed into one of 13 topic
+    categories (politics, health, science, law, and so on).</p>
+    <p><b>3. Evidence.</b> For each claim checked, Glowby queries the
+    professional fact-checker database (PolitiFact, Reuters, Snopes and others
+    via Google's Fact Check Tools) and runs live web searches, reading actual
+    source pages — preferring scientific bodies, government agencies, major news
+    organizations, and academic sources. It looks for evidence <i>against</i>
+    the claim as well as for it. If the first hunt finds nothing, a deeper
+    second hunt runs with different search angles before any verdict is allowed.</p>
+    <p><b>4. Judgment.</b> A category judge scores each claim against a written
+    rubric for its topic. The rules the judges must follow include: absence of
+    evidence is not contradiction; the burden of proof is on the claim, not the
+    debunker; and temporal fairness — if a claim was accurate when the video was
+    posted and was outdated later by events, the verdict must say so.</p>
+    <p><b>5. Assembly.</b> Deterministic code — not AI judgment — combines the
+    claim scores into the headline score using the rules below, applies safety
+    protocols, and strips loaded language from verdicts.</p>
+  </div>
+  <p>Checked videos are stored, so anyone checking the same video later gets the
+  stored result instantly, with a note showing when it was first checked and a
+  Re-check option that runs everything fresh.</p>
+
+  <h2 id="ratings">What the score means</h2>
+  <p>One number per claim — the <b>truth score</b>, 0.0 to 9.9. A 10.0 is never
+  awarded: no claim is beyond all future evidence. The big number on a result is
+  the <b>Glowby Score</b> for the whole video:</p>
+  <div class="card">
+    <div class="band"><b class="g">8.0–9.9</b><span>Accurate — the judged claims check out.</span></div>
+    <div class="band"><b class="g">7.5–7.9</b><span>Mostly accurate — the judged claims mostly check out.</span></div>
+    <div class="band"><b class="y">4.0–7.4</b><span>Mixed — accurate and questionable claims together.</span></div>
+    <div class="band"><b class="r">0.0–3.9</b><span>Misleading — contains claims contradicted by evidence.</span></div>
+    <div class="band"><b class="n">—</b><span>Unverified — nothing could be reliably judged either way.</span></div>
+  </div>
+  <h3>How the headline score is built</h3>
+  <p>The score is set by the video's <b>main-point claims</b> — the lowest one
+  sets the number, so one true claim can never launder a false video. A harmless
+  side detail can't drag a video into "mixed" territory, but a side detail that
+  doesn't fully check out <b>caps</b> the score at 7.5 — a video with a wrong
+  aside can be green, never near-perfect. Exception: a side claim that is
+  dangerous if wrong (medical instructions, election mechanics, safety
+  directions) always counts at full weight. And if a video contains emergency
+  or safety instructions that could not be confirmed through official channels,
+  the whole report collapses to a safety alert, whatever the other claims say.</p>
+  <h3>Verdict labels</h3>
+  <p><b class="g">Supported</b> — credible evidence backs the claim.
+  <b class="y">Partly supported</b> — true in part, wrong or outdated in part.
+  <b class="y">Provisional</b> — early evidence leans one way on a developing story.
+  <b class="y">Insufficient evidence</b> — not enough to score fairly.
+  <b class="r">Contradicted</b> — credible evidence says otherwise.
+  <b class="n">Unverifiable</b> — can't be judged, and Glowby says why (no
+  sources found, sources conflict, too new, depends on definitions, or a
+  technical search problem — each shown on the claim).
+  <b class="n">Not scoreable</b> — not the kind of statement that can be true or false.</p>
+  <p>Unverifiable is a reserved verdict, not a shrug: judges must exhaust the
+  evidence hunt before using it, and an allegation awaiting official findings is
+  never scored as guilt — Glowby doesn't judge guilt, courts do.</p>
+
+  <h2 id="corrections">Corrections policy</h2>
+  <p>Glowby will get things wrong. What makes a fact-checker trustworthy isn't
+  perfection — it's what happens next:</p>
+  <p><b>Anyone can flag a mistake.</b> Every result has a "Report a mistake"
+  button. Reports go straight to the team (that is, to the founder — this is a
+  beta) and are reviewed against the sources.</p>
+  <p><b>Anyone can force a fresh look.</b> The Re-check button on any stored
+  result re-runs the entire pipeline with live searches and replaces the stored
+  result — corrections don't wait for us.</p>
+  <p><b>Wrong verdicts get fixed, not buried.</b> When a report shows Glowby
+  scored a claim wrongly, the stored result is corrected. Mistakes with a
+  lesson (a source misread, a rule gap) become improvements to the rubrics
+  and rules that all future checks use.</p>
+
+  <h2 id="terms">Terms of use</h2>
+  <p class="muted">Plain-language beta terms. Last updated August 2026.</p>
+  <p><b>Glowby is a public beta.</b> It is provided as-is, free, for personal,
+  non-commercial use. Scores and verdicts are AI-generated assessments of
+  publicly available evidence — they are informed opinions produced by a
+  documented method, not statements of absolute fact, and they can be wrong.</p>
+  <p><b>Not professional advice.</b> Nothing on Glowby is medical, legal,
+  financial, or safety advice. For emergencies and safety instructions, always
+  follow official channels — never a video, and never only Glowby.</p>
+  <p><b>Fair use of the service.</b> Don't abuse the site: no bots, scraping,
+  bulk automated checking, attempts to bypass rate limits, or use of Glowby to
+  harass people. We may rate-limit, block abusive traffic, or remove stored
+  results at our discretion.</p>
+  <p><b>Your input.</b> Links and claims you submit are processed and the
+  results stored so others benefit from them. Don't submit private or unlawful
+  content.</p>
+  <p><b>No warranty; limitation of liability.</b> To the fullest extent
+  permitted by law, Glowby is provided without warranties of any kind, and
+  Glowby's operator is not liable for decisions made based on its output.</p>
+  <p><b>Changes.</b> These terms and the service itself will change during the
+  beta; continued use means acceptance of the current version of this page.</p>
+
+  <h2 id="privacy">Privacy</h2>
+  <p class="muted">What Glowby stores and why. Last updated August 2026.</p>
+  <p><b>No accounts, no tracking profiles, no ads.</b> Glowby has no sign-up,
+  sets no advertising cookies, and does not sell or share data for marketing.</p>
+  <p><b>What is stored:</b> the links and typed claims you check, the
+  transcripts and fact-check results Glowby produces from them, and anonymous
+  counters (how often a stored result is viewed). Stored results are public by
+  design — that's what share links are.</p>
+  <p><b>IP addresses</b> are used in memory for rate limiting (stopping abuse)
+  and are not stored with results.</p>
+  <p><b>Services Glowby relies on</b> (each receives only what's needed to do
+  its job): Anthropic (AI analysis of transcripts, video frames, and
+  evidence), OpenAI (transcription of audio from videos without captions),
+  Google (fact-check database and video captions), Cloudflare (bot
+  protection), Webshare (a proxy that carries our video-fetching requests),
+  and Railway (hosting and database). Their own privacy policies govern
+  their processing.</p>
+  <p><b>Removal requests:</b> to ask for a stored result's removal (for
+  example, a video checked from your own private content), use the report
+  button on that result.</p>
+
+  <footer>Glowby public beta · <a href="/">glowby</a> · This page is part of
+  Glowby's methodology-first promise: the rules are written down, and the code
+  follows the rules.</footer>
+</div>
+</body>
+</html>
