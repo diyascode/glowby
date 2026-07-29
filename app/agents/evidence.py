@@ -23,7 +23,13 @@ import re
 import urllib.parse
 import urllib.request
 
-MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
+# The evidence agent SEARCHES AND QUOTES — it does not judge. Set
+# GLOWBY_EVIDENCE_MODEL=claude-haiku-4-5 (Railway Variables) to run the
+# hunt on the fast model: ~3-8s faster per claim. The judges stay on
+# the main model and re-read every quote, so verdict quality is theirs.
+# Keep the fast setting only if the golden set scores identically.
+MODEL = (os.environ.get("GLOWBY_EVIDENCE_MODEL")
+         or os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5"))
 # round one is LEAN (easy claims finish fast); the deep second round —
 # which now also fires on weak evidence, not just empty — carries the
 # hard claims. Speed for the easy 80%, MORE scrutiny for the hard 20%.
