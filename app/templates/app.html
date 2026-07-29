@@ -100,7 +100,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.18.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.18.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -239,7 +239,7 @@ function render(){
   const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
   html+='<div class="actions">';
   if(permalink)html+='<button id="copyLink">🔗 Copy share link</button>';
-  html+='<a href="mailto:reports@glowby.app?subject='+encodeURIComponent('Glowby mistake report')+'&body='+encodeURIComponent('Video: '+(d.url||'')+'\n\nWhat looks wrong:')+'">🛠 Report a mistake</a>';
+  html+='<a href="mailto:reports@glowby.io?subject='+encodeURIComponent('Glowby mistake report')+'&body='+encodeURIComponent('Video: '+(d.url||'')+'\n\nWhat looks wrong:')+'">🛠 Report a mistake</a>';
   html+='</div>';
   out.innerHTML=html;
   const rc=$('recheck');
