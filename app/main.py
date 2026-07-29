@@ -45,7 +45,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.18.3"
+VERSION = "0.19.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -352,8 +352,26 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
 # ------------------------------------------------------------ routes
 
 
+_INDEX_PATH = os.path.join(os.path.dirname(__file__), "templates", "index.html")
+_index_cache = None
+
+
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
+    """Landing page (Diya's design). Falls back to the checker if absent."""
+    global _index_cache
+    if _index_cache is None:
+        try:
+            with open(_INDEX_PATH, encoding="utf-8") as f:
+                _index_cache = f.read()
+        except OSError:
+            _index_cache = ""
+    return _index_cache or _page()
+
+
+@app.get("/app", response_class=HTMLResponse)
+def checker() -> str:
+    """The checker itself; ?u=<link> arrives prefilled from the landing."""
     return _page()
 
 
