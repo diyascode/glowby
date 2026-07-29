@@ -45,7 +45,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.19.0"
+VERSION = "0.19.1"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
