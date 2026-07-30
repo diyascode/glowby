@@ -239,6 +239,149 @@ def save_route_audit(item_key: str, url: str, claims: list,
         pass
 
 
+def list_recent_checks(limit: int = 12) -> list:
+    """Most recently checked items for the sidebar. [] on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT url_key, result->>'title', "
+                "result->'report'->>'headline_score', "
+                "result->'report'->>'headline_state', "
+                "(result->>'answer_mode') = 'true' "
+                "FROM checks ORDER BY created_at DESC LIMIT %s",
+                (limit,),
+            )
+            rows = cur.fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "url_key": r[0],
+                "title": (r[1] or "(untitled)")[:80],
+                "score": float(r[2]) if r[2] is not None else None,
+                "state": r[3] or "unverified",
+                "answer": bool(r[4]),
+            })
+        return out
+    except Exception:
+        return []
+
+
+# ------------------------------------------------------------ quality loop
+# Spec: corrections policy needs TRACKING — a report that vanishes into
+# email is a promise; a report row with a status is a system.
+
+
+def save_mistake_report(url_key: str, url: str, message: str,
+                        contact: str = "") -> bool:
+    """Store a user mistake report. False when storage is unavailable."""
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS mistake_reports (
+                    id BIGSERIAL PRIMARY KEY,
+                    url_key TEXT,
+                    url TEXT,
+                    message TEXT NOT NULL,
+                    contact TEXT,
+                    status TEXT NOT NULL DEFAULT 'new',
+                    resolution TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    resolved_at TIMESTAMPTZ
+                )
+                """
+            )
+            cur.execute(
+                "INSERT INTO mistake_reports (url_key, url, message, contact) "
+                "VALUES (%s, %s, %s, %s)",
+                (url_key[:200], url[:500], message[:2000], contact[:200]),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def list_mistake_reports(status: str = "") -> list:
+    """Reports newest-first, optionally filtered by status. [] on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            if status:
+                cur.execute(
+                    "SELECT id, url_key, url, message, contact, status, "
+                    "resolution, created_at, resolved_at FROM mistake_reports "
+                    "WHERE status = %s ORDER BY id DESC LIMIT 200", (status,))
+            else:
+                cur.execute(
+                    "SELECT id, url_key, url, message, contact, status, "
+                    "resolution, created_at, resolved_at FROM mistake_reports "
+                    "ORDER BY id DESC LIMIT 200")
+            rows = cur.fetchall()
+        return [{
+            "id": r[0], "url_key": r[1], "url": r[2], "message": r[3],
+            "contact": r[4], "status": r[5], "resolution": r[6],
+            "created_at": r[7].isoformat() if r[7] else None,
+            "resolved_at": r[8].isoformat() if r[8] else None,
+        } for r in rows]
+    except Exception:
+        return []
+
+
+def resolve_mistake_report(report_id: int, status: str, note: str = "") -> bool:
+    """Mark a report reviewed/fixed/rejected with a resolution note."""
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE mistake_reports SET status = %s, resolution = %s, "
+                "resolved_at = now() WHERE id = %s",
+                (status[:40], note[:2000], report_id),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def quality_stats() -> dict:
+    """Aggregate quality metrics from stored checks. {} on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        out = {}
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*), COALESCE(sum(hits), 0) FROM checks")
+            row = cur.fetchone()
+            out["checks_stored"] = row[0]
+            out["total_views"] = int(row[1])
+            cur.execute(
+                "SELECT result->'report'->>'headline_state', count(*) "
+                "FROM checks GROUP BY 1 ORDER BY 2 DESC")
+            out["verdict_distribution"] = {
+                (r[0] or "unknown"): r[1] for r in cur.fetchall()}
+            cur.execute(
+                "SELECT round(avg((result->'timings'->>'total_s')::float)::numeric, 1) "
+                "FROM checks WHERE result->'timings'->>'total_s' IS NOT NULL")
+            row = cur.fetchone()
+            out["avg_check_seconds"] = float(row[0]) if row and row[0] is not None else None
+            cur.execute(
+                "SELECT status, count(*) FROM mistake_reports GROUP BY 1")
+            out["reports_by_status"] = {r[0]: r[1] for r in cur.fetchall()}
+        return out
+    except Exception:
+        return {}
+
+
 # ------------------------------------------------------------ daily usage
 # Armor: the cost kill-switch needs to know how much was spent today.
 

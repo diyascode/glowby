@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Glowby — paste a link, get a fact-check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{color-scheme:dark;
     --page:#0d0d0d;--surface:#171b26;--surface2:#0f1117;--ink:#e8eaf0;--ink2:#c9cdd8;
@@ -77,20 +80,112 @@
   .cchip{display:flex;align-items:center;gap:8px;background:rgba(13,13,13,.85);border:1px solid var(--border);border-radius:11px;padding:8px 10px;font-size:.78rem;color:var(--ink2);text-align:left}
   .reeltitle{position:absolute;top:14px;left:14px;right:90px;color:#fff;font-weight:700;font-size:.85rem;text-align:left;text-shadow:0 1px 4px #000}
   footer{margin-top:2rem;color:var(--muted);font-size:.8rem}
+  /* sidebar */
+  #sbBtn{position:fixed;top:14px;left:14px;z-index:60;width:40px;height:40px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--ink2);font-size:1.1rem;display:grid;place-items:center;cursor:pointer;padding:0}
+  #sbBtn:hover{border-color:var(--brand);color:var(--ink)}
+  #sb{position:fixed;top:0;left:0;bottom:0;width:280px;max-width:85vw;background:#12141d;border-right:1px solid var(--border);transform:translateX(-102%);transition:transform .25s ease;z-index:55;padding:60px 14px 20px;overflow-y:auto;text-align:left}
+  #sb.open{transform:none;box-shadow:24px 0 60px -30px rgba(0,0,0,.8)}
+  .sb-h{font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+  .sb-item{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;border-radius:9px;text-decoration:none;color:var(--ink2);font-size:.82rem;line-height:1.35}
+  .sb-item:hover{background:var(--surface)}
+  .sb-dot{flex:0 0 auto;min-width:34px;text-align:center;font-weight:800;font-size:.78rem;border:2px solid;border-radius:999px;padding:1px 5px;margin-top:1px}
+  .sb-empty{color:var(--muted);font-size:.8rem;padding:6px 9px}
+  .sb-links{border-top:1px solid var(--border);margin-top:18px;padding-top:12px}
+  .sb-links a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;padding:6px 9px;border-radius:8px}
+  .sb-links a:hover{color:var(--ink);background:var(--surface)}
+</style>
+
+<style>
+/* ==== glow theme override — same engine, new skin ==== */
+:root{--surface2:#08070F;--surface:rgba(255,255,255,.05);--border:rgba(255,255,255,.12);
+  --ink:#ECECF6;--ink2:#C9CDE0;--muted:#8B8BA8;--track:rgba(255,255,255,.1);
+  --good:#27D49B;--warn:#F4B740;--bad:#FF5E72;--brand:#8A7CFF}
+body{background:transparent;font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif}
+.ambient{position:fixed;inset:0;z-index:-1;overflow:hidden;background:radial-gradient(140% 120% at 50% -10%, #14112A 0%, #0A0913 46%, #08070F 100%)}
+.aura{position:absolute;border-radius:50%;filter:blur(100px)}
+.ga1{width:58vw;height:58vw;left:-14vw;top:-20vw;background:radial-gradient(circle,#6B43F2,transparent 62%);opacity:.3;animation:gd1 30s ease-in-out infinite}
+.ga2{width:50vw;height:50vw;right:-16vw;bottom:-16vw;background:radial-gradient(circle,#2E6BFF,transparent 62%);opacity:.22;animation:gd2 36s ease-in-out infinite}
+@keyframes gd1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(7vw,6vh) scale(1.12)}}
+@keyframes gd2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vw,-6vh) scale(1.1)}}
+#constellation{position:absolute;inset:0;width:100%;height:100%;display:block}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:11px 20px 11px 64px;backdrop-filter:saturate(160%) blur(14px);background:rgba(8,7,15,.55);border-bottom:1px solid var(--border)}
+.tb-brand{display:flex;gap:9px;align-items:center;color:var(--ink);text-decoration:none;font-family:"Newsreader",Georgia,serif;font-size:19px;letter-spacing:-.02em}
+.tb-brand svg{filter:drop-shadow(0 0 7px rgba(138,124,255,.75))}
+.beta2{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.12em;color:var(--warn);border:1px solid rgba(244,183,64,.45);border-radius:999px;padding:2px 8px;margin-left:6px}
+.tb-links{display:flex;gap:18px;align-items:center}
+.tb-links a,.tb-links button{font-size:13.5px;color:var(--muted);text-decoration:none;background:none;border:none;cursor:pointer;font-family:inherit;padding:0;font-weight:500}
+.tb-links a:hover,.tb-links button:hover{color:var(--ink)}
+.wrap{padding-top:104px;max-width:720px}
+.greet{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:clamp(27px,4.4vw,40px);letter-spacing:-.02em;margin:14px 0 24px;color:var(--ink)}
+.greet .hl{background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 55%,#57D9E0 110%);-webkit-background-clip:text;background-clip:text;color:transparent;font-style:italic}
+#f{background:rgba(22,20,38,.72);border:1px solid rgba(255,255,255,.18);border-radius:24px;padding:8px 8px 8px 18px;backdrop-filter:blur(14px);box-shadow:0 24px 70px -30px rgba(0,0,0,.95),0 0 50px -22px rgba(138,124,255,.5),inset 0 1px 0 rgba(255,255,255,.06);transition:border-color .2s,box-shadow .25s}
+#f:focus-within{border-color:rgba(138,124,255,.65);box-shadow:0 0 0 4px rgba(138,124,255,.14),0 24px 70px -26px rgba(124,108,246,.7)}
+#url{border:none;background:transparent;font-size:16px}
+#url:focus{outline:none}
+#go{border-radius:17px;background:linear-gradient(135deg,#6A5AF0,#8A7CFF);box-shadow:0 8px 24px -8px rgba(124,108,246,.85)}
+.sugg{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.sugg span{font-size:13px;color:var(--ink2);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:8px 14px;cursor:pointer;transition:all .2s;user-select:none}
+.sugg span:hover{border-color:rgba(138,124,255,.5);transform:translateY(-1px);box-shadow:0 0 24px -12px rgba(138,124,255,.8)}
+.mini{margin-top:16px;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;color:var(--muted);display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap}
+.alive{background:rgba(39,212,155,.1);color:var(--good);padding:.25rem .75rem;font-size:11px;font-family:"IBM Plex Mono",monospace}
+#steps,.headline,.claim,details{background:rgba(255,255,255,.045);border-color:var(--border);backdrop-filter:blur(10px)}
+.headline{border-radius:18px;box-shadow:0 40px 90px -50px rgba(0,0,0,.9),0 0 60px -36px rgba(138,124,255,.4),inset 0 1px 0 rgba(255,255,255,.06)}
+.toggle span.on{background:linear-gradient(135deg,#6A5AF0,#8A7CFF)}
+.actions a,.actions button{backdrop-filter:blur(8px)}
+#sb{background:rgba(14,13,26,.94);backdrop-filter:blur(16px)}
+#sbBtn{background:rgba(255,255,255,.06);backdrop-filter:blur(10px)}
+footer{font-size:.74rem}
 </style>
 </head>
 <body>
+<div class="ambient" aria-hidden="true">
+  <div class="aura ga1"></div><div class="aura ga2"></div>
+  <canvas id="constellation"></canvas>
+</div>
+<header class="topbar">
+  <a class="tb-brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="15" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
+      <path d="M8 16 A8 8 0 0 1 16 8" stroke="#5B8CFF" stroke-width="3" stroke-linecap="round"/>
+      <path d="M16 8 A8 8 0 0 1 24 16" stroke="#FF6378" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.4" fill="#8A7CFF"/>
+    </svg>
+    Glowby <span class="beta2">BETA</span>
+  </a>
+  <nav class="tb-links">
+    <button id="tbTrend" type="button">🔥 Trending</button>
+    <a href="/about#methodology">How it works</a>
+    <a href="/about#ratings">The score</a>
+  </nav>
+</header>
+<button id="sbBtn" aria-label="Open menu" title="Menu">☰</button>
+<nav id="sb" aria-label="Sidebar">
+  <div class="sb-h">🔥 Trending checks</div>
+  <div id="sbTrend"><div class="sb-empty">Loading…</div></div>
+  <div class="sb-h">🕐 Your checks</div>
+  <div id="sbMine"><div class="sb-empty">Nothing yet — run a check.</div></div>
+  <div class="sb-links">
+    <a href="/">Glowby home</a>
+    <a href="/about#methodology">How it works</a>
+    <a href="/about#ratings">The score</a>
+    <a href="/about#corrections">Corrections</a>
+  </div>
+</nav>
 <div class="wrap">
-  <h1>Glowby</h1>
-  <p class="tag">Paste a link or type a claim — get a fact-check.</p>
-  <div class="alive">&#9679; Glowby is alive</div>
-  <div style="margin-top:8px"><span style="display:inline-block;padding:.2rem .7rem;border-radius:999px;border:1px solid var(--warn);color:var(--warn);font-weight:700;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase">Public beta</span></div>
+  <h1 class="greet">What should <span class="hl">Glowby</span> check?</h1>
 
   <form id="f">
     <input type="text" id="url" placeholder="Paste a video link — or type any claim to fact-check..." required>
     <button id="go" type="submit">Check</button>
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
+
+  <div class="sugg" aria-label="Try one of these">
+    <span data-fill="https://www.youtube.com/shorts/">🎬 Check a Short</span>
+    <span data-fill="The earth is flat">🌍 The earth is flat</span>
+    <span data-fill="how many U.S. senators are there?">❓ Ask a question</span>
+  </div>
+  <div class="mini"><span class="alive">● Glowby is alive</span><span>YouTube · TikTok · Reels · typed claims</span></div>
 
   <div id="steps">
     <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
@@ -100,7 +195,7 @@
   </div>
 
   <div id="out"></div>
-  <footer>v0.19.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.22.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -195,7 +290,8 @@ function renderList(d){
   const cnt=rep.counts||{};
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div></div>';
+    '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div>'+
+    '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check · can be wrong · sources on every claim · glowby.io</div></div>';
   const claims=d.claims||[];
   const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
   const checked=claims.filter(c=>c.verdict);
@@ -225,6 +321,7 @@ function renderReel(d){
     chipsHtml+='<div class="cchip"><span style="color:'+col+';font-weight:800">'+(ts===null?'?':esc(ts.toFixed(1)))+'</span> “'+esc(c.claim)+'” — <b style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||'').replace(/^\S+ /,'')+'</b></div>';
   }
   chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted)">'+esc(rep.share_text||'')+'</div>';
+  chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted);font-size:.68rem">AI fact-check · can be wrong · sources on every claim · glowby.io</div>';
   let html='';
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
   html+='<div class="reel"><div class="reeltitle">'+esc(d.title)+'</div><div class="corner">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6)+'</div><div class="chips">'+chipsHtml+'</div></div>'+
@@ -233,13 +330,14 @@ function renderReel(d){
 }
 function render(){
   const d=currentResult; if(!d)return;
+  addMyCheck(d);
   const out=$('out'); out.style.display='block';
   let html='<div class="toggle" id="vt"><span id="tl" class="'+(currentView==='list'?'on':'')+'">List</span><span id="tr" class="'+(currentView==='reel'?'on':'')+'">Reel view</span></div>';
   html+=currentView==='list'?renderList(d):renderReel(d);
   const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
   html+='<div class="actions">';
   if(permalink)html+='<button id="copyLink">🔗 Copy share link</button>';
-  html+='<a href="mailto:reports@glowby.io?subject='+encodeURIComponent('Glowby mistake report')+'&body='+encodeURIComponent('Video: '+(d.url||'')+'\n\nWhat looks wrong:')+'">🛠 Report a mistake</a>';
+  html+='<button id="repBtn">🛠 Report a mistake</button>';
   html+='</div>';
   out.innerHTML=html;
   const rc=$('recheck');
@@ -258,6 +356,16 @@ function render(){
   $('tr').onclick=()=>{currentView='reel';render();};
   const cb=$('copyLink');
   if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(permalink);cb.textContent='✓ Link copied';}catch(e){prompt('Copy this link:',permalink);}};
+  const rb=$('repBtn');
+  if(rb)rb.onclick=async()=>{
+    const msg=prompt('What looks wrong with this result? (Glowby reviews every report — add your email if you want a reply)');
+    if(!msg||msg.trim().length<10){if(msg!==null)alert('Please describe the problem in a sentence or two.');return;}
+    try{
+      const r=await fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||'',url:d.url||'',message:msg})});
+      if(r.ok){rb.textContent='✓ Report filed — thank you';rb.disabled=true;}
+      else{const j=await r.json();alert(j.detail||'Could not file the report — try again.');}
+    }catch(e){alert('Could not file the report — try again.');}
+  };
 }
 function setStage(stage){
   const idx=STAGE_MAP[stage]??-1;
@@ -306,6 +414,36 @@ $('f').addEventListener('submit',async(e)=>{
   }
   go.disabled=false;go.textContent='Check';tsReset();
 });
+// ---- sidebar: trending (server) + your checks (this device) ----
+const sb=$('sb');
+$('sbBtn').onclick=()=>{sb.classList.toggle('open');try{localStorage.setItem('sbOpen',sb.classList.contains('open')?'1':'0');}catch(e){}};
+try{if(localStorage.getItem('sbOpen')==='1')sb.classList.add('open');}catch(e){}
+function sbItem(c){
+  const col=ringColor(c.score===null||c.score===undefined?null:c.score);
+  const badge=c.answer?'💡':(c.score===null||c.score===undefined?'—':c.score.toFixed(1));
+  return '<a class="sb-item" href="/r/'+encodeURIComponent(c.url_key)+'"><span class="sb-dot" style="color:'+col+';border-color:'+col+'">'+esc(String(badge))+'</span><span>'+esc(c.title||'')+'</span></a>';
+}
+(async function(){
+  try{
+    const r=await fetch('/api/recent');const d=await r.json();
+    $('sbTrend').innerHTML=(d.checks&&d.checks.length)?d.checks.map(sbItem).join(''):'<div class="sb-empty">Nothing checked yet today.</div>';
+  }catch(e){$('sbTrend').innerHTML='<div class="sb-empty">Couldn’t load.</div>';}
+})();
+function myChecks(){try{return JSON.parse(localStorage.getItem('myChecks')||'[]');}catch(e){return [];}}
+function renderMine(){const m=myChecks();if(m.length)$('sbMine').innerHTML=m.map(sbItem).join('');}
+function addMyCheck(d){
+  if(!d||!d.url_key)return;
+  try{
+    const rep=d.report||{};
+    let m=myChecks().filter(c=>c.url_key!==d.url_key);
+    m.unshift({url_key:d.url_key,title:(d.title||'').slice(0,80),
+      score:rep.headline_score===undefined?null:rep.headline_score,
+      state:rep.headline_state||'unverified',answer:!!d.answer_mode});
+    localStorage.setItem('myChecks',JSON.stringify(m.slice(0,10)));
+  }catch(e){}
+  renderMine();
+}
+renderMine();
 // handoff from the landing page: /app?u=<link> arrives prefilled
 (function(){
   const u=new URLSearchParams(location.search).get('u');
@@ -323,6 +461,49 @@ $('f').addEventListener('submit',async(e)=>{
     window.scrollTo(0,0);
   }catch(e){}
 })();
+
+// ---- glow: constellation background ----
+(function(){
+  var reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var canvas=document.getElementById("constellation");if(!canvas)return;
+  var ctx=canvas.getContext("2d"),W=0,H=0,DPR=1,parts=[],raf=null,tt=0,mouse={x:-9999,y:-9999,on:false},LINK=134,LIGHT=200;
+  function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=canvas.clientWidth;H=canvas.clientHeight;
+    canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);
+    var n=Math.max(38,Math.min(90,Math.floor(W*H/17000)));parts=[];
+    for(var i=0;i<n;i++)parts.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r:Math.random()*1.5+1.1,tw:Math.random()*6.283});}
+  function frame(){tt+=0.016;ctx.clearRect(0,0,W,H);
+    for(var i=0;i<parts.length;i++){var p=parts[i];p.x+=p.vx;p.y+=p.vy;
+      if(p.x<-25)p.x=W+25;if(p.x>W+25)p.x=-25;if(p.y<-25)p.y=H+25;if(p.y>H+25)p.y=-25;
+      if(mouse.on){var dx=p.x-mouse.x,dy=p.y-mouse.y,d2=dx*dx+dy*dy;
+        if(d2<LIGHT*LIGHT&&d2>0.5){var d=Math.sqrt(d2),f=(LIGHT-d)/LIGHT;p.x+=(dx/d)*f*3;p.y+=(dy/d)*f*3;}}}
+    ctx.lineWidth=1;
+    for(var a=0;a<parts.length;a++)for(var b=a+1;b<parts.length;b++){
+      var A=parts[a],B=parts[b],ddx=A.x-B.x,ddy=A.y-B.y,dd=ddx*ddx+ddy*ddy;
+      if(dd<LINK*LINK){var base=(1-Math.sqrt(dd)/LINK),lit=0;
+        if(mouse.on){var cx=(A.x+B.x)/2-mouse.x,cy=(A.y+B.y)/2-mouse.y,cm=Math.sqrt(cx*cx+cy*cy);if(cm<LIGHT)lit=(1-cm/LIGHT);}
+        ctx.strokeStyle="rgba(158,146,255,"+(base*(0.26+lit*0.5)).toFixed(3)+")";
+        ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke();}}
+    for(var k=0;k<parts.length;k++){var q=parts[k],boost=0;
+      if(mouse.on){var bx=q.x-mouse.x,by=q.y-mouse.y,bd=Math.sqrt(bx*bx+by*by);if(bd<LIGHT)boost=(1-bd/LIGHT);}
+      var tw2=0.72+0.28*Math.sin(tt*1.7+q.tw);
+      ctx.shadowBlur=7+boost*20;ctx.shadowColor="rgba(150,130,255,0.95)";
+      ctx.fillStyle="rgba(220,214,255,"+Math.min(1,(0.45+boost*0.5)*tw2).toFixed(3)+")";
+      ctx.beginPath();ctx.arc(q.x,q.y,q.r+boost*2.4,0,6.2832);ctx.fill();}
+    ctx.shadowBlur=0;raf=requestAnimationFrame(frame);}
+  function start(){resize();if(reduce)return;if(raf)cancelAnimationFrame(raf);frame();}
+  window.addEventListener("resize",start);
+  if(!reduce){
+    window.addEventListener("mousemove",function(e){mouse.x=e.clientX;mouse.y=e.clientY;mouse.on=true;});
+    window.addEventListener("mouseout",function(){mouse.on=false;});
+    document.addEventListener("visibilitychange",function(){if(document.hidden){if(raf){cancelAnimationFrame(raf);raf=null;}}else if(!raf)frame();});
+  }
+  start();
+})();
+// ---- suggestion chips fill the bar ----
+document.querySelectorAll('.sugg span').forEach(c=>{c.onclick=()=>{const i=$('url');i.value=c.getAttribute('data-fill');i.focus();};});
+// ---- topbar Trending opens the sidebar feed ----
+const tbT=$('tbTrend');
+if(tbT)tbT.onclick=()=>{sb.classList.add('open');try{localStorage.setItem('sbOpen','1');}catch(e){}};
 </script>
 </body>
 </html>

@@ -38,14 +38,19 @@ from app.storage import (
     add_usage,
     canonical_key,
     get_cached,
+    list_mistake_reports,
+    list_recent_checks,
     looks_like_url,
+    quality_stats,
+    resolve_mistake_report,
+    save_mistake_report,
     save_result,
     save_route_audit,
     text_key,
     today_usage,
 )
 
-VERSION = "0.19.1"
+VERSION = "0.22.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -358,15 +363,8 @@ _index_cache = None
 
 @app.get("/", response_class=HTMLResponse)
 def home() -> str:
-    """Landing page (Diya's design). Falls back to the checker if absent."""
-    global _index_cache
-    if _index_cache is None:
-        try:
-            with open(_INDEX_PATH, encoding="utf-8") as f:
-                _index_cache = f.read()
-        except OSError:
-            _index_cache = ""
-    return _index_cache or _page()
+    """One unified page — the glowing checker IS the front door."""
+    return _page()
 
 
 @app.get("/app", response_class=HTMLResponse)
@@ -512,6 +510,83 @@ def api_ingest(req: CheckRequest, request: Request):
             status_code=500,
             content={"detail": "Unexpected error while processing this link."},
         )
+
+
+# ------------------------------------------------------ sidebar feed
+_recent_cache = {"t": 0.0, "data": []}
+
+
+@app.get("/api/recent")
+def api_recent():
+    """Latest checks for the sidebar. Cached 60s so the DB isn't hammered."""
+    now = time.time()
+    if now - _recent_cache["t"] > 60:
+        _recent_cache["data"] = list_recent_checks(12)
+        _recent_cache["t"] = now
+    return {"checks": _recent_cache["data"]}
+
+
+# ------------------------------------------------------ quality loop
+# Reports are STORED with a status (new -> reviewed/fixed/rejected), not
+# just emailed — the corrections policy with tracking behind it.
+
+ADMIN_KEY = os.environ.get("GLOWBY_ADMIN_KEY", "")
+
+
+def _admin_ok(key: str) -> bool:
+    return bool(ADMIN_KEY) and key == ADMIN_KEY
+
+
+class MistakeReport(BaseModel):
+    url_key: str = ""
+    url: str = ""
+    message: str
+    contact: str = ""
+
+
+@app.post("/api/report")
+def api_report(rep: MistakeReport, request: Request):
+    msg = (rep.message or "").strip()
+    if len(msg) < 10:
+        return JSONResponse(status_code=422, content={
+            "detail": "Tell us what looks wrong (a sentence or two)."})
+    if _rate_limited(_client_ip(request)):
+        return JSONResponse(status_code=429, content={"detail": "Too many requests."})
+    saved = save_mistake_report(rep.url_key, rep.url, msg, rep.contact)
+    return {"ok": True, "stored": saved}
+
+
+@app.get("/api/admin/reports")
+def api_admin_reports(key: str = "", status: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"reports": list_mistake_reports(status)}
+
+
+class ResolveRequest(BaseModel):
+    key: str
+    report_id: int
+    status: str  # reviewed | fixed | rejected
+    note: str = ""
+
+
+@app.post("/api/admin/resolve")
+def api_admin_resolve(req: ResolveRequest):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if req.status not in ("new", "reviewed", "fixed", "rejected"):
+        return JSONResponse(status_code=422, content={"detail": "Bad status."})
+    return {"ok": resolve_mistake_report(req.report_id, req.status, req.note)}
+
+
+@app.get("/api/admin/stats")
+def api_admin_stats(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    checks, spent = today_usage()
+    stats = quality_stats()
+    stats["today"] = {"fresh_checks": checks, "est_spend_usd": spent}
+    return stats
 
 
 @app.get("/health")
