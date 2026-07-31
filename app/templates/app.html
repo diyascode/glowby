@@ -149,7 +149,8 @@ footer{font-size:.74rem}
 .schip{font-size:.73rem;color:var(--ink2);text-decoration:none;border:1px solid var(--border);border-radius:999px;padding:3px 11px;background:rgba(255,255,255,.03)}
 .schip b{color:var(--brand);font-weight:600}
 .schip:hover{border-color:var(--brand)}
-.hint-txt{margin-top:14px;font-size:.82rem;color:var(--muted)}
+.sugg2{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-top:15px}
+.sugg2 span{font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:default;user-select:none}
 /* structured answer (typed questions) */
 .ans-k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.16em;color:var(--brand);margin-bottom:8px}
 .ans-main{font-family:"Newsreader",Georgia,serif;font-size:1.35rem;line-height:1.4;color:var(--ink);letter-spacing:-.01em}
@@ -200,7 +201,9 @@ footer{font-size:.74rem}
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
-  <div class="hint-txt">Paste a Short, TikTok or Reel — or type any claim or question</div>
+  <div class="sugg2" aria-hidden="true">
+    <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📸 Reels</span><span>💬 Claims</span><span>❓ Questions</span>
+  </div>
   <div class="mini"><span class="alive">● Glowby is alive</span></div>
 
   <div id="steps">
@@ -211,7 +214,7 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.24.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.24.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
