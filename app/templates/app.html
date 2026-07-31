@@ -141,6 +141,19 @@ body{background:transparent;font-family:"IBM Plex Sans",system-ui,-apple-system,
 #sb{background:rgba(14,13,26,.94);backdrop-filter:blur(16px)}
 #sbBtn{background:rgba(255,255,255,.06);backdrop-filter:blur(10px)}
 footer{font-size:.74rem}
+/* V1 editorial text layer */
+.claim-h{font-family:"Newsreader",Georgia,serif;font-size:1.13rem;font-weight:500;letter-spacing:-.01em;line-height:1.35;color:var(--ink);display:block;margin-bottom:2px}
+.vline{margin-top:7px;font-size:.87rem;line-height:1.6;color:var(--ink2)}
+.vw{font-weight:700}
+.srcchips{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap}
+.schip{font-size:.73rem;color:var(--ink2);text-decoration:none;border:1px solid var(--border);border-radius:999px;padding:3px 11px;background:rgba(255,255,255,.03)}
+.schip b{color:var(--brand);font-weight:600}
+.schip:hover{border-color:var(--brand)}
+.hint-txt{margin-top:14px;font-size:.82rem;color:var(--muted)}
+/* structured answer (typed questions) */
+.ans-k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.16em;color:var(--brand);margin-bottom:8px}
+.ans-main{font-family:"Newsreader",Georgia,serif;font-size:1.35rem;line-height:1.4;color:var(--ink);letter-spacing:-.01em}
+.ans-more{margin-top:10px;font-size:.9rem;line-height:1.65;color:var(--ink2);text-align:left}
 </style>
 </head>
 <body>
@@ -172,6 +185,7 @@ footer{font-size:.74rem}
   <div id="sbMine"><div class="sb-empty">Nothing yet — run a check.</div></div>
   <div class="sb-links">
     <a href="/">Glowby home</a>
+    <a href="/about-us">About us</a>
     <a href="/about#methodology">How it works</a>
     <a href="/about#ratings">The score</a>
     <a href="/about#corrections">Corrections</a>
@@ -186,12 +200,8 @@ footer{font-size:.74rem}
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
-  <div class="sugg" aria-label="Try one of these">
-    <span data-fill="https://www.youtube.com/shorts/">🎬 Check a Short</span>
-    <span data-fill="The earth is flat">🌍 The earth is flat</span>
-    <span data-fill="how many U.S. senators are there?">❓ Ask a question</span>
-  </div>
-  <div class="mini"><span class="alive">● Glowby is alive</span><span>YouTube · TikTok · Reels · typed claims</span></div>
+  <div class="hint-txt">Paste a Short, TikTok or Reel — or type any claim or question</div>
+  <div class="mini"><span class="alive">● Glowby is alive</span></div>
 
   <div id="steps">
     <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
@@ -201,8 +211,8 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.23.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
-  <span style="display:inline-block;margin-top:6px"><a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
+  <footer>v0.24.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
 <script>
@@ -248,12 +258,20 @@ function chips(c){
   if(c.public_safety_risk)h+=' <span class="cat" style="color:var(--bad);border-color:var(--bad)">⚠ public safety</span>';
   return h;
 }
+const vColor={supported:'var(--good)',partly_supported:'var(--warn)',provisional:'var(--warn)',insufficient:'var(--warn)',contradicted:'var(--bad)',unverifiable:'var(--muted)',not_scoreable:'var(--muted)'};
+function domainOf(u){try{return new URL(u).hostname.replace(/^www\./,'');}catch(e){return String(u).slice(0,30);}}
 function claimCard(c){
-  // GLANCE LAYER: ring + claim + verdict badge only
+  // GLANCE LAYER: ring + serif claim + verdict as flowing prose + source chips
   let badge='';
   if(c.verdict){
-    badge='<br><span class="verdict '+(vClass[c.verdict.verdict_state]||'v-n')+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'</span>';
+    const col=vColor[c.verdict.verdict_state]||'var(--muted)';
+    badge='<div class="vline"><span class="vw" style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'.</span> '+esc(c.verdict.verdict||'')+'</div>';
     if(c.verdict.why_unverifiable)badge+='<div class="vsum" style="color:var(--muted)">Why: '+(whyLabel[c.verdict.why_unverifiable]||esc(c.verdict.why_unverifiable))+'.</div>';
+    const fcs0=(c.evidence&&c.evidence.fact_checks)||[], webs0=(c.evidence&&c.evidence.web_sources)||[];
+    let chips='';
+    for(const fc of fcs0.slice(0,2))chips+='<a class="schip" href="'+esc(fc.url)+'" target="_blank" rel="noopener"><b>'+esc(fc.publisher)+'</b> · fact-check ↗</a>';
+    for(const w of webs0.slice(0,4-Math.min(2,fcs0.length)))chips+='<a class="schip" href="'+esc(w.url)+'" target="_blank" rel="noopener"><b>'+esc(domainOf(w.url))+'</b> ↗</a>';
+    if(chips)badge+='<div class="srcchips">'+chips+'</div>';
   }else if(c.verifying){
     badge='<br><span class="verdict v-n" style="animation:pulse 1s infinite alternate">🔎 Checking sources…</span>';
   }else{
@@ -268,12 +286,12 @@ function claimCard(c){
   let detail='<details class="more"><summary><span></span></summary><div class="inner">';
   detail+='<div class="meta">“'+esc(c.quote)+'”</div>';
   detail+=chips(c)+' <span class="meta">'+esc(c.reason||'')+'</span>';
-  if(c.verdict)detail+='<div class="vsum">'+esc(c.verdict.verdict)+' <span class="meta">(evidence: '+esc(c.verdict.evidence_strength)+')</span></div>';
+  if(c.verdict)detail+='<div class="vsum meta">Evidence strength: '+esc(c.verdict.evidence_strength)+'</div>';
   detail+=ev+'</div></details>';
   const circle=c.verdict
     ?'<div style="flex:0 0 auto">'+ringSVG(c.verdict.truth_score===null?null:c.verdict.truth_score,46,4)+'</div>'
     :'<div class="score"'+(c.verifying?' style="animation:pulse 1s infinite alternate"':'')+'>···</div>';
-  return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b>'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
+  return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b class="claim-h">'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
 }
 function renderList(d){
   const rep=d.report||{};
@@ -281,9 +299,22 @@ function renderList(d){
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
   html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
   if(d.answer_mode){
-    html+='<div class="headline"><div style="font-size:1.9rem;margin-bottom:6px">💡</div>'+
-      '<div class="hl-label">'+esc(d.answer||'')+'</div>'+
-      '<div class="hl-sub">Answer from sources — questions get answers, statements get ratings</div></div>';
+    function splitLead(t){
+      const re=/[.!?]\s+/g; let m;
+      while((m=re.exec(t))){
+        const before=t.slice(0,m.index+1);
+        if(/\b(?:[A-Z]|Dr|Mr|Mrs|Ms|St|Jr|Sr|vs|No|approx|etc)\.$/.test(before))continue;
+        return [before,t.slice(re.lastIndex)];
+      }
+      return [t,''];
+    }
+    const sp=splitLead(d.answer||'');
+    const lead=sp[0]; const restA=sp[1];
+    html+='<div class="headline" style="text-align:left">'+
+      '<div class="ans-k">💡 ANSWER</div>'+
+      '<div class="ans-main">'+esc(lead)+'</div>'+
+      (restA?'<div class="ans-more">'+esc(restA)+'</div>':'')+
+      '<div class="hl-sub" style="text-align:left">Answer from sources — questions get answers, statements get ratings</div></div>';
     let aev='';
     const afcs=(d.evidence&&d.evidence.fact_checks)||[], awebs=(d.evidence&&d.evidence.web_sources)||[];
     for(const fc of afcs)aev+='<div class="src">📝 <a href="'+esc(fc.url)+'" target="_blank" rel="noopener">'+esc(fc.publisher)+'</a>: rated “'+esc(fc.rating)+'”</div>';
@@ -334,6 +365,26 @@ function renderReel(d){
     '<div class="meta" style="text-align:center;margin-top:10px">Screenshot this view to share · the link below travels with it</div>';
   return html;
 }
+
+function resultText(d){
+  const rep=d.report||{};
+  const lines=[];
+  if(d.answer_mode){
+    lines.push('Glowby answered: "'+(d.question||d.title||'')+'"');
+    if(d.answer)lines.push(d.answer);
+  }else{
+    lines.push('Glowby fact-check: "'+(d.title||'')+'"');
+    lines.push('Score: '+(rep.headline_score===null||rep.headline_score===undefined?'no score (couldn\u2019t verify)':rep.headline_score.toFixed(1)+'/10')+' \u2014 '+String(rep.headline_state||'').replace(/_/g,' '));
+    for(const c of (d.claims||[]).filter(c=>c.verdict)){
+      const ts=c.verdict.truth_score;
+      const lbl=(vLabel[c.verdict.verdict_state]||c.verdict.verdict_state||'').replace(/^\S+ /,'');
+      lines.push('\u2022 '+c.claim+' \u2014 '+(ts===null||ts===undefined?'no score':ts.toFixed(1))+' ('+lbl+')');
+    }
+  }
+  if(d.url_key)lines.push('Full result & sources: '+location.origin+'/r/'+encodeURIComponent(d.url_key));
+  lines.push('AI fact-check \u2014 can be wrong \u00b7 glowby.io');
+  return lines.join('\n');
+}
 function render(){
   const d=currentResult; if(!d)return;
   addMyCheck(d);
@@ -343,7 +394,8 @@ function render(){
   html+=currentView==='list'?renderList(d):renderReel(d);
   const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
   html+='<div class="actions">';
-  if(permalink)html+='<button id="copyLink">🔗 Copy share link</button>';
+  html+='<button id="copyRes">📋 Copy result</button>';
+  if(permalink)html+='<button id="copyLink">🔗 Copy link</button>';
   html+='<button id="repBtn">🛠 Report a mistake</button>';
   html+='</div>';
   out.innerHTML=html;
@@ -361,6 +413,8 @@ function render(){
   };
   $('tl').onclick=()=>{currentView='list';render();};
   $('tr').onclick=()=>{currentView='reel';render();};
+  const cr=$('copyRes');
+  if(cr)cr.onclick=async()=>{const t=resultText(d);try{await navigator.clipboard.writeText(t);cr.textContent='✓ Result copied';}catch(e){prompt('Copy this:',t);}};
   const cb=$('copyLink');
   if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(permalink);cb.textContent='✓ Link copied';}catch(e){prompt('Copy this link:',permalink);}};
   const rb=$('repBtn');
@@ -507,8 +561,6 @@ renderMine();
   }
   start();
 })();
-// ---- suggestion chips fill the bar ----
-document.querySelectorAll('.sugg span').forEach(c=>{c.onclick=()=>{const i=$('url');i.value=c.getAttribute('data-fill');i.focus();};});
 // ---- topbar Trending opens the sidebar feed ----
 const tbT=$('tbTrend');
 if(tbT)tbT.onclick=()=>{sb.classList.add('open');try{localStorage.setItem('sbOpen','1');}catch(e){}};

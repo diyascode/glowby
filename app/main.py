@@ -50,7 +50,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.23.1"
+VERSION = "0.24.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -393,6 +393,20 @@ def home() -> str:
 def checker() -> str:
     """The checker itself; ?u=<link> arrives prefilled from the landing."""
     return _page()
+
+
+_ABOUT_PATH = os.path.join(os.path.dirname(__file__), "templates", "about.html")
+_about_cache = None
+
+
+@app.get("/about-us", response_class=HTMLResponse)
+def about_us() -> str:
+    """About page: mission, values, founder, contact."""
+    global _about_cache
+    if _about_cache is None:
+        with open(_ABOUT_PATH, encoding="utf-8") as f:
+            _about_cache = f.read()
+    return _about_cache
 
 
 _TRUST_PATH = os.path.join(os.path.dirname(__file__), "templates", "trust.html")

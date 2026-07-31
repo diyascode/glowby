@@ -20,6 +20,8 @@ A user typed a QUESTION. Evidence was gathered by the evidence agent. \
 Answer the question in 1-4 plain sentences.
 
 Rules:
+- START with the direct answer in ONE short sentence. Then 1-3 short \
+supporting sentences with the sources named.
 - Base the answer ONLY on the evidence below — not on memory. Name the \
 sources in the answer ("According to Reuters...").
 - If sources disagree, say so and present both.
