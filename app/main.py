@@ -50,7 +50,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.22.1"
+VERSION = "0.23.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -178,6 +178,25 @@ def _publish_partial(job_id: str, result: dict, claims: list) -> None:
         pass
 
 
+
+QUESTION_STARTERS = {
+    "who", "whos", "what", "whats", "when", "where", "why", "how",
+    "is", "are", "was", "were", "am", "do", "does", "did",
+    "can", "could", "will", "would", "should", "has", "have", "had",
+}
+
+
+def _looks_like_question(text: str) -> bool:
+    """Cheap, deterministic question detector for typed input."""
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    if t.endswith("?"):
+        return True
+    first = t.split(" ", 1)[0].strip(",.!")
+    return first in QUESTION_STARTERS
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
     try:
         t0 = time.time()
@@ -238,12 +257,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
             pass
 
         # ANSWER MODE: a typed QUESTION gets a sourced answer, not a
-        # rating — a question isn't true or false. Statements still get
-        # the full judging pipeline below.
-        if (url_key.startswith("text:") and claims
-                and any(c.get("gate_label") == "question" for c in claims)
-                and not any(c.get("gate_label") in ("factual", "prediction")
-                            for c in claims)):
+        # rating — a question isn't true or false. Question-SHAPED input
+        # ("how many...", ends in "?") triggers this deterministically;
+        # the AI gate's question label is the fallback for the rest.
+        if (url_key.startswith("text:") and (
+                _looks_like_question(url)
+                or (claims
+                    and any(c.get("gate_label") == "question" for c in claims)
+                    and not any(c.get("gate_label") in ("factual", "prediction")
+                                for c in claims)))):
             _set_job(job_id, stage="judging")
             q = result["transcript"]
             try:
