@@ -50,7 +50,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.24.5"
+VERSION = "0.24.6"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -58,7 +58,7 @@ MAX_CLAIMS_WITH_EVIDENCE = 3
 # ---- armor knobs (all overridable via Railway Variables) ----
 DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "10"))
 COST_PER_CHECK_EST = float(os.environ.get("GLOWBY_COST_PER_CHECK_EST", "0.15"))
-RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "8"))
+RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "25"))
 JOB_TIMEOUT_SECONDS = int(os.environ.get("GLOWBY_JOB_TIMEOUT_SECONDS", "480"))
 
 # ---- bot protection (Cloudflare Turnstile) ----
