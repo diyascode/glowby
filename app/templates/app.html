@@ -114,6 +114,9 @@ body{background:transparent;font-family:"IBM Plex Sans",system-ui,-apple-system,
 .beta2{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.12em;color:var(--warn);border:1px solid rgba(244,183,64,.45);border-radius:999px;padding:2px 8px;margin-left:6px}
 .tb-links{display:flex;gap:18px;align-items:center}
 .tb-links a,.tb-links button{font-size:13.5px;color:var(--muted);text-decoration:none;background:none;border:none;cursor:pointer;font-family:inherit;padding:0;font-weight:500}
+#tbTrend{background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 55%,#57D9E0 110%);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:600;background-size:220% auto;animation:sheenT 7s linear infinite}
+#tbTrend:hover{filter:brightness(1.25)}
+@keyframes sheenT{to{background-position:220% center}}
 .tb-links a:hover,.tb-links button:hover{color:var(--ink)}
 .wrap{max-width:720px;min-height:100svh;display:flex;flex-direction:column;justify-content:center;padding-top:80px;padding-bottom:36px}
 .wrap.active{justify-content:flex-start;padding-top:100px}
@@ -198,7 +201,7 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.23.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.23.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
