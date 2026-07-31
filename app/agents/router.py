@@ -80,15 +80,23 @@ STEP 2 — GATE each unit with exactly one label:
 - "prediction": future outcome. Scheduled/dated events ("the law takes \
 effect in 2028") and model-backed projections (IPCC/CBO-class) count; \
 unanchored speculation with no data basis ("immortality by 2090") does NOT \
-— label it "no-claim" instead. Predictions move forward.
+— label it "no-claim" instead. Hedged future outcomes ("could reach", \
+"might break", "is on pace to") are predictions, never facts. Predictions \
+move forward.
 - "opinion": value judgment ("best mayor we've had") → parked
-- "satire": parody/comedy, even without source (absurd framing, parody \
-markers, comedic context) → parked. NEVER auto-"debunk" satire.
+- "satire": parody/comedy with comedic INTENT (parody markers, jokes, \
+punchlines, comedic context) → parked. NEVER auto-"debunk" satire. \
+ABSURDITY IS NOT SATIRE: a sincerely-asserted fringe or conspiracy claim \
+(flat earth, moon-landing hoax, miracle cures, "they're hiding X") is \
+FACTUAL, not satire, no matter how outrageous — these are the claims this \
+service exists to check. When unsure whether outrageous content is a joke \
+or sincere, label it "factual" and let the evidence decide.
 - "no-claim": recipes, greetings, vibes, unscoreable speculation → parked
 - "personal-experience": "my flight was cancelled" — unverifiable as \
 stated → parked. BUT a personal story asserting a general fact ("lemon \
 water cured my kidneys — it detoxes you") contains a FACTUAL claim: extract \
-the general claim.
+the general claim. "I did an experiment and PROVED the earth is flat" \
+asserts the general claim "the earth is flat" — extract and forward it.
 - "question" / "fiction-joke" / "advertisement" → parked
 
 STEP 3 — ROUTE each forward claim into ONE primary bucket (what the claim \
@@ -191,8 +199,9 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
     if not api_key:
         raise RouterError("The router is not configured (missing ANTHROPIC_API_KEY).")
 
-    # spec §2.1 — known-satire source check, cheapest catch, before any AI
-    if _is_known_satire(uploader) or _is_known_satire(title):
+    # spec §2.1 — known-satire SOURCE check (uploader ONLY: a news video
+    # ABOUT The Onion is not satire — finding #13, golden set)
+    if _is_known_satire(uploader):
         return [{
             "claim": "(entire item)",
             "quote": title or "(untitled)",

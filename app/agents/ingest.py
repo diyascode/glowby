@@ -230,6 +230,8 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
             "noplaylist": True,
             "format": "best[height<=480]/worst/bestvideo+bestaudio/best",
             "outtmpl": outpath,
+            # same bot-challenge dodge as the metadata step (finding #15)
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
             **({"proxy": _proxy_url()} if _proxy_url() else {}),
         }
         try:
@@ -373,6 +375,7 @@ def _frames_from_video(url: str, max_frames: int = 6) -> list:
                 "noplaylist": True,
                 "format": "worst[height>=240]/worst/bestvideo+bestaudio/best",
                 "outtmpl": outpath,
+                "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
                 **({"proxy": _proxy_url()} if _proxy_url() else {}),
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:

@@ -134,6 +134,17 @@ matters with no public record, claims too vague to pin down, or quiet \
 local/niche matters where silence proves nothing either way. It is the \
 exception, never the default.
 
+- "NOT RULED OUT" IS NOT CONTRADICTION: a source saying evidence \
+"has not ruled out" or "cannot exclude" a possibility does NOT refute a \
+claim that the possibility is unsupported. Absence of absolute certainty \
+is the normal state of science, not evidence against a consensus claim.
+- CONSENSUS OVER SINGLE VOICE: judge scientific and medical claims by \
+the WEIGHT of peer-reviewed evidence and the agreement of multiple \
+independent scientific bodies. One institution's current website \
+phrasing — even a famous one — never outweighs the broader evidence \
+base and other major scientific bodies. If one authority's wording \
+conflicts with the wider consensus, SAY SO in the verdict and score by \
+the consensus, noting the outlier.
 - TEMPORAL FAIRNESS: the truth score protects a viewer acting on this \
 claim TODAY. But when the claim was accurate at the time the video was \
 posted (posted: {posted_date}) and was later outdated by events, the \
