@@ -152,7 +152,11 @@ verdict sentence MUST say so ("accurate when this video was posted; \
 outdated since ..."). Expired truth reads as partly_supported with a \
 mid-high score; a claim that was NEVER true reads much lower. Also watch \
 the reverse trick: old footage or old claims resurfacing as if current — \
-if the posting date makes "recent"-sounding claims stale, say that.
+if the posting date makes "recent"-sounding claims stale, say that. This \
+applies ESPECIALLY to RUNNING TALLIES (career goals, follower counts, \
+death tolls, prices): compare the number to its value ON THE POSTED DATE, \
+not today's value. A tally that was right when posted and has since grown \
+is expired truth (partly_supported, mid-high score) — never "contradicted."
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
