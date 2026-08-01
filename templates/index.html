@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Glowby — paste a link, get a fact-check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08070F;
+    --surface:rgba(255,255,255,.05); --line:rgba(255,255,255,.1); --line-2:rgba(255,255,255,.18);
+    --text:#ECECF6; --soft:#A6A6C0; --muted:#6E6E88;
+    --brand:#8A7CFF; --brand-2:#C46BF2; --brand-deep:#6A5AF0; --cyan:#57D9E0;
+    --display:"Newsreader", Georgia, serif;
+    --sans:"IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --mono:"IBM Plex Mono", ui-monospace, monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+  /* AMBIENT GLOW — kept from the original */
+  .ambient{position:fixed;inset:0;z-index:-1;overflow:hidden;background:radial-gradient(140% 120% at 50% -10%, #14112A 0%, #0A0913 46%, var(--bg) 100%)}
+  .aura{position:absolute;border-radius:50%;filter:blur(100px)}
+  .a1{width:58vw;height:58vw;left:-14vw;top:-20vw;background:radial-gradient(circle,#6B43F2,transparent 62%);opacity:.32;animation:d1 30s ease-in-out infinite}
+  .a2{width:50vw;height:50vw;right:-16vw;bottom:-16vw;background:radial-gradient(circle,#2E6BFF,transparent 62%);opacity:.24;animation:d2 36s ease-in-out infinite}
+  @keyframes d1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(7vw,6vh) scale(1.12)}}
+  @keyframes d2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vw,-6vh) scale(1.1)}}
+  #constellation{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  /* SLIM TOP BAR — almost nothing, like a chat app */
+  .top{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:14px 22px;z-index:10}
+  .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text)}
+  .brand .mark{width:24px;height:24px;filter:drop-shadow(0 0 7px rgba(138,124,255,.75))}
+  .brand .name{font-family:var(--display);font-size:19px;letter-spacing:-.02em;font-weight:500}
+  .beta{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#F4B740;border:1px solid rgba(244,183,64,.45);border-radius:999px;padding:3px 9px;margin-left:4px}
+  .top-right{display:flex;gap:18px;align-items:center}
+  .top-right a{font-size:13.5px;color:var(--soft);text-decoration:none;transition:color .2s}
+  .top-right a:hover{color:var(--text)}
+
+  /* CENTER STAGE — the whole page is one question */
+  .stage{min-height:100svh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px 90px}
+  .greet{font-family:var(--display);font-weight:500;font-size:clamp(28px,4.4vw,42px);letter-spacing:-.02em;text-align:center;margin:0 0 30px}
+  .greet .hl{background:linear-gradient(100deg,var(--brand) 0%,var(--brand-2) 55%,var(--cyan) 110%);-webkit-background-clip:text;background-clip:text;color:transparent;background-size:220% auto;animation:sheen 7s linear infinite;font-style:italic}
+  @keyframes sheen{to{background-position:220% center}}
+
+  .bar{display:flex;align-items:center;gap:10px;width:min(680px,94vw);background:rgba(22,20,38,.72);border:1px solid var(--line-2);border-radius:26px;padding:10px 10px 10px 20px;backdrop-filter:blur(14px);
+    box-shadow:0 24px 70px -30px rgba(0,0,0,.95), 0 0 50px -22px rgba(138,124,255,.55), inset 0 1px 0 rgba(255,255,255,.06);
+    transition:border-color .2s, box-shadow .25s}
+  .bar:focus-within{border-color:rgba(138,124,255,.65);box-shadow:0 0 0 4px rgba(138,124,255,.14), 0 24px 70px -26px rgba(124,108,246,.7)}
+  .bar .icon{color:var(--brand);display:flex;flex:none;opacity:.9}
+  .bar input{flex:1;border:none;outline:none;background:transparent;color:var(--text);font-family:var(--sans);font-size:16px;min-width:0;padding:10px 0}
+  .bar input::placeholder{color:var(--muted)}
+  .send{flex:none;width:44px;height:44px;border:none;border-radius:50%;cursor:pointer;display:grid;place-items:center;color:#fff;
+    background:linear-gradient(135deg,var(--brand-deep),var(--brand));box-shadow:0 8px 24px -8px rgba(124,108,246,.85);
+    transition:transform .18s cubic-bezier(.22,.61,.36,1), box-shadow .2s}
+  .send:hover{transform:translateY(-1px) scale(1.04);box-shadow:0 12px 32px -8px rgba(138,124,255,.95)}
+  .bar.shake{animation:shake .4s}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+
+  /* SUGGESTION CHIPS — chat-style */
+  .chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:22px;max-width:640px}
+  .chip{font-size:13.5px;color:var(--soft);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:9px 15px;cursor:pointer;transition:all .2s cubic-bezier(.22,.61,.36,1);user-select:none}
+  .chip:hover{color:var(--text);border-color:rgba(138,124,255,.5);transform:translateY(-1px);box-shadow:0 0 24px -12px rgba(138,124,255,.8)}
+  .chip b{color:var(--brand);font-weight:600;margin-right:6px}
+
+  .platforms{margin-top:26px;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--muted)}
+  .platforms b{color:var(--soft);font-weight:500}
+
+  /* BOTTOM LINE — the honest disclaimer, chat-app style */
+  .foot{position:fixed;left:0;right:0;bottom:0;padding:14px 20px;text-align:center;font-size:12px;color:var(--muted);z-index:10}
+  .foot a{color:var(--soft);text-decoration:none;margin:0 7px}
+  .foot a:hover{color:var(--brand)}
+
+  @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
+  :focus-visible{outline:2px solid var(--brand);outline-offset:3px;border-radius:6px}
+</style>
+</head>
+<body>
+
+<div class="ambient" aria-hidden="true">
+  <div class="aura a1"></div><div class="aura a2"></div>
+  <canvas id="constellation"></canvas>
+</div>
+
+<header class="top">
+  <a class="brand" href="/">
+    <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="15" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
+      <path d="M8 16 A8 8 0 0 1 16 8" stroke="#5B8CFF" stroke-width="3" stroke-linecap="round"/>
+      <path d="M16 8 A8 8 0 0 1 24 16" stroke="#FF6378" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.4" fill="#8A7CFF"/>
+    </svg>
+    <span class="name">Glowby</span>
+    <span class="beta">Beta</span>
+  </a>
+  <nav class="top-right">
+    <a href="/about#methodology">How it works</a>
+    <a href="/about#ratings">The score</a>
+  </nav>
+</header>
+
+<main class="stage">
+  <h1 class="greet">What should <span class="hl">Glowby</span> check?</h1>
+
+  <form class="bar" id="pasteForm" autocomplete="off">
+    <span class="icon" aria-hidden="true">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+    </span>
+    <input id="urlInput" type="text" inputmode="url" placeholder="Paste a video link — or type a claim…" aria-label="Paste a link or type a claim">
+    <button type="submit" class="send" aria-label="Check it">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+    </button>
+  </form>
+
+  <div class="chips" aria-label="Try one of these">
+    <span class="chip" data-fill="https://www.youtube.com/shorts/"><b>🎬</b>Check a Short</span>
+    <span class="chip" data-fill="The earth is flat"><b>🌍</b>The earth is flat</span>
+    <span class="chip" data-fill="how many U.S. senators are there?"><b>❓</b>Ask a question</span>
+    <span class="chip" data-fill="https://www.tiktok.com/"><b>🎵</b>Check a TikTok</span>
+  </div>
+
+  <p class="platforms"><b>YouTube · TikTok · Reels · typed claims</b> — any topic</p>
+</main>
+
+<footer class="foot">
+  Glowby can be wrong — every score shows its sources. That's the point.
+  <a href="/about#terms">Terms</a>·<a href="/about#privacy">Privacy</a>·<a href="/about#corrections">Corrections</a>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* constellation — same glow as the original design */
+  var canvas=document.getElementById("constellation"),ctx=canvas.getContext("2d");
+  var W=0,H=0,DPR=1,parts=[],raf=null,tt=0,mouse={x:-9999,y:-9999,on:false},LINK=134,LIGHT=220;
+  function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=canvas.clientWidth;H=canvas.clientHeight;
+    canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);
+    var n=Math.max(42,Math.min(96,Math.floor(W*H/16000)));parts=[];
+    for(var i=0;i<n;i++)parts.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r:Math.random()*1.5+1.1,tw:Math.random()*6.283});}
+  function frame(){tt+=0.016;ctx.clearRect(0,0,W,H);
+    for(var i=0;i<parts.length;i++){var p=parts[i];p.x+=p.vx;p.y+=p.vy;
+      if(p.x<-25)p.x=W+25;if(p.x>W+25)p.x=-25;if(p.y<-25)p.y=H+25;if(p.y>H+25)p.y=-25;
+      if(mouse.on){var dx=p.x-mouse.x,dy=p.y-mouse.y,d2=dx*dx+dy*dy;
+        if(d2<LIGHT*LIGHT&&d2>0.5){var d=Math.sqrt(d2),f=(LIGHT-d)/LIGHT;p.x+=(dx/d)*f*3.4;p.y+=(dy/d)*f*3.4;}}}
+    if(mouse.on){var g=ctx.createRadialGradient(mouse.x,mouse.y,0,mouse.x,mouse.y,LIGHT);
+      g.addColorStop(0,"rgba(150,132,255,0.16)");g.addColorStop(1,"rgba(150,132,255,0)");
+      ctx.fillStyle=g;ctx.fillRect(mouse.x-LIGHT,mouse.y-LIGHT,LIGHT*2,LIGHT*2);}
+    ctx.lineWidth=1;
+    for(var a=0;a<parts.length;a++)for(var b=a+1;b<parts.length;b++){
+      var A=parts[a],B=parts[b],ddx=A.x-B.x,ddy=A.y-B.y,dd=ddx*ddx+ddy*ddy;
+      if(dd<LINK*LINK){var base=(1-Math.sqrt(dd)/LINK),lit=0;
+        if(mouse.on){var cx=(A.x+B.x)/2-mouse.x,cy=(A.y+B.y)/2-mouse.y,cm=Math.sqrt(cx*cx+cy*cy);if(cm<LIGHT)lit=(1-cm/LIGHT);}
+        ctx.strokeStyle="rgba(158,146,255,"+(base*(0.3+lit*0.5)).toFixed(3)+")";
+        ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke();}}
+    for(var k=0;k<parts.length;k++){var q=parts[k],boost=0;
+      if(mouse.on){var bx=q.x-mouse.x,by=q.y-mouse.y,bd=Math.sqrt(bx*bx+by*by);if(bd<LIGHT)boost=(1-bd/LIGHT);}
+      var tw=0.72+0.28*Math.sin(tt*1.7+q.tw);
+      ctx.shadowBlur=7+boost*22;ctx.shadowColor="rgba(150,130,255,0.95)";
+      ctx.fillStyle="rgba(220,214,255,"+Math.min(1,(0.5+boost*0.5)*tw).toFixed(3)+")";
+      ctx.beginPath();ctx.arc(q.x,q.y,q.r+boost*2.6,0,6.2832);ctx.fill();}
+    ctx.shadowBlur=0;raf=requestAnimationFrame(frame);}
+  function start(){resize();if(reduce)return;if(raf)cancelAnimationFrame(raf);frame();}
+  window.addEventListener("resize",start);
+  if(!reduce){
+    window.addEventListener("mousemove",function(e){mouse.x=e.clientX;mouse.y=e.clientY;mouse.on=true;});
+    window.addEventListener("mouseout",function(){mouse.on=false;});
+    document.addEventListener("visibilitychange",function(){if(document.hidden){if(raf){cancelAnimationFrame(raf);raf=null;}}else if(!raf)frame();});
+  }
+  start();
+
+  /* hand the link to the real engine */
+  var form=document.getElementById("pasteForm"),input=document.getElementById("urlInput");
+  form.addEventListener("submit",function(e){e.preventDefault();
+    var v=input.value.trim();
+    if(!v){form.classList.remove("shake");void form.offsetWidth;form.classList.add("shake");return;}
+    location.href="/app?u="+encodeURIComponent(v);});
+
+  /* chips fill the bar */
+  document.querySelectorAll(".chip").forEach(function(c){
+    c.addEventListener("click",function(){input.value=c.getAttribute("data-fill");input.focus();});
+  });
+})();
+</script>
+</body>
+</html>
