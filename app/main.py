@@ -10,7 +10,10 @@ v0.9: async job queue with progress stages, Design 2 list UI with Design 3
 reel toggle, shareable permalinks (/r/<key>), report-a-mistake.
 """
 
+import hashlib
+import hmac
 import os
+import secrets
 import threading
 import time
 import uuid
@@ -18,7 +21,7 @@ from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from app.agents.answer import answer_question
@@ -36,8 +39,15 @@ from app.agents.router import (
 )
 from app.storage import (
     add_usage,
+    admin_recent_checks,
     canonical_key,
+    daily_usage_series,
+    event_stats,
     get_cached,
+    record_event,
+    record_visitor,
+    visitor_series,
+    visitor_total,
     list_mistake_reports,
     list_recent_checks,
     looks_like_url,
@@ -50,7 +60,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.24.6"
+VERSION = "0.24.9"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -384,14 +394,16 @@ _index_cache = None
 
 
 @app.get("/", response_class=HTMLResponse)
-def home() -> str:
+def home(request: Request) -> str:
     """One unified page — the glowing checker IS the front door."""
+    _count_visitor(request)
     return _page()
 
 
 @app.get("/app", response_class=HTMLResponse)
-def checker() -> str:
+def checker(request: Request) -> str:
     """The checker itself; ?u=<link> arrives prefilled from the landing."""
+    _count_visitor(request)
     return _page()
 
 
@@ -424,8 +436,9 @@ def about() -> str:
 
 
 @app.get("/r/{key:path}", response_class=HTMLResponse)
-def permalink_page(key: str) -> str:
+def permalink_page(key: str, request: Request) -> str:
     # same single-page app; its JS loads /api/result/<key>
+    _count_visitor(request)
     return _page()
 
 
@@ -567,10 +580,89 @@ def api_recent():
 # just emailed — the corrections policy with tracking behind it.
 
 ADMIN_KEY = os.environ.get("GLOWBY_ADMIN_KEY", "")
+ADMIN_USER = os.environ.get("GLOWBY_ADMIN_USER", "")
+ADMIN_PASSWORD = os.environ.get("GLOWBY_ADMIN_PASSWORD", "")
+
+# login sessions: token -> expiry. In-process, so a redeploy logs the
+# admin out — acceptable; the login screen is one step away.
+_admin_sessions: dict = {}
+_ADMIN_SESSION_TTL = 7 * 24 * 3600  # 7 days
 
 
 def _admin_ok(key: str) -> bool:
-    return bool(ADMIN_KEY) and key == ADMIN_KEY
+    """True for the master key OR a live login-session token."""
+    if not key:
+        return False
+    if bool(ADMIN_KEY) and hmac.compare_digest(key, ADMIN_KEY):
+        return True
+    exp = _admin_sessions.get(key)
+    if exp is None:
+        return False
+    if exp < time.time():
+        _admin_sessions.pop(key, None)
+        return False
+    return True
+
+
+_EVENT_KINDS = {"copy_result", "copy_link"}
+
+
+class UiEvent(BaseModel):
+    kind: str
+
+
+@app.post("/api/event")
+def api_event(ev: UiEvent):
+    """Anonymous UI event counter (e.g. someone copied a result).
+    Only allowlisted kinds are counted; nothing about who is stored."""
+    if ev.kind not in _EVENT_KINDS:
+        return {"ok": False}
+    threading.Thread(target=record_event, args=(ev.kind,), daemon=True).start()
+    return {"ok": True}
+
+
+class AdminLogin(BaseModel):
+    username: str = ""
+    password: str
+
+
+@app.post("/api/admin/login")
+def api_admin_login(req: AdminLogin):
+    """Username+password login. Falls back to the master key as the
+    password when no GLOWBY_ADMIN_USER is configured yet."""
+    ok = False
+    if ADMIN_USER and ADMIN_PASSWORD:
+        ok = (hmac.compare_digest(req.username.strip(), ADMIN_USER)
+              and hmac.compare_digest(req.password, ADMIN_PASSWORD))
+    if not ok and bool(ADMIN_KEY) and hmac.compare_digest(req.password, ADMIN_KEY):
+        ok = True  # master key always unlocks, username ignored
+    if not ok:
+        time.sleep(1)  # slow down guessing
+        return JSONResponse(status_code=403, content={"detail": "Wrong login."})
+    # prune dead sessions, then issue a fresh token
+    now = time.time()
+    for t in [t for t, e in _admin_sessions.items() if e < now]:
+        _admin_sessions.pop(t, None)
+    token = secrets.token_urlsafe(32)
+    _admin_sessions[token] = now + _ADMIN_SESSION_TTL
+    return {"token": token, "expires_in": _ADMIN_SESSION_TTL}
+
+
+# ---- privacy-first visitor counting ----
+# The hash mixes the date in, so the same person hashes differently
+# every day: daily counts exist, cross-day tracking is impossible,
+# and no raw IPs are ever stored.
+
+
+def _count_visitor(request) -> None:
+    try:
+        ip = _client_ip(request)
+        day = time.strftime("%Y-%m-%d")
+        salt = ADMIN_KEY or "glowby"
+        vh = hashlib.sha256(f"{salt}:{day}:{ip}".encode()).hexdigest()[:32]
+        threading.Thread(target=record_visitor, args=(vh,), daemon=True).start()
+    except Exception:
+        pass
 
 
 class MistakeReport(BaseModel):
@@ -625,9 +717,110 @@ def api_admin_stats(key: str = ""):
     return stats
 
 
+@app.get("/api/admin/dashboard")
+def api_admin_dashboard(key: str = ""):
+    """Everything the /admin page needs in one call."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    checks, spent = today_usage()
+    daily = daily_usage_series(14)
+    visitors = visitor_series(14)
+    for d in daily:
+        d["visitors"] = visitors.get(d["day"], 0)
+    today_key = time.strftime("%Y-%m-%d")
+    return {
+        "version": VERSION,
+        "today": {
+            "fresh_checks": checks,
+            "est_spend_usd": round(spent, 2),
+            "budget_usd": DAILY_BUDGET_USD,
+            "visitors": visitors.get(today_key, 0),
+        },
+        "visitors_total": visitor_total(),
+        "events": event_stats(),
+        "stats": quality_stats(),
+        "daily": daily,
+        "recent": admin_recent_checks(25),
+        "reports": list_mistake_reports(),
+    }
+
+
+_ADMIN_TEMPLATE_PATH = os.path.join(
+    os.path.dirname(__file__), "templates", "admin.html")
+_admin_template_cache = None
+
+
+@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+def admin_page() -> str:
+    """Admin dashboard shell. Renders nothing sensitive until the admin
+    key is entered client-side and verified against /api/admin/dashboard."""
+    global _admin_template_cache
+    if _admin_template_cache is None:
+        with open(_ADMIN_TEMPLATE_PATH, encoding="utf-8") as f:
+            _admin_template_cache = f.read()
+    return _admin_template_cache
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "glowby", "version": VERSION}
+
+
+# ------------------------------------------------------------ PWA assets
+# These make glowby.io installable ("Add to Home Screen") on iPhone and
+# Android. The service worker is deliberately cache-free so nothing is
+# ever served stale. Served from root paths so scope covers the whole app.
+_STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+_PWA_FILES = {
+    "manifest.webmanifest": "application/manifest+json",
+    "sw.js": "application/javascript",
+    "icon-192.png": "image/png",
+    "icon-512.png": "image/png",
+    "icon-512-maskable.png": "image/png",
+    "apple-touch-icon.png": "image/png",
+}
+
+
+def _pwa_file(name: str) -> FileResponse:
+    return FileResponse(
+        os.path.join(_STATIC, name),
+        media_type=_PWA_FILES[name],
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def pwa_manifest() -> FileResponse:
+    return _pwa_file("manifest.webmanifest")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def pwa_sw() -> FileResponse:
+    # Service worker must never be cached long, or updates lag for a day.
+    resp = _pwa_file("sw.js")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/icon-192.png", include_in_schema=False)
+def pwa_icon_192() -> FileResponse:
+    return _pwa_file("icon-192.png")
+
+
+@app.get("/icon-512.png", include_in_schema=False)
+def pwa_icon_512() -> FileResponse:
+    return _pwa_file("icon-512.png")
+
+
+@app.get("/icon-512-maskable.png", include_in_schema=False)
+def pwa_icon_maskable() -> FileResponse:
+    return _pwa_file("icon-512-maskable.png")
+
+
+@app.get("/apple-touch-icon.png", include_in_schema=False)
+def pwa_apple_icon() -> FileResponse:
+    return _pwa_file("apple-touch-icon.png")
 
 
 # ------------------------------------------------------------ pre-check

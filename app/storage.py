@@ -414,6 +414,170 @@ def add_usage(est_cost: float) -> None:
         pass
 
 
+def daily_usage_series(days: int = 14) -> list:
+    """Fresh checks + est cost per day, oldest first. [] on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT d.day::text, COALESCE(u.checks, 0),
+                       COALESCE(u.est_cost, 0)
+                FROM generate_series(
+                    CURRENT_DATE - %s::int + 1, CURRENT_DATE, '1 day'
+                ) AS d(day)
+                LEFT JOIN daily_usage u ON u.day = d.day
+                ORDER BY d.day
+                """,
+                (days,),
+            )
+            rows = cur.fetchall()
+        return [{"day": r[0], "checks": r[1], "est_cost": float(r[2])}
+                for r in rows]
+    except Exception:
+        return []
+
+
+def admin_recent_checks(limit: int = 25) -> list:
+    """Recent checks with hits + timestamps for the admin page."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT url_key, url, result->>'title', "
+                "result->'report'->>'headline_score', "
+                "result->'report'->>'headline_state', "
+                "(result->>'answer_mode') = 'true', hits, "
+                "result->'timings'->>'total_s', created_at "
+                "FROM checks ORDER BY created_at DESC LIMIT %s",
+                (limit,),
+            )
+            rows = cur.fetchall()
+        return [{
+            "url_key": r[0], "url": r[1],
+            "title": (r[2] or "(untitled)")[:90],
+            "score": float(r[3]) if r[3] is not None else None,
+            "state": r[4] or "unverified",
+            "answer": bool(r[5]),
+            "hits": r[6],
+            "seconds": float(r[7]) if r[7] else None,
+            "created_at": r[8].isoformat() if r[8] else None,
+        } for r in rows]
+    except Exception:
+        return []
+
+
+# ------------------------------------------------------------ visitors
+# Privacy-first unique-visitor counting: each visit stores a one-way
+# hash that includes the DATE, so the same person hashes differently
+# tomorrow — counts exist, tracking is impossible, no IPs are stored.
+
+
+def record_visitor(visitor_hash: str) -> None:
+    """Count one visitor for today. No-ops on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_visitors (
+                    day DATE NOT NULL DEFAULT CURRENT_DATE,
+                    visitor TEXT NOT NULL,
+                    PRIMARY KEY (day, visitor)
+                )
+                """
+            )
+            cur.execute(
+                "INSERT INTO daily_visitors (day, visitor) "
+                "VALUES (CURRENT_DATE, %s) ON CONFLICT DO NOTHING",
+                (visitor_hash[:64],),
+            )
+    except Exception:
+        pass
+
+
+def record_event(kind: str) -> None:
+    """Count one UI event (e.g. a result copied). No-ops on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS daily_events (
+                    day DATE NOT NULL DEFAULT CURRENT_DATE,
+                    kind TEXT NOT NULL,
+                    count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (day, kind)
+                )
+                """
+            )
+            cur.execute(
+                "INSERT INTO daily_events (day, kind, count) "
+                "VALUES (CURRENT_DATE, %s, 1) "
+                "ON CONFLICT (day, kind) DO UPDATE SET "
+                "count = daily_events.count + 1",
+                (kind[:40],),
+            )
+    except Exception:
+        pass
+
+
+def event_stats() -> dict:
+    """{kind: {'today': n, 'total': n}} for all counted events."""
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT kind, sum(count), "
+                "sum(count) FILTER (WHERE day = CURRENT_DATE) "
+                "FROM daily_events GROUP BY kind"
+            )
+            return {r[0]: {"total": int(r[1]), "today": int(r[2] or 0)}
+                    for r in cur.fetchall()}
+    except Exception:
+        return {}
+
+
+def visitor_total() -> int:
+    """All-time visitors served (each person counts once per day visited)."""
+    conn = _get_conn()
+    if conn is None:
+        return 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM daily_visitors")
+            return cur.fetchone()[0]
+    except Exception:
+        return 0
+
+
+def visitor_series(days: int = 14) -> dict:
+    """{'YYYY-MM-DD': count} unique visitors per day. {} on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT day::text, count(*) FROM daily_visitors "
+                "WHERE day >= CURRENT_DATE - %s::int + 1 GROUP BY day",
+                (days,),
+            )
+            return {r[0]: r[1] for r in cur.fetchall()}
+    except Exception:
+        return {}
+
+
 def today_usage():
     """(checks, est_cost) for today. (0, 0.0) if unavailable."""
     conn = _get_conn()

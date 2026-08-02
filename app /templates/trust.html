@@ -154,6 +154,10 @@
   design — that's what share links are.</p>
   <p><b>IP addresses</b> are used in memory for rate limiting (stopping abuse)
   and are not stored with results.</p>
+  <p><b>Visitor counting:</b> Glowby counts how many people visit each day
+  using a one-way scrambled code that changes every day. No IP addresses are
+  stored, the code cannot be reversed, and the same visitor cannot be
+  recognized across days — it is a daily headcount, not tracking.</p>
   <p><b>Services Glowby relies on</b> (each receives only what's needed to do
   its job): Anthropic (AI analysis of transcripts, video frames, and
   evidence), OpenAI (transcription of audio from videos without captions),
