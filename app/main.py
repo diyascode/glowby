@@ -24,7 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from app.agents.answer import answer_question
+from app.agents.answer import answer_followup, answer_question
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -60,7 +60,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.24.9"
+VERSION = "0.25.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -536,6 +536,75 @@ def api_result(key: str):
     if "report" not in cached:
         build_report(cached)
     return cached
+
+
+class FollowupRequest(BaseModel):
+    url_key: str
+    question: str
+
+
+def _followup_context(result: dict) -> str:
+    """Compact text bundle of a stored check for the follow-up agent."""
+    import json as _json
+
+    report = result.get("report") or {}
+    claims = []
+    for c in (result.get("claims") or [])[:8]:
+        v = c.get("verdict") or {}
+        claims.append({
+            "claim": c.get("claim"),
+            "category": c.get("gate_label"),
+            "central": c.get("central"),
+            "truth_score": v.get("truth_score"),
+            "verdict_state": v.get("verdict_state"),
+            "verdict": v.get("verdict"),
+            "sources": (v.get("key_sources") or [])[:4],
+        })
+    bundle = {
+        "title": result.get("title"),
+        "uploader": result.get("uploader"),
+        "platform": result.get("platform"),
+        "posted_date": result.get("posted_date"),
+        "headline_score": report.get("headline_score"),
+        "headline_label": report.get("headline_label"),
+        "claims": claims,
+        "answer": result.get("answer"),
+        "transcript_excerpt": (result.get("transcript") or "")[:2500],
+    }
+    return _json.dumps(bundle, indent=1)[:14000]
+
+
+@app.post("/api/followup")
+def api_followup(req: FollowupRequest, request: Request):
+    """Follow-up question about a finished check. Armored: it's a paid
+    AI call, so it shares the per-IP rate limit and daily budget."""
+    q = (req.question or "").strip()
+    if len(q) < 3:
+        return JSONResponse(status_code=422, content={"detail": "Type a question."})
+    if _rate_limited(_client_ip(request)):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "You've hit the hourly limit — try again soon."})
+    _, spent = today_usage()
+    if spent >= DAILY_BUDGET_USD:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Glowby's daily budget is used up — back tomorrow."})
+    stored = get_cached(req.url_key)
+    if stored is None:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "This check isn't stored (it may have been "
+                               "checked before saving existed). Re-run it first."})
+    if "report" not in stored:
+        build_report(stored)
+    text = answer_followup(q, _followup_context(stored))
+    if not text:
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Couldn't answer right now — try again."})
+    add_usage(0.02)  # small single-call cost
+    return {"answer": text}
 
 
 @app.post("/api/ingest")

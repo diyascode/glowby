@@ -39,6 +39,56 @@ Evidence:
 Respond with ONLY the answer text (no JSON, no preamble)."""
 
 
+FOLLOWUP_PROMPT = """You are the follow-up agent for Glowby, a fact-checking \
+service. A user just read the fact-check below and asked a FOLLOW-UP \
+question about it. Answer in 1-4 plain sentences.
+
+Rules:
+- START with the direct answer in ONE short sentence, then brief support.
+- Base the answer ONLY on the fact-check context below (its claims, \
+verdicts, evidence and sources) — not on your memory of the world.
+- Name sources when you lean on them ("Per the Reuters source in this \
+check...").
+- If the context genuinely cannot answer the follow-up, say exactly that \
+in one sentence and suggest checking it as a new claim or question — never \
+guess to seem helpful.
+- Never change or second-guess the scores in the check; you may explain \
+WHY a score is what it is using the verdicts given.
+- No hedging filler, no "great question", no speculation.
+
+Fact-check context:
+{context}
+
+Follow-up question: "{question}"
+
+Respond with ONLY the answer text (no JSON, no preamble)."""
+
+
+def answer_followup(question: str, context: str):
+    """Follow-up question + stored-check context in, short answer out."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+
+    import anthropic
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model=MODEL,
+            max_tokens=400,
+            temperature=0,
+            messages=[{"role": "user", "content": FOLLOWUP_PROMPT.format(
+                question=question[:400], context=context[:14000])}],
+        )
+    except Exception:
+        return None
+    text = "".join(
+        b.text for b in message.content if getattr(b, "type", "") == "text"
+    ).strip()
+    return text or None
+
+
 def answer_question(question: str, evidence: dict):
     """Question + evidence bundle in, short sourced answer out (or None)."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
