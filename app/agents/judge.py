@@ -156,7 +156,15 @@ if the posting date makes "recent"-sounding claims stale, say that. This \
 applies ESPECIALLY to RUNNING TALLIES (career goals, follower counts, \
 death tolls, prices): compare the number to its value ON THE POSTED DATE, \
 not today's value. A tally that was right when posted and has since grown \
-is expired truth (partly_supported, mid-high score) — never "contradicted."
+is expired truth (partly_supported, mid-high score) — never "contradicted." \
+MONOTONIC INFERENCE: for counters that only ever go UP (career goals, \
+total followers, cumulative deaths), a claimed number LOWER than today's \
+value, posted on an earlier date, is CONSISTENT with having been accurate \
+when posted — the tally must have passed through that number on its way \
+up. Unless a source shows the number was wrong ON THE POSTED DATE itself, \
+you MUST treat it as expired truth (partly_supported, score 6.0-7.5), \
+never contradicted. Evidence quoting only TODAY'S higher value does not \
+refute the posted-date claim — it supports the monotonic inference.
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"

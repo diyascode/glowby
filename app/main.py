@@ -70,6 +70,9 @@ DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "10"))
 COST_PER_CHECK_EST = float(os.environ.get("GLOWBY_COST_PER_CHECK_EST", "0.15"))
 RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "25"))
 JOB_TIMEOUT_SECONDS = int(os.environ.get("GLOWBY_JOB_TIMEOUT_SECONDS", "480"))
+# cached verdicts expire after this many days on the CHECK path, so a
+# re-pasted link gets fresh evidence; share links (/r/) never expire.
+CACHE_TTL_DAYS = int(os.environ.get("GLOWBY_CACHE_TTL_DAYS", "7"))
 
 # ---- bot protection (Cloudflare Turnstile) ----
 # Dormant until BOTH keys are set as Railway Variables:
@@ -462,7 +465,7 @@ def api_check(req: CheckRequest, request: Request):
         url_key = text_key(raw)
     else:
         url_key = canonical_key(raw)
-    cached = None if req.force else get_cached(url_key)
+    cached = None if req.force else get_cached(url_key, CACHE_TTL_DAYS)
     if cached is not None:
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
@@ -737,6 +740,7 @@ def api_admin_dashboard(key: str = ""):
             "visitors": visitors.get(today_key, 0),
         },
         "visitors_total": visitor_total(),
+        "cache_ttl_days": CACHE_TTL_DAYS,
         "events": event_stats(),
         "stats": quality_stats(),
         "daily": daily,

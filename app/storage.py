@@ -136,8 +136,14 @@ def _get_conn():
         return None
 
 
-def get_cached(url_key: str):
-    """Return the stored result dict for this key, or None. Counts the hit."""
+def get_cached(url_key: str, max_age_days: int = 0):
+    """Return the stored result dict for this key, or None. Counts the hit.
+
+    max_age_days > 0: treat results older than that as expired (return
+    None so the pipeline re-checks with fresh evidence). Used on the
+    check path so old verdicts don't outlive the news cycle; permalinks
+    pass 0 so a share link ALWAYS keeps working.
+    """
     conn = _get_conn()
     if conn is None:
         return None
@@ -145,12 +151,15 @@ def get_cached(url_key: str):
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE checks SET hits = hits + 1 WHERE url_key = %s "
-                "RETURNING result, created_at",
-                (url_key,),
+                "RETURNING result, created_at, "
+                "created_at < now() - make_interval(days => %s)",
+                (url_key, max_age_days if max_age_days > 0 else 0),
             )
             row = cur.fetchone()
         if not row:
             return None
+        if max_age_days > 0 and row[2]:
+            return None  # expired: caller re-runs and overwrites
         result = row[0] if isinstance(row[0], dict) else json.loads(row[0])
         result["cached"] = True
         result["first_checked_at"] = row[1].isoformat()
@@ -369,9 +378,13 @@ def quality_stats() -> dict:
                 "FROM checks GROUP BY 1 ORDER BY 2 DESC")
             out["verdict_distribution"] = {
                 (r[0] or "unknown"): r[1] for r in cur.fetchall()}
+            # videos only: typed claims/questions finish much faster and
+            # would flatter the number; cache hits never re-run, so they
+            # were never in it.
             cur.execute(
                 "SELECT round(avg((result->'timings'->>'total_s')::float)::numeric, 1) "
-                "FROM checks WHERE result->'timings'->>'total_s' IS NOT NULL")
+                "FROM checks WHERE result->'timings'->>'total_s' IS NOT NULL "
+                "AND result->>'transcript_source' IS DISTINCT FROM 'typed'")
             row = cur.fetchone()
             out["avg_check_seconds"] = float(row[0]) if row and row[0] is not None else None
             cur.execute(

@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Glowby — paste a link, get a fact-check</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#08070F">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Glowby">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -214,7 +222,7 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.24.5 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.24.9 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -417,9 +425,11 @@ function render(){
   $('tl').onclick=()=>{currentView='list';render();};
   $('tr').onclick=()=>{currentView='reel';render();};
   const cr=$('copyRes');
-  if(cr)cr.onclick=async()=>{const t=resultText(d);try{await navigator.clipboard.writeText(t);cr.textContent='✓ Result copied';}catch(e){prompt('Copy this:',t);}};
+  if(cr)cr.onclick=async()=>{const t=resultText(d);try{await navigator.clipboard.writeText(t);cr.textContent='✓ Result copied';}catch(e){prompt('Copy this:',t);}
+    try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_result'})});}catch(e){}};
   const cb=$('copyLink');
-  if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(permalink);cb.textContent='✓ Link copied';}catch(e){prompt('Copy this link:',permalink);}};
+  if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(permalink);cb.textContent='✓ Link copied';}catch(e){prompt('Copy this link:',permalink);}
+    try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_link'})});}catch(e){}};
   const rb=$('repBtn');
   if(rb)rb.onclick=async()=>{
     const msg=prompt('What looks wrong with this result? (Glowby reviews every report — add your email if you want a reply)');
@@ -567,6 +577,7 @@ renderMine();
 // ---- topbar Trending opens the sidebar feed ----
 const tbT=$('tbTrend');
 if(tbT)tbT.onclick=()=>{sb.classList.add('open');try{localStorage.setItem('sbOpen','1');}catch(e){}};
+if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js").catch(()=>{})})}
 </script>
 </body>
 </html>
