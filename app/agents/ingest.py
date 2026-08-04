@@ -22,6 +22,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 
@@ -106,11 +107,19 @@ def ingest(url: str) -> dict:
         ydl_opts["proxy"] = _proxy_url()
     info = None
     bot_blocked = False
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception as e:
-        err_text = str(e)
+    err_text = ""
+    # blocks are often luck-of-the-draw: a second knock seconds later
+    # frequently gets in. Two attempts before giving up.
+    for attempt in (1, 2):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            break
+        except Exception as e:
+            err_text = str(e)
+            if attempt == 1:
+                time.sleep(1.5)
+    if info is None:
         bot_blocked = "Sign in to confirm" in err_text or "not a bot" in err_text
         if platform == "youtube":
             # Plan B: a different transcript door that is rarely bot-challenged
@@ -124,11 +133,15 @@ def ingest(url: str) -> dict:
                 "again shortly, or try a different video."
             )
         if platform == "tiktok":
+            # photo slideshows have no video file — but the EYES can still
+            # read the cover image via TikTok's public oEmbed door
+            photo = _tiktok_photo_result(url)
+            if photo is not None:
+                return photo
             raise IngestError(
-                "TikTok blocked this particular video — that happens with "
-                "some TikToks (they fight automated tools hard, and photo "
-                "slideshows can't be read at all). Try again in a few "
-                "minutes, or try a different link."
+                "TikTok blocked this video even after a retry — that "
+                "happens with some TikToks (they fight automated tools "
+                "hard). Try again in a few minutes, or try a different link."
             )
         raise IngestError(
             f"Could not read this {platform} link. It may be private, deleted, "
@@ -194,6 +207,51 @@ def ingest(url: str) -> dict:
     return result
 
 
+def _tiktok_photo_result(url: str):
+    """TikTok photo slideshows have no video to download — but the EYES
+    can still read the COVER image, fetched through TikTok's public
+    oEmbed endpoint (which is served to everyone, no bot wall).
+
+    Returns an ingest-shaped result with the cover as a frame, or None
+    when even oEmbed won't talk (then the caller shows the blocked error).
+    """
+    import base64
+
+    try:
+        oembed = ("https://www.tiktok.com/oembed?url="
+                  + urllib.parse.quote(url, safe=""))
+        req = urllib.request.Request(oembed, headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like "
+                          "Mac OS X) AppleWebKit/605.1.15"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            meta = json.loads(resp.read().decode())
+        thumb = meta.get("thumbnail_url")
+        if not thumb:
+            return None
+        req2 = urllib.request.Request(thumb, headers={
+            "User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req2, timeout=15) as resp2:
+            img = resp2.read()
+        if not img or len(img) > 8 * 1024 * 1024:
+            return None
+        frame = base64.b64encode(img).decode()
+        title = (meta.get("title") or "(TikTok photo post)")[:200]
+        return {
+            "url": url,
+            "platform": "tiktok",
+            "title": title,
+            "uploader": meta.get("author_name") or "(unknown)",
+            "duration_seconds": 0,
+            "posted_date": None,
+            "transcript": "",
+            "transcript_source": "none",
+            "frames": [frame],
+            "photo_post": True,  # cover slide only — said in the output
+        }
+    except Exception:
+        return None
+
+
 def _is_thin(text) -> bool:
     """A transcript too thin to carry the video's claims by itself."""
     return len((text or "").split()) < 20
@@ -234,19 +292,27 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
             "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
             **({"proxy": _proxy_url()} if _proxy_url() else {}),
         }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-        except Exception as e:
+        dl_err = None
+        for attempt in (1, 2):  # blocks are often transient — knock twice
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+                dl_err = None
+                break
+            except Exception as e:
+                dl_err = e
+                if attempt == 1:
+                    time.sleep(2)
+        if dl_err is not None:
             if detect_platform(url) == "tiktok":
                 return None, [], None, IngestError(
-                    "TikTok blocked this particular video — that happens "
-                    "with some TikToks (they fight automated tools hard, "
-                    "and photo slideshows can't be read at all). Try again "
-                    "in a few minutes, or try a different link.")
+                    "TikTok blocked this video even after a retry — that "
+                    "happens with some TikToks (they fight automated tools "
+                    "hard). Try again in a few minutes, or try a "
+                    "different link.")
             return None, [], None, IngestError(
                 "This video has no captions and could not be downloaded "
-                f"for analysis. (Details: {str(e)[:200]})")
+                f"for analysis. (Details: {str(dl_err)[:200]})")
         vids = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
         if not vids:
             return None, [], None, IngestError(

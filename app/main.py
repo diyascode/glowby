@@ -137,6 +137,21 @@ app = FastAPI(
     version=VERSION,
 )
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Baseline browser-security headers on every response."""
+    resp = await call_next(request)
+    h = resp.headers
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("X-Frame-Options", "SAMEORIGIN")
+    h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    h.setdefault("Permissions-Policy",
+                 "microphone=(self), camera=(), geolocation=(), payment=()")
+    h.setdefault("Strict-Transport-Security",
+                 "max-age=31536000; includeSubDomains")
+    return resp
+
 _TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "templates", "app.html")
 _template_cache = None
 
@@ -242,11 +257,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
                 frames, result.get("title") or "", result.get("uploader") or "")
             if desc:
                 base = (result.get("transcript") or "").strip()
-                visual = "[WHAT THE VIDEO VISUALLY SHOWS] " + desc
+                tag = ("[WHAT THE PHOTO POST'S COVER SLIDE SHOWS] "
+                       if result.get("photo_post")
+                       else "[WHAT THE VIDEO VISUALLY SHOWS] ")
+                visual = tag + desc
                 result["transcript"] = (base + "\n\n" + visual) if base else visual
                 result["transcript_source"] = (
                     (result.get("transcript_source") or "none").replace("none", "")
-                    + "+visual analysis").lstrip("+")
+                    + ("+cover slide only" if result.get("photo_post")
+                       else "+visual analysis")).lstrip("+")
             elif not (result.get("transcript") or "").strip():
                 _set_job(job_id, status="error", error=(
                     "This video has no speech or captions, and its visuals "
