@@ -60,7 +60,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.26.5"
+VERSION = "0.26.6"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -859,6 +859,54 @@ def api_admin_dashboard(key: str = ""):
         "recent": admin_recent_checks(25),
         "reports": list_mistake_reports(),
     }
+
+
+@app.get("/api/admin/rescue-test")
+def api_admin_rescue_test(key: str = "", url: str = ""):
+    """Diagnostic: run the rescue tier on one URL and report exactly what
+    came back — so an Instagram/TikTok miss can be seen, not guessed.
+    Admin-only."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents.ingest import detect_platform
+    from app.agents import rescue as _rescue
+
+    platform = detect_platform(url)
+    out = {
+        "url": url,
+        "platform": platform,
+        "token_present": bool(_rescue.RESCUE_TOKEN),
+        "daily_calls_used": (event_stats().get("rescue") or {}).get("today", 0),
+        "daily_calls_cap": _rescue.RESCUE_DAILY_CALLS,
+    }
+    if not _rescue.RESCUE_TOKEN:
+        out["result"] = "NO TOKEN — set GLOWBY_RESCUE_TOKEN in Railway."
+        return out
+    if platform == "instagram":
+        import re as _re
+        m = _re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)", url)
+        out["shortcode"] = m.group(1) if m else None
+        raw = _rescue._ed_get("/instagram/post/details",
+                              {"code": m.group(1), "n_comments_to_fetch": 0}) if m else None
+    elif platform == "tiktok":
+        raw = _rescue._ed_get("/tt/post/info", {"url": url})
+    else:
+        out["result"] = f"platform '{platform}' has no rescue path."
+        return out
+    out["provider_returned_data"] = raw is not None
+    # top-level keys only, so the response stays small and safe to view
+    if isinstance(raw, dict):
+        out["top_level_keys"] = sorted(raw.keys())[:40]
+        out["found_video_url"] = bool(_rescue._deep_find_video(raw))
+    elif isinstance(raw, list):
+        out["top_level_keys"] = f"list of {len(raw)}"
+        out["found_video_url"] = bool(_rescue._deep_find_video(raw))
+    else:
+        out["top_level_keys"] = None
+        out["found_video_url"] = False
+        out["hint"] = ("Provider returned nothing — token may be invalid, "
+                       "out of units, or the post is private/deleted.")
+    return out
 
 
 _ADMIN_TEMPLATE_PATH = os.path.join(

@@ -96,6 +96,27 @@ def ingest(url: str) -> dict:
 
     platform = detect_platform(url)
 
+    # INSTAGRAM: yt-dlp almost never gets a Reel (login wall) and when it
+    # "succeeds" it often yields an empty file. Go straight to the rescue
+    # tier, which is the only door that reliably opens for Instagram.
+    if platform == "instagram":
+        try:
+            from app.agents.rescue import rescue_media
+
+            rescued = rescue_media(url, "instagram")
+        except Exception:
+            rescued = None
+        if rescued and rescued.get("media_url"):
+            saved = _ingest_rescued(url, "instagram", rescued)
+            if saved is not None:
+                return saved
+        raise IngestError(
+            "Instagram wouldn't hand over this Reel. Make sure it's a "
+            "PUBLIC reel (private accounts are locked to everyone), or "
+            "paste the claim as text instead. If it's public and this "
+            "keeps happening, the rescue service may be out of daily units."
+        )
+
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,

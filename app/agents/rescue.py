@@ -123,10 +123,66 @@ def _rescue_tiktok(url: str):
     }
 
 
+def _deep_find_video(obj, depth=0):
+    """Walk any nested dict/list and return the first plausible video
+    CDN url. Instagram's response nesting varies wildly by endpoint
+    version, so we search rather than guess the exact path."""
+    if depth > 8:
+        return None
+    if isinstance(obj, str):
+        s = obj
+        if (s.startswith("http") and (".mp4" in s or "video" in s)
+                and "http" in s):
+            return s
+        return None
+    if isinstance(obj, dict):
+        # strong signals first
+        for k in ("video_url", "play_addr", "download_url", "src"):
+            v = obj.get(k)
+            hit = _deep_find_video(v, depth + 1)
+            if hit:
+                return hit
+        if isinstance(obj.get("video_versions"), list) and obj["video_versions"]:
+            hit = _deep_find_video(obj["video_versions"], depth + 1)
+            if hit:
+                return hit
+        for v in obj.values():
+            hit = _deep_find_video(v, depth + 1)
+            if hit:
+                return hit
+    elif isinstance(obj, list):
+        for v in obj:
+            hit = _deep_find_video(v, depth + 1)
+            if hit:
+                return hit
+    return None
+
+
+def _deep_get(obj, keys, depth=0):
+    """First value found for any of `keys` anywhere in the structure."""
+    if depth > 8:
+        return None
+    if isinstance(obj, dict):
+        for k in keys:
+            if obj.get(k):
+                return obj[k]
+        for v in obj.values():
+            hit = _deep_get(v, keys, depth + 1)
+            if hit:
+                return hit
+    elif isinstance(obj, list):
+        for v in obj:
+            hit = _deep_get(v, keys, depth + 1)
+            if hit:
+                return hit
+    return None
+
+
 def _rescue_instagram(url: str):
     """Instagram Reels via the same provider. The endpoint wants the
-    post SHORTCODE (instagram.com/reel/<code>/), not the URL. Response
-    shapes vary by endpoint version, so this parses defensively."""
+    post SHORTCODE (instagram.com/reel/<code>/), not the URL. The
+    response is deeply nested and varies by version, so we deep-search
+    it for the video link instead of assuming a fixed path."""
     import re
 
     m = re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)", url)
@@ -134,23 +190,20 @@ def _rescue_instagram(url: str):
         return None
     data = _ed_get("/instagram/post/details",
                    {"code": m.group(1), "n_comments_to_fetch": 0})
-    if not isinstance(data, dict):
+    if not isinstance(data, (dict, list)):
         return None
-    media = _first_url(
-        data.get("video_url"),
-        (data.get("video_versions") or [{}])[0].get("url")
-        if data.get("video_versions") else None,
-    )
+    media = _deep_find_video(data)
     if not media:
         return None
-    user = data.get("user") or data.get("owner") or {}
-    caption = data.get("caption")
+    caption = _deep_get(data, ("caption", "text", "title"))
     if isinstance(caption, dict):
         caption = caption.get("text")
+    user = _deep_get(data, ("username", "owner_username"))
+    dur = _deep_get(data, ("video_duration", "duration"))
     return {
         "media_url": media,
-        "title": (caption or "(Instagram reel)")[:200],
-        "uploader": user.get("username") or "(unknown)",
-        "duration_seconds": int(data.get("video_duration") or 0),
+        "title": (str(caption) if caption else "(Instagram reel)")[:200],
+        "uploader": str(user) if user else "(unknown)",
+        "duration_seconds": int(float(dur)) if dur else 0,
         "posted_date": None,
     }
