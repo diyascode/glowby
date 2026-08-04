@@ -124,9 +124,16 @@ def _rescue_tiktok(url: str):
 
 
 def _rescue_instagram(url: str):
-    """Instagram Reels via the same provider. Response shapes vary by
-    endpoint version, so this parses defensively; any miss -> None."""
-    data = _ed_get("/instagram/post/details", {"url": url})
+    """Instagram Reels via the same provider. The endpoint wants the
+    post SHORTCODE (instagram.com/reel/<code>/), not the URL. Response
+    shapes vary by endpoint version, so this parses defensively."""
+    import re
+
+    m = re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)", url)
+    if not m:
+        return None
+    data = _ed_get("/instagram/post/details",
+                   {"code": m.group(1), "n_comments_to_fetch": 0})
     if not isinstance(data, dict):
         return None
     media = _first_url(
