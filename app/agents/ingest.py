@@ -174,6 +174,15 @@ def ingest(url: str) -> dict:
         )
 
     duration = info.get("duration") or 0
+
+    # a generic web page (news article) often "succeeds" here with no
+    # real video attached — read it as an ARTICLE instead of limping
+    # down the video path just to fail at the download.
+    if platform == "other" and not duration:
+        article = _article_ingest(url)
+        if article is not None:
+            return article
+
     if duration > MAX_DURATION_SECONDS:
         raise IngestError(
             f"This video is {duration // 60} minutes long — Glowby v1 supports "
@@ -224,6 +233,11 @@ def ingest(url: str) -> dict:
             if visual_desc:
                 result["visual_desc"] = visual_desc
         elif not result["transcript"]:
+            # last door for non-video pages: maybe it's an article
+            if platform == "other":
+                article = _article_ingest(url)
+                if article is not None:
+                    return article
             # no speech, no captions, no readable frames — now it's over
             raise whisper_err or IngestError(
                 "This video has no captions or speech, and its visuals "
