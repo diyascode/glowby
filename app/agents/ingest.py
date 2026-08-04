@@ -163,6 +163,11 @@ def ingest(url: str) -> dict:
                 "videos harder than any other platform. Try again in a "
                 "few minutes, or paste the claim as text instead."
             )
+        if platform == "other":
+            # not a video the downloader knows — maybe it's a NEWS ARTICLE
+            article = _article_ingest(url)
+            if article is not None:
+                return article
         raise IngestError(
             f"Could not read this {platform} link. It may be private, deleted, "
             f"age-restricted, or an unsupported URL. (Details: {err_text[:200]})"
@@ -230,6 +235,115 @@ def ingest(url: str) -> dict:
         # may live in on-screen text; the pipeline takes a second look.
         result["frames_standby"] = frames
     return result
+
+
+class _ArticleParser:
+    """Small, dependency-free article reader: title, published date,
+    and paragraph text out of a news page's HTML."""
+
+    def __init__(self):
+        from html.parser import HTMLParser
+
+        outer = self
+
+        class P(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.in_p = 0
+                self.in_title = False
+                self.skip = 0  # inside script/style/nav/aside/footer
+
+            def handle_starttag(self, tag, attrs):
+                a = dict(attrs)
+                if tag == "meta":
+                    key = a.get("property") or a.get("name") or ""
+                    if key == "og:title" and a.get("content"):
+                        outer.og_title = a["content"]
+                    if key == "og:site_name" and a.get("content"):
+                        outer.site = a["content"]
+                    if key in ("article:published_time",
+                               "og:article:published_time") and a.get("content"):
+                        outer.published = a["content"][:10]
+                elif tag == "title":
+                    self.in_title = True
+                elif tag in ("script", "style", "nav", "aside", "footer",
+                             "header", "form"):
+                    self.skip += 1
+                elif tag == "p" and not self.skip:
+                    self.in_p += 1
+                    outer.paras.append("")
+
+            def handle_endtag(self, tag):
+                if tag == "title":
+                    self.in_title = False
+                elif tag in ("script", "style", "nav", "aside", "footer",
+                             "header", "form"):
+                    self.skip = max(0, self.skip - 1)
+                elif tag == "p" and self.in_p:
+                    self.in_p -= 1
+
+            def handle_data(self, data):
+                if self.skip:
+                    return
+                if self.in_title:
+                    outer.title += data
+                elif self.in_p and outer.paras:
+                    outer.paras[-1] += data
+
+        self.parser = P()
+        self.title = ""
+        self.og_title = ""
+        self.site = ""
+        self.published = None
+        self.paras = []
+
+    def feed(self, html: str):
+        try:
+            self.parser.feed(html)
+        except Exception:
+            pass
+
+
+def _article_ingest(url: str):
+    """News-article URL -> ingest-shaped result (transcript = article
+    text). None when the page can't be fetched or has no readable body —
+    the caller then shows the honest unsupported-link error."""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/126.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            ctype = (resp.headers.get("Content-Type") or "")
+            if "html" not in ctype:
+                return None
+            html = resp.read(2_000_000).decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+    ap = _ArticleParser()
+    ap.feed(html)
+    # keep substantial paragraphs; drop nav crumbs and cookie banners
+    paras = [p.strip() for p in ap.paras if len(p.split()) >= 8]
+    body = "\n\n".join(paras)[:8000]
+    if len(body.split()) < 60:  # not enough text to be a real article
+        return None
+    title = (ap.og_title or ap.title or "(untitled article)").strip()[:200]
+    host = re.sub(r"^www\.", "",
+                  (re.findall(r"https?://([^/]+)", url) or ["(unknown)"])[0])
+    return {
+        "url": url,
+        "platform": "article",
+        "title": title,
+        "uploader": (ap.site or host),
+        "duration_seconds": 0,
+        "posted_date": ap.published,
+        "transcript": body,
+        "transcript_source": "article text",
+    }
 
 
 def _ingest_rescued(url: str, platform: str, rescued: dict):
