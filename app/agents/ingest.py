@@ -83,6 +83,8 @@ def detect_platform(url: str) -> str:
         return "youtube"
     if "tiktok.com" in host:
         return "tiktok"
+    if "instagram.com" in host:
+        return "instagram"
     if "twitter.com" in host or host == "x.com":
         return "x"
     return "other"
@@ -132,6 +134,18 @@ def ingest(url: str) -> dict:
                 "bot?'). This usually passes in a few minutes — please try "
                 "again shortly, or try a different video."
             )
+        if platform in ("tiktok", "instagram"):
+            # RESCUE TIER: the professional scraper may still get in
+            try:
+                from app.agents.rescue import rescue_media
+
+                rescued = rescue_media(url, platform)
+            except Exception:
+                rescued = None
+            if rescued and rescued.get("media_url"):
+                saved = _ingest_rescued(url, platform, rescued)
+                if saved is not None:
+                    return saved
         if platform == "tiktok":
             # photo slideshows have no video file — but the EYES can still
             # read the cover image via TikTok's public oEmbed door
@@ -142,6 +156,12 @@ def ingest(url: str) -> dict:
                 "TikTok blocked this video even after a retry — that "
                 "happens with some TikToks (they fight automated tools "
                 "hard). Try again in a few minutes, or try a different link."
+            )
+        if platform == "instagram":
+            raise IngestError(
+                "Instagram wouldn't hand over this Reel — it locks its "
+                "videos harder than any other platform. Try again in a "
+                "few minutes, or paste the claim as text instead."
             )
         raise IngestError(
             f"Could not read this {platform} link. It may be private, deleted, "
@@ -204,6 +224,41 @@ def ingest(url: str) -> dict:
                 "This video has no captions or speech, and its visuals "
                 "could not be read either."
             )
+    return result
+
+
+def _ingest_rescued(url: str, platform: str, rescued: dict):
+    """Full ingest via a rescue-tier direct link. None -> caller falls
+    back to the honest error path."""
+    duration = rescued.get("duration_seconds") or 0
+    if duration > MAX_DURATION_SECONDS:
+        raise IngestError(
+            f"This video is {duration // 60} minutes long — Glowby v1 "
+            f"supports videos up to {MAX_DURATION_SECONDS // 60} minutes.")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        direct = os.path.join(tmpdir, "vid.mp4")
+        if not _download_direct(rescued["media_url"], direct):
+            return None
+        text, frames, visual_desc, err = _process_video_file(direct, tmpdir)
+    result = {
+        "url": url,
+        "platform": platform,
+        "title": rescued.get("title") or "(untitled)",
+        "uploader": rescued.get("uploader") or "(unknown)",
+        "duration_seconds": duration,
+        "posted_date": rescued.get("posted_date"),
+        "transcript": text or "",
+        "transcript_source": "whisper" if text else "none",
+    }
+    if _is_thin(result["transcript"]):
+        if frames:
+            result["frames"] = frames
+            if visual_desc:
+                result["visual_desc"] = visual_desc
+        elif not result["transcript"]:
+            raise err or IngestError(
+                "This video has no captions or speech, and its visuals "
+                "could not be read either.")
     return result
 
 
@@ -304,7 +359,20 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
                 if attempt == 1:
                     time.sleep(2)
         if dl_err is not None:
-            if detect_platform(url) == "tiktok":
+            platform = detect_platform(url)
+            # RESCUE TIER: ask the professional scraper for a direct
+            # CDN link and download that instead (no bot wall there).
+            try:
+                from app.agents.rescue import rescue_media
+
+                rescued = rescue_media(url, platform)
+            except Exception:
+                rescued = None
+            if rescued and rescued.get("media_url"):
+                direct = os.path.join(tmpdir, "vid.mp4")
+                if _download_direct(rescued["media_url"], direct):
+                    return _process_video_file(direct, tmpdir, max_frames)
+            if platform == "tiktok":
                 return None, [], None, IngestError(
                     "TikTok blocked this video even after a retry — that "
                     "happens with some TikToks (they fight automated tools "
@@ -319,46 +387,75 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
                 "The video download produced no file.")
         vid = max(vids, key=os.path.getsize)
 
-        frames = _sample_frames(vid, tmpdir, max_frames)
+        return _process_video_file(vid, tmpdir, max_frames)
 
-        # audio track -> mp3
-        audio = os.path.join(tmpdir, "audio.mp3")
+
+def _download_direct(media_url: str, dest: str) -> bool:
+    """Fetch a direct CDN video link to disk. False on any failure."""
+    try:
+        req = urllib.request.Request(media_url, headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like "
+                          "Mac OS X) AppleWebKit/605.1.15"})
+        with urllib.request.urlopen(req, timeout=60) as resp, \
+                open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                f.write(chunk)
+                if f.tell() > 200 * 1024 * 1024:  # 200MB sanity ceiling
+                    return False
+        return os.path.getsize(dest) > 10_000
+    except Exception:
+        return False
+
+
+def _process_video_file(vid: str, tmpdir: str, max_frames: int = 6):
+    """Downloaded video file -> (transcript, frames, visual_desc, error).
+    The shared back half of every download door (yt-dlp or rescue)."""
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+
+    frames = _sample_frames(vid, tmpdir, max_frames)
+
+    # audio track -> mp3
+    audio = os.path.join(tmpdir, "audio.mp3")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", vid, "-vn", "-acodec", "libmp3lame",
+             "-q:a", "5", "-y", audio],
+            capture_output=True, timeout=120)
+    except Exception:
+        pass
+
+    # eyes start looking NOW, in parallel with whatever the ears do
+    vision_future = None
+    if frames and SPECULATIVE_VISION:
+        pool = ThreadPoolExecutor(max_workers=1)
+        vision_future = pool.submit(_describe_safely, frames)
+        pool.shutdown(wait=False)
+
+    def _vision_result():
+        if vision_future is None:
+            return None
         try:
-            subprocess.run(
-                ["ffmpeg", "-i", vid, "-vn", "-acodec", "libmp3lame",
-                 "-q:a", "5", "-y", audio],
-                capture_output=True, timeout=120)
+            return vision_future.result(timeout=60)
         except Exception:
-            pass
+            return None
 
-        # eyes start looking NOW, in parallel with whatever the ears do
-        vision_future = None
-        if frames and SPECULATIVE_VISION:
-            pool = ThreadPoolExecutor(max_workers=1)
-            vision_future = pool.submit(_describe_safely, frames)
-            pool.shutdown(wait=False)
-
-        def _vision_result():
-            if vision_future is None:
-                return None
-            try:
-                return vision_future.result(timeout=60)
-            except Exception:
-                return None
-
-        if not os.path.exists(audio) or os.path.getsize(audio) == 0:
-            return None, frames, _vision_result(), IngestError(
-                "This video's audio could not be extracted (it may be silent).")
-        if os.path.getsize(audio) > 25 * 1024 * 1024:
-            return None, frames, _vision_result(), IngestError(
-                "The audio for this video is too large to transcribe (over 25MB).")
-        try:
-            text = _whisper_file(audio)
-        except IngestError as e:
-            return None, frames, _vision_result(), e
-        # rich speech -> the speculative description is discarded unread
-        desc = _vision_result() if _is_thin(text) else None
-        return text, frames, desc, None
+    if not os.path.exists(audio) or os.path.getsize(audio) == 0:
+        return None, frames, _vision_result(), IngestError(
+            "This video's audio could not be extracted (it may be silent).")
+    if os.path.getsize(audio) > 25 * 1024 * 1024:
+        return None, frames, _vision_result(), IngestError(
+            "The audio for this video is too large to transcribe (over 25MB).")
+    try:
+        text = _whisper_file(audio)
+    except IngestError as e:
+        return None, frames, _vision_result(), e
+    # rich speech -> the speculative description is discarded unread
+    desc = _vision_result() if _is_thin(text) else None
+    return text, frames, desc, None
 
 
 def _describe_safely(frames: list):
