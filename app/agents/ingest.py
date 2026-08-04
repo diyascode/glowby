@@ -224,6 +224,11 @@ def ingest(url: str) -> dict:
                 "This video has no captions or speech, and its visuals "
                 "could not be read either."
             )
+    elif frames:
+        # rich audio: eyes stay closed for now — but keep the frames on
+        # standby. If the router finds NO claims in the speech, the claim
+        # may live in on-screen text; the pipeline takes a second look.
+        result["frames_standby"] = frames
     return result
 
 

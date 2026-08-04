@@ -60,7 +60,7 @@ from app.storage import (
     today_usage,
 )
 
-VERSION = "0.26.0"
+VERSION = "0.26.1"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -281,6 +281,30 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
             platform=result["platform"],
             uploader=result["uploader"],
         )
+
+        # SECOND LOOK: rich audio but ZERO checkable claims in it — the
+        # claim may live in on-screen text (overlay captions, headlines).
+        # Open the eyes on the standby frames and route again before
+        # declaring "nothing to verify."
+        standby = result.pop("frames_standby", None)
+        if standby and not any(
+                c.get("gate_label") in ("factual", "prediction")
+                for c in (claims or [])):
+            desc = describe_frames(
+                standby, result.get("title") or "", result.get("uploader") or "")
+            if desc:
+                result["transcript"] = (
+                    (result.get("transcript") or "").strip()
+                    + "\n\n[WHAT THE VIDEO VISUALLY SHOWS] " + desc)
+                result["transcript_source"] = (
+                    (result.get("transcript_source") or "")
+                    + "+visual analysis").lstrip("+")
+                claims = route_claims(
+                    result["transcript"],
+                    title=result["title"],
+                    platform=result["platform"],
+                    uploader=result["uploader"],
+                )
         for c in claims:
             c["posted_date"] = posted
         try:
