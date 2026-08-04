@@ -165,6 +165,28 @@ up. Unless a source shows the number was wrong ON THE POSTED DATE itself, \
 you MUST treat it as expired truth (partly_supported, score 6.0-7.5), \
 never contradicted. Evidence quoting only TODAY'S higher value does not \
 refute the posted-date claim — it supports the monotonic inference.
+- CORROBORATION COUNTS: when MULTIPLE independent reputable news \
+organizations each report the same specific figure or event, that IS \
+verification — score it supported (8.0+). A primary record (SEC filing, \
+official register) is the gold standard, but its absence from the \
+evidence bundle does not demote a figure that several independent \
+outlets agree on. Echo-collapse (distrusting many stories that trace to \
+ONE self-interested source) applies to press releases and company \
+self-reports — NEVER to market data (stock prices, trading moves, \
+indexes) or to facts journalists observe independently.
+- THIN IS NOT FALSE: "insufficient evidence" with ZERO disputing sources \
+is a MID outcome — partly_supported or unverifiable, score 5.0-6.5 — \
+never a red score. Low scores (below 4) are reserved for claims the \
+evidence actually CONTRADICTS. Never let a claim nobody disputes drag \
+the headline into "contradicted" territory.
+- NAME THE NUMBER: when a claim asserts a specific figure and the \
+evidence reports a DIFFERENT figure for the same fact, the verdict MUST \
+state the evidence's figure explicitly ("sources report ~14%, not 10%") \
+so the reader leaves knowing the real number. Score by the size and \
+direction of the gap: a modest understatement or overstatement of a \
+real event is partly_supported (5.5-7.0); a materially wrong figure is \
+contradicted. NEVER return a vague "insufficient evidence" verdict when \
+the evidence actually contains the correct number.
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
