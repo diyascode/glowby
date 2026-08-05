@@ -143,6 +143,43 @@ html.light footer{color:#63636e}
 </style>
 
 <style>
+/* ================= APP MODE (native-feel shell for the iOS app) ======= */
+/* Activated by ?app=1 (the WKWebView loads glowby.io/?app=1). Everything
+   here is additive and gated on html.appmode, so the website is untouched
+   in a normal browser — and the app still auto-updates with each deploy. */
+html.appmode .topbar .tb-links{display:none}     /* cleaner header */
+html.appmode #sbBtn{display:none}                /* nav lives in bottom bar */
+html.appmode .topbar{justify-content:center;padding:calc(env(safe-area-inset-top) + 8px) 16px 8px}
+html.appmode .tb-brand{font-size:21px}
+html.appmode .wrap{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+html.appmode.has-tabbar body{padding-bottom:0}
+/* bigger, thumb-friendly input */
+html.appmode #f{padding:10px 10px 10px 20px;border-radius:26px}
+html.appmode #url{font-size:17px;padding:6px 0}
+html.appmode #go,html.appmode #mic{width:50px;height:50px}
+/* one-tap Paste button (app only) */
+#pasteBtn{display:none}
+html.appmode #pasteBtn{display:inline-flex;align-items:center;gap:6px;
+  margin:14px auto 0;background:var(--surface);border:1px solid var(--border);
+  color:var(--ink2);border-radius:999px;padding:9px 18px;font-size:.9rem;
+  font-weight:600;cursor:pointer}
+html.appmode #pasteBtn:active{transform:scale(.96)}
+/* bottom tab bar */
+#tabbar{display:none}
+html.appmode #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:70;
+  background:rgba(10,9,18,.92);backdrop-filter:saturate(160%) blur(18px);
+  border-top:1px solid var(--border);
+  padding:8px 6px calc(6px + env(safe-area-inset-bottom));justify-content:space-around}
+html.light.appmode #tabbar{background:rgba(255,255,255,.92)}
+#tabbar button{flex:1;background:none;border:none;color:var(--muted);
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:10.5px;font-weight:600;cursor:pointer;padding:4px 0;font-family:inherit}
+#tabbar button.on{color:var(--brand)}
+html.light.appmode #tabbar button.on{color:#111114}
+#tabbar button svg{width:22px;height:22px}
+</style>
+
+<style>
 /* ==== glow theme override — same engine, new skin ==== */
 :root{--surface2:#08070F;--surface:rgba(255,255,255,.05);--border:rgba(255,255,255,.12);
   --ink:#ECECF6;--ink2:#C9CDE0;--muted:#8B8BA8;--track:rgba(255,255,255,.1);
@@ -244,9 +281,9 @@ footer{font-size:.74rem}
 </header>
 <button id="sbBtn" aria-label="Open menu" title="Menu">☰</button>
 <nav id="sb" aria-label="Sidebar">
-  <div class="sb-h">Trending checks</div>
+  <div class="sb-h" id="sbTrendHdr">Trending checks</div>
   <div id="sbTrend"><div class="sb-empty">Loading…</div></div>
-  <div class="sb-h">🕐 Your checks</div>
+  <div class="sb-h" id="sbMineHdr">🕐 Your checks</div>
   <div id="sbMine"><div class="sb-empty">Nothing yet — run a check.</div></div>
   <div class="sb-links">
     <a href="/">Glowby home</a>
@@ -266,6 +303,8 @@ footer{font-size:.74rem}
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
+  <button id="pasteBtn" type="button">📋 Paste &amp; check</button>
+
   <div class="sugg2" aria-hidden="true">
     <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📰 Articles</span><span>💬 Claims</span><span>❓ Questions</span>
   </div>
@@ -279,7 +318,7 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.26.7 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.26.8 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -718,6 +757,73 @@ function wireMic(btn,input){
 }
 wireMic(document.getElementById('mic'),document.getElementById('url'));
 if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js").catch(()=>{})})}
+</script>
+
+<nav id="tabbar">
+  <button data-tab="check" class="on" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    Check</button>
+  <button data-tab="trending" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+    Trending</button>
+  <button data-tab="history" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
+    History</button>
+  <button data-tab="about" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+    About</button>
+</nav>
+
+<script>
+// ================= APP MODE controller ==============================
+(function(){
+  // App format is ONLY for the native iOS app, which loads ?app=1.
+  // The website (and the Add-to-Home-Screen PWA) never gets it.
+  var isApp = /[?&]app=1(&|$)/.test(location.search);
+  if(!isApp) return;
+  document.documentElement.classList.add('appmode','has-tabbar');
+
+  // one-tap paste (uses the clipboard the OS shares with the app)
+  var pb = document.getElementById('pasteBtn');
+  if(pb) pb.onclick = async function(){
+    try{
+      var t = await navigator.clipboard.readText();
+      if(t){ var u = document.getElementById('url'); u.value = t.trim();
+        document.getElementById('f').requestSubmit
+          ? document.getElementById('f').requestSubmit()
+          : document.getElementById('go').click(); }
+      else { document.getElementById('url').focus(); }
+    }catch(e){ document.getElementById('url').focus(); }
+  };
+
+  var bar = document.getElementById('tabbar');
+  function setActive(tab){
+    bar.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.tab===tab); });
+  }
+  var sb = document.getElementById('sb');
+  function openDrawer(scrollToMine){
+    if(sb){ sb.classList.add('open');
+      var anchor = document.getElementById(scrollToMine ? 'sbMineHdr' : 'sbTrendHdr');
+      if(anchor) setTimeout(function(){ anchor.scrollIntoView({block:'start'}); }, 60);
+    }
+  }
+  function closeDrawer(){ if(sb) sb.classList.remove('open'); }
+
+  bar.addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if(!btn) return;
+    var tab = btn.dataset.tab; setActive(tab);
+    if(tab==='check'){ closeDrawer(); window.scrollTo({top:0,behavior:'smooth'});
+      var u = document.getElementById('url'); if(u) u.focus(); }
+    else if(tab==='trending'){ openDrawer(false); }
+    else if(tab==='history'){ openDrawer(true); }
+    else if(tab==='about'){ closeDrawer(); location.href='/about-us?app=1'; }
+  });
+  // tapping the drawer's close returns to Check
+  if(sb) sb.addEventListener('click', function(e){
+    if(e.target===sb) { setActive('check'); }
+  });
+})();
 </script>
 </body>
 </html>
