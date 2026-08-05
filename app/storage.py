@@ -591,6 +591,19 @@ def visitor_series(days: int = 14) -> dict:
         return {}
 
 
+def total_fresh_checks():
+    """All-time count of fresh checks run (summed across every day)."""
+    conn = _get_conn()
+    if conn is None:
+        return 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COALESCE(sum(checks), 0) FROM daily_usage")
+            return int(cur.fetchone()[0])
+    except Exception:
+        return 0
+
+
 def today_usage():
     """(checks, est_cost) for today. (0, 0.0) if unavailable."""
     conn = _get_conn()

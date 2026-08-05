@@ -198,6 +198,7 @@ function render(d){
   $("tiles").innerHTML =
     tile("Visitors today", t.visitors ?? 0, "unique people (anonymous count)") +
     tile("Visitors all-time", d.visitors_total ?? 0, "daily counts added up") +
+    tile("Total checks", d.total_checks ?? 0, "all-time, fresh checks run") +
     tile("Checks today", t.fresh_checks ?? 0, "fresh (not cached views)") +
     `<div class="tile"><div class="k">Spend today</div>` +
       `<div class="v">$${spend.toFixed(2)}</div>` +

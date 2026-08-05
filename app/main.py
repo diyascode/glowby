@@ -58,9 +58,10 @@ from app.storage import (
     save_route_audit,
     text_key,
     today_usage,
+    total_fresh_checks,
 )
 
-VERSION = "0.26.8"
+VERSION = "0.26.9"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -852,6 +853,7 @@ def api_admin_dashboard(key: str = ""):
             "visitors": visitors.get(today_key, 0),
         },
         "visitors_total": visitor_total(),
+        "total_checks": total_fresh_checks(),
         "cache_ttl_days": CACHE_TTL_DAYS,
         "events": event_stats(),
         "stats": quality_stats(),
