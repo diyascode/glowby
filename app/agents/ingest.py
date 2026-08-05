@@ -242,34 +242,41 @@ def ingest(url: str) -> dict:
     # PARALLEL. Silent videos no longer wait for the ears to finish
     # before the eyes start.
     text, frames, visual_desc, whisper_err = _transcribe_and_see(url)
-    if text:
-        result["transcript"] = text
-        result["transcript_source"] = "whisper"
-    else:
+    speech = (text or "").strip()
+
+    # EARS + EYES TOGETHER: whenever the eyes read something, merge it with
+    # the speech so BOTH a spoken claim and an on-screen-text claim reach
+    # the router — not one or the other.
+    merged = speech
+    if visual_desc:
+        vis = "[WHAT THE VIDEO VISUALLY SHOWS] " + visual_desc
+        merged = (speech + "\n\n" + vis) if speech else vis
+
+    if merged.strip():
+        result["transcript"] = merged
+        parts = []
+        if speech:
+            parts.append("whisper")
+        if visual_desc:
+            parts.append("visual analysis")
+        result["transcript_source"] = "+".join(parts) or "none"
+        return result
+
+    # nothing heard, nothing seen — last door: maybe it's an article
+    if platform == "other":
+        article = _article_ingest(url)
+        if article is not None:
+            return article
+    if frames and not visual_desc:
+        # frames existed but the vision agent couldn't read them
         result["transcript"] = ""
         result["transcript_source"] = "none"
-    if _is_thin(result["transcript"]):
-        if frames:
-            result["frames"] = frames
-            if visual_desc:
-                result["visual_desc"] = visual_desc
-        elif not result["transcript"]:
-            # last door for non-video pages: maybe it's an article
-            if platform == "other":
-                article = _article_ingest(url)
-                if article is not None:
-                    return article
-            # no speech, no captions, no readable frames — now it's over
-            raise whisper_err or IngestError(
-                "This video has no captions or speech, and its visuals "
-                "could not be read either."
-            )
-    elif frames:
-        # rich audio: eyes stay closed for now — but keep the frames on
-        # standby. If the router finds NO claims in the speech, the claim
-        # may live in on-screen text; the pipeline takes a second look.
-        result["frames_standby"] = frames
-    return result
+        result["frames"] = frames
+        return result
+    raise whisper_err or IngestError(
+        "This video has no captions or speech, and its visuals "
+        "could not be read either."
+    )
 
 
 class _ArticleParser:
@@ -607,8 +614,10 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 6):
         text = _whisper_file(audio)
     except IngestError as e:
         return None, frames, _vision_result(), e
-    # rich speech -> the speculative description is discarded unread
-    desc = _vision_result() if _is_thin(text) else None
+    # ALWAYS take the eyes' description — a video can SPEAK one claim and
+    # SHOW another (on-screen text, charts). Both must reach the router,
+    # so the visual read is merged with the audio, never discarded.
+    desc = _vision_result()
     return text, frames, desc, None
 
 
