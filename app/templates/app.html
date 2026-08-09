@@ -147,23 +147,39 @@ html.light footer{color:#63636e}
 /* Activated by ?app=1 (the WKWebView loads glowby.io/?app=1). Everything
    here is additive and gated on html.appmode, so the website is untouched
    in a normal browser — and the app still auto-updates with each deploy. */
-html.appmode .topbar .tb-links{display:none}     /* cleaner header */
-html.appmode #sbBtn{display:none}                /* nav lives in bottom bar */
-html.appmode .topbar{justify-content:center;padding:calc(env(safe-area-inset-top) + 8px) 16px 8px}
-html.appmode .tb-brand{font-size:21px}
-html.appmode .wrap{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+html.appmode .topbar{display:none}   /* the hero ring IS the logo — no duplicate header */
+html.appmode #sbBtn{display:none}    /* nav lives in the bottom bar */
+/* vertically center the home content on screen */
+html.appmode .wrap:not(.active){justify-content:center !important;
+  min-height:100vh;min-height:100dvh;
+  padding-top:calc(env(safe-area-inset-top) + 12px) !important;
+  padding-bottom:calc(env(safe-area-inset-bottom) + 12px) !important}
+/* once a result shows, dock to the top so it scrolls naturally */
+html.appmode .wrap.active{justify-content:flex-start;
+  padding-top:calc(env(safe-area-inset-top) + 20px);
+  padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 html.appmode.has-tabbar body{padding-bottom:0}
-/* bigger, thumb-friendly input */
-html.appmode #f{padding:10px 10px 10px 20px;border-radius:26px}
-html.appmode #url{font-size:17px;padding:6px 0}
-html.appmode #go,html.appmode #mic{width:50px;height:50px}
-/* one-tap Paste button (app only) */
+/* slimmer input — shorter height, thumb-friendly */
+html.appmode #f{padding:6px 6px 6px 18px;border-radius:20px}
+html.appmode #url{font-size:16px;padding:3px 0}
+html.appmode #go,html.appmode #mic{width:42px;height:42px}
+/* one-tap Paste button — removed from app for a cleaner home (kept for
+   easy revert: change the next line's display back to inline-flex) */
 #pasteBtn{display:none}
-html.appmode #pasteBtn{display:inline-flex;align-items:center;gap:6px;
-  margin:14px auto 0;background:var(--surface);border:1px solid var(--border);
-  color:var(--ink2);border-radius:999px;padding:9px 18px;font-size:.9rem;
-  font-weight:600;cursor:pointer}
-html.appmode #pasteBtn:active{transform:scale(.96)}
+html.appmode #pasteBtn{display:none;align-items:center;justify-content:center;gap:10px;
+  margin:16px auto 0;width:fit-content;cursor:pointer;
+  color:#fff;font-weight:700;font-size:.92rem;letter-spacing:.01em;
+  background:rgba(255,255,255,.10);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.22);border-radius:999px;
+  padding:9px 20px 9px 9px;box-shadow:0 10px 28px -12px rgba(0,0,0,.7);
+  transition:transform .15s cubic-bezier(.22,.61,.36,1),background .2s,border-color .2s}
+html.appmode #pasteBtn svg{background:linear-gradient(135deg,#6A5AF0,#C46BF2);border-radius:9px;
+  padding:6px;width:30px;height:30px;box-sizing:border-box;stroke:#fff}
+html.appmode #pasteBtn:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.32)}
+html.appmode #pasteBtn:active{transform:scale(.95)}
+html.light.appmode #pasteBtn{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.16);color:#111114;
+  box-shadow:0 8px 22px -14px rgba(0,0,0,.4)}
+html.light.appmode #pasteBtn svg{stroke:#fff}
 /* bottom tab bar */
 #tabbar{display:none}
 html.appmode #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:70;
@@ -177,6 +193,53 @@ html.light.appmode #tabbar{background:rgba(255,255,255,.92)}
 #tabbar button.on{color:var(--brand)}
 html.light.appmode #tabbar button.on{color:#111114}
 #tabbar button svg{width:22px;height:22px}
+
+/* --- combined Spotlight ring + Action Cards home (app only) --- */
+#appHero,#appCards{display:none}
+html.appmode .greet{display:none}          /* ring+title replace the greeting */
+html.appmode .sugg2,html.appmode .mini{display:none}
+html.appmode .wrap{justify-content:flex-start;padding-top:24px}
+html.appmode #appHero{display:block;text-align:center;margin:14px 0 6px}
+.ah-logo{display:block;margin:0 auto 14px;filter:drop-shadow(0 0 10px rgba(138,124,255,.55));
+  animation:ahfloat 4s ease-in-out infinite alternate}
+@keyframes ahfloat{from{transform:translateY(0)}to{transform:translateY(-5px)}}
+.ah-title{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:29px;letter-spacing:-.01em;color:var(--ink)}
+.ah-title .hl{background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 55%,#57D9E0 110%);-webkit-background-clip:text;background-clip:text;color:transparent;font-style:italic}
+.ah-beta{display:inline-block;margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.14em;color:var(--warn);border:1px solid rgba(244,183,64,.45);
+  border-radius:999px;padding:3px 10px}
+html.light.appmode .ah-title{color:#111114}
+html.light.appmode .ah-title .hl{color:#111114;-webkit-text-fill-color:#111114}
+html.appmode #appCards{display:none}   /* cards removed — clean home */
+.acard{text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:10px 11px;display:flex;flex-direction:column;cursor:pointer;font-family:inherit;
+  transition:transform .12s,border-color .15s}
+.acard:active{transform:scale(.97)}
+.acard.prime{background:linear-gradient(155deg,rgba(138,124,255,.24),rgba(196,107,242,.12));border-color:rgba(138,124,255,.45)}
+.ac-ic{font-size:17px}
+.ac-lb{font-weight:700;font-size:13px;color:var(--ink);margin-top:5px}
+html.light.appmode .ac-lb{color:#111114}
+.ac-ds{color:var(--muted);font-size:10.5px;margin-top:1px;line-height:1.3}
+html.appmode footer{display:none}      /* version + links live in the About tab */
+/* persistent top-right Score chip (app only) */
+#appScore{display:none}
+html.appmode #appScore{display:inline-flex;align-items:center;gap:6px;position:fixed;z-index:75;
+  top:calc(env(safe-area-inset-top) + 12px);right:14px;
+  background:rgba(255,255,255,.09);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;
+  padding:7px 13px 7px 11px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+html.appmode #appScore svg{color:var(--brand)}
+html.appmode #appScore:active{transform:scale(.95)}
+html.light.appmode #appScore{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.16);color:#111114}
+/* persistent top-left theme toggle (app only) */
+#appTheme{display:none}
+html.appmode #appTheme{display:inline-flex;align-items:center;justify-content:center;position:fixed;z-index:75;
+  top:calc(env(safe-area-inset-top) + 12px);left:14px;width:38px;height:38px;
+  background:rgba(255,255,255,.09);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:50%;
+  font-size:15px;cursor:pointer;font-family:inherit;padding:0;line-height:1}
+html.appmode #appTheme:active{transform:scale(.95)}
+html.light.appmode #appTheme{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.16);color:#111114}
 </style>
 
 <style>
@@ -262,6 +325,9 @@ footer{font-size:.74rem}
   <div class="aura ga1"></div><div class="aura ga2"></div>
   <canvas id="constellation"></canvas>
 </div>
+<button id="appTheme" type="button" aria-label="Switch light or dark mode">☾</button>
+<button id="appScore" type="button" aria-label="How the score works">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Score</button>
 <header class="topbar">
   <a class="tb-brand" href="/">
     <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
@@ -294,6 +360,16 @@ footer{font-size:.74rem}
   </div>
 </nav>
 <div class="wrap">
+  <div id="appHero" aria-hidden="true">
+    <svg class="ah-logo" width="42" height="42" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="15" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
+      <path d="M8 16 A8 8 0 0 1 16 8" stroke="#5B8CFF" stroke-width="3" stroke-linecap="round"/>
+      <path d="M16 8 A8 8 0 0 1 24 16" stroke="#FF6378" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.4" fill="#8A7CFF"/>
+    </svg>
+    <div class="ah-title">What should <span class="hl">Glowby</span> check?</div>
+    <div class="ah-beta">BETA</div>
+  </div>
   <h1 class="greet">What should <span class="hl">Glowby</span> check?</h1>
 
   <form id="f">
@@ -303,7 +379,18 @@ footer{font-size:.74rem}
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
-  <button id="pasteBtn" type="button">📋 Paste &amp; check</button>
+  <button id="pasteBtn" type="button"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg> Paste &amp; check</button>
+
+  <div id="appCards" aria-hidden="true">
+    <button class="acard prime" data-act="paste" type="button">
+      <span class="ac-ic">📋</span><span class="ac-lb">Paste &amp; check</span><span class="ac-ds">Use your clipboard link</span></button>
+    <button class="acard" data-act="video" type="button">
+      <span class="ac-ic">🎬</span><span class="ac-lb">Shorts &amp; TikToks</span><span class="ac-ds">Verify a video</span></button>
+    <button class="acard" data-act="article" type="button">
+      <span class="ac-ic">📰</span><span class="ac-lb">News article</span><span class="ac-ds">Check its claims</span></button>
+    <button class="acard" data-act="ask" type="button">
+      <span class="ac-ic">❓</span><span class="ac-lb">Ask a question</span><span class="ac-ds">Get a sourced answer</span></button>
+  </div>
 
   <div class="sugg2" aria-hidden="true">
     <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📰 Articles</span><span>💬 Claims</span><span>❓ Questions</span>
@@ -318,7 +405,7 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.26.9 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.27.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -713,10 +800,10 @@ const tbT=$('tbTrend');
 if(tbT)tbT.onclick=()=>{sb.classList.add('open');try{localStorage.setItem('sbOpen','1');}catch(e){}};
 // ---- light / dark mode ----
 (function(){
-  const btn=document.getElementById('tbTheme');
+  const btns=[document.getElementById('tbTheme'),document.getElementById('appTheme')].filter(Boolean);
   function apply(t){
     document.documentElement.classList.toggle('light',t==='light');
-    if(btn)btn.textContent=t==='light'?'☀':'☾';
+    btns.forEach(b=>b.textContent=t==='light'?'☀':'☾');
     const m=document.querySelector('meta[name="theme-color"]');
     if(m)m.setAttribute('content',t==='light'?'#ffffff':'#08070F');
     // re-seed the constellation at the theme's density
@@ -725,11 +812,11 @@ if(tbT)tbT.onclick=()=>{sb.classList.add('open');try{localStorage.setItem('sbOpe
   let theme='dark';
   try{theme=localStorage.getItem('gbTheme')||'dark';}catch(e){}
   apply(theme);
-  if(btn)btn.onclick=()=>{
+  btns.forEach(b=>b.onclick=()=>{
     theme=theme==='light'?'dark':'light';
     try{localStorage.setItem('gbTheme',theme);}catch(e){}
     apply(theme);
-  };
+  });
 })();
 // ---- voice input (browser speech recognition; free, on-device UI) ----
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition||null;
@@ -770,7 +857,7 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
     History</button>
   <button data-tab="about" type="button">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
     About</button>
 </nav>
 
@@ -782,6 +869,9 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
   var isApp = /[?&]app=1(&|$)/.test(location.search);
   if(!isApp) return;
   document.documentElement.classList.add('appmode','has-tabbar');
+
+  var scoreChip = document.getElementById('appScore');
+  if(scoreChip) scoreChip.onclick = function(){ location.href='/about?app=1#ratings'; };
 
   // one-tap paste (uses the clipboard the OS shares with the app)
   var pb = document.getElementById('pasteBtn');
@@ -795,6 +885,32 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
       else { document.getElementById('url').focus(); }
     }catch(e){ document.getElementById('url').focus(); }
   };
+
+  // action cards
+  async function pasteAndCheck(){
+    try{
+      var t = await navigator.clipboard.readText();
+      if(t && t.trim()){ var u=document.getElementById('url'); u.value=t.trim();
+        var f=document.getElementById('f');
+        f.requestSubmit ? f.requestSubmit() : document.getElementById('go').click();
+        return; }
+    }catch(e){}
+    focusInput('Paste a link or type a claim…');
+  }
+  function focusInput(hint){
+    var u=document.getElementById('url');
+    if(hint) u.setAttribute('placeholder', hint);
+    window.scrollTo({top:0,behavior:'smooth'}); u.focus();
+  }
+  var cards = document.getElementById('appCards');
+  if(cards) cards.addEventListener('click', function(e){
+    var c = e.target.closest('.acard'); if(!c) return;
+    var act = c.dataset.act;
+    if(act==='paste') pasteAndCheck();
+    else if(act==='video') focusInput('Paste a YouTube Short or TikTok link…');
+    else if(act==='article') focusInput('Paste a news article link…');
+    else if(act==='ask') focusInput('Ask a question, e.g. is the earth flat?');
+  });
 
   var bar = document.getElementById('tabbar');
   function setActive(tab){
@@ -817,7 +933,7 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
       var u = document.getElementById('url'); if(u) u.focus(); }
     else if(tab==='trending'){ openDrawer(false); }
     else if(tab==='history'){ openDrawer(true); }
-    else if(tab==='about'){ closeDrawer(); location.href='/about-us?app=1'; }
+    else if(tab==='about'){ closeDrawer(); location.href='/about?app=1'; }
   });
   // tapping the drawer's close returns to Check
   if(sb) sb.addEventListener('click', function(e){
