@@ -174,7 +174,9 @@ def save_result(url_key: str, url: str, result: dict) -> None:
     if conn is None:
         return
     try:
-        clean = {k: v for k, v in result.items() if k not in ("cached", "first_checked_at")}
+        clean = {k: v for k, v in result.items()
+                 if k not in ("cached", "first_checked_at",
+                              "user_question", "user_answer")}
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO checks (url_key, url, result) VALUES (%s, %s, %s) "

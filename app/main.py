@@ -61,7 +61,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.27.0"
+VERSION = "0.28.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -226,7 +226,8 @@ def _looks_like_question(text: str) -> bool:
     return first in QUESTION_STARTERS
 
 
-def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
+def _run_pipeline(job_id: str, url: str, url_key: str,
+                  user_question: str = "") -> None:
     try:
         t0 = time.time()
         if url_key.startswith("text:"):
@@ -425,6 +426,18 @@ def _run_pipeline(job_id: str, url: str, url_key: str) -> None:
         }
         result["cached"] = False
         save_result(url_key, url, result)
+        # "+ask": the check is DONE — now answer the user's question FROM
+        # the completed analysis (attached after save, so the shared cache
+        # never carries one person's question).
+        if user_question:
+            try:
+                ans = answer_followup(user_question, _followup_context(result))
+                if ans:
+                    add_usage(0.02)
+                    result["user_question"] = user_question
+                    result["user_answer"] = ans
+            except Exception:
+                pass
         _set_job(job_id, status="done", result=result)
     except (IngestError, RouterError) as e:
         _set_job(job_id, status="error", error=str(e))
@@ -493,6 +506,7 @@ class CheckRequest(BaseModel):
     url: str
     force: bool = False  # true = ignore the cache and re-run (recheck)
     captcha_token: str = ""  # Turnstile token (required when captcha is on)
+    question: str = ""  # optional "+ask": what the user wants to know
 
 
 @app.post("/api/check")
@@ -509,11 +523,28 @@ def api_check(req: CheckRequest, request: Request):
         url_key = text_key(raw)
     else:
         url_key = canonical_key(raw)
+    question = (req.question or "").strip()[:400]
     cached = None if req.force else get_cached(url_key, CACHE_TTL_DAYS)
     if cached is not None:
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
             build_report(cached)
+        # "+ask": answer the user's question from the cached check. The
+        # answer is a paid AI call, so it shares the rate limit + budget.
+        if question:
+            if _rate_limited(_client_ip(request)):
+                cached["user_question"] = question
+                cached["user_answer"] = (
+                    "You've hit the hourly limit, so this question wasn't "
+                    "answered — but the full check is above.")
+                return cached
+            _, spent = today_usage()
+            if spent < DAILY_BUDGET_USD:
+                ans = answer_followup(question, _followup_context(cached))
+                if ans:
+                    add_usage(0.02)
+                    cached["user_question"] = question
+                    cached["user_answer"] = ans
         return cached
 
     # ---- armor: cached results above stay free & unlimited; fresh runs
@@ -550,7 +581,8 @@ def api_check(req: CheckRequest, request: Request):
     job_id = uuid.uuid4().hex[:12]
     _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
-        target=_run_pipeline, args=(job_id, req.url, url_key), daemon=True
+        target=_run_pipeline, args=(job_id, req.url, url_key, question),
+        daemon=True,
     ).start()
     return {"job_id": job_id}
 

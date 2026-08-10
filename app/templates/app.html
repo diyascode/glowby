@@ -303,6 +303,34 @@ footer{font-size:.74rem}
 .schip:hover{border-color:var(--brand)}
 .sugg2{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-top:15px}
 .sugg2 span{font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:default;user-select:none}
+/* "+ask" — optional question that rides along with a check */
+#qWrap{max-width:560px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center}
+#qChip{display:inline-flex;align-items:center;gap:6px;background:none;
+  border:1px dashed rgba(255,255,255,.22);color:var(--muted);border-radius:999px;
+  padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .18s}
+#qChip:hover{border-color:rgba(138,124,255,.55);color:var(--ink);border-style:solid}
+#qOpen{display:flex;align-items:center;gap:9px;width:100%;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);
+  border-radius:999px;padding:4px 6px 4px 16px;backdrop-filter:blur(12px)}
+#qOpen[hidden]{display:none}
+#qOpen .qmark{background:linear-gradient(100deg,#8A7CFF,#C46BF2);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;font-size:14px}
+#qOpen input{flex:1;border:none;background:transparent;color:var(--ink);font-size:13.5px;
+  outline:none;font-family:inherit;padding:7px 0}
+#qOpen input::placeholder{color:var(--muted)}
+#qOpen .qx{width:26px;height:26px;border-radius:50%;border:none;background:rgba(255,255,255,.08);
+  color:var(--muted);font-size:12px;cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
+#qOpen .qx:hover{color:var(--ink)}
+html.light #qChip{border-color:rgba(0,0,0,.25);color:#63636e}
+html.light #qChip:hover{border-color:#111114;color:#111114}
+html.light #qOpen{background:#fff;border-color:rgba(0,0,0,.2)}
+html.light #qOpen .qx{background:rgba(0,0,0,.06)}
+/* the answer-first card on results */
+.uq-card{background:linear-gradient(155deg,rgba(138,124,255,.14),rgba(196,107,242,.07));
+  border:1px solid rgba(138,124,255,.35);border-radius:16px;padding:14px 16px;margin-bottom:12px;text-align:left}
+.uq-q{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.12em;color:var(--brand);margin-bottom:6px;text-transform:uppercase}
+.uq-a{font-size:.95rem;line-height:1.55;color:var(--ink)}
+html.light .uq-card{background:rgba(0,0,0,.04);border-color:rgba(0,0,0,.2)}
+html.light .uq-q{color:#111114}
 /* follow-up thread */
 #fuWrap{margin-top:14px;text-align:left}
 .fu-q{background:rgba(138,124,255,.13);border:1px solid rgba(138,124,255,.35);color:var(--ink);border-radius:14px 14px 4px 14px;padding:9px 13px;font-size:.88rem;margin:10px 0 6px;margin-left:18%;line-height:1.45}
@@ -379,6 +407,15 @@ footer{font-size:.74rem}
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
+  <div id="qWrap">
+    <button id="qChip" type="button">＋ ask</button>
+    <div id="qOpen" hidden>
+      <span class="qmark">?</span>
+      <input type="text" id="qIn" maxlength="400" placeholder="What do you want to know about this link?" autocomplete="off">
+      <button type="button" class="qx" id="qClose" aria-label="Remove question">✕</button>
+    </div>
+  </div>
+
   <button id="pasteBtn" type="button"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg> Paste &amp; check</button>
 
   <div id="appCards" aria-hidden="true">
@@ -405,7 +442,7 @@ footer{font-size:.74rem}
   </div>
 
   <div id="out"></div>
-  <footer>v0.27.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.28.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -436,7 +473,19 @@ async function tsGet(){
   for(let i=0;i<32;i++){const t=turnstile.getResponse?turnstile.getResponse():'';if(t)return t;await new Promise(r=>setTimeout(r,250));}
   return '';
 }
+// "+ask" chip wiring
+(function(){
+  const chip=document.getElementById('qChip'),open=document.getElementById('qOpen'),
+        qin=document.getElementById('qIn'),qx=document.getElementById('qClose');
+  if(!chip)return;
+  chip.onclick=()=>{chip.hidden=true;open.hidden=false;qin.focus();};
+  qx.onclick=()=>{qin.value='';open.hidden=true;chip.hidden=false;};
+  qin.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();
+    document.getElementById('f').requestSubmit?document.getElementById('f').requestSubmit():document.getElementById('go').click();}});
+})();
+function userQuestion(){const q=document.getElementById('qIn');return q?q.value.trim():'';}
 async function checkFetch(body){
+  const uq=userQuestion(); if(uq)body.question=uq;
   body.captcha_token=await tsGet();
   let r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.status===403&&tsOn){tsReset();body.captcha_token=await tsGet();
@@ -502,6 +551,7 @@ function claimCard(c){
 function renderList(d){
   const rep=d.report||{};
   let html='';
+  if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
   html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
   if(d.answer_mode){
@@ -575,6 +625,7 @@ function renderReel(d){
 function resultText(d){
   const rep=d.report||{};
   const lines=[];
+  if(d.user_answer){lines.push('Q: '+(d.user_question||''));lines.push('A: '+d.user_answer);lines.push('');}
   if(d.answer_mode){
     lines.push('Glowby answered: "'+(d.question||d.title||'')+'"');
     if(d.answer)lines.push(d.answer);
@@ -701,6 +752,10 @@ $('f').addEventListener('submit',async(e)=>{
     currentResult=d.job_id?await poll(d.job_id):d;
     $('steps').style.display='none';
     currentView='list';render();
+    // question was delivered with this check — reset the +ask chip
+    (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
+      const qo=document.getElementById('qOpen'),qc=document.getElementById('qChip');
+      if(qo)qo.hidden=true;if(qc)qc.hidden=false;}})();
   }catch(err){
     $('steps').style.display='none';
     $('out').style.display='block';
