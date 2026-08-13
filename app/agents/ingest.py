@@ -87,7 +87,29 @@ def detect_platform(url: str) -> str:
         return "instagram"
     if "twitter.com" in host or host == "x.com":
         return "x"
+    if "facebook.com" in host or host in ("fb.watch", "fb.com"):
+        return "facebook"
     return "other"
+
+
+def _fb_looks_like_video(url: str) -> bool:
+    """Facebook VIDEO urls sometimes open without login; posts never do."""
+    u = url.lower()
+    return ("fb.watch" in u or "/videos/" in u or "/reel/" in u
+            or "/watch" in u)
+
+
+FB_POST_MSG = (
+    "Facebook posts are locked behind Facebook's login wall, so Glowby "
+    "can't open them. Two easy workarounds: if the post shares a news "
+    "article, paste the article's own link instead — or just type the "
+    "claim itself and Glowby will check it."
+)
+FB_VIDEO_MSG = (
+    "Facebook wouldn't hand over this video — most Facebook videos are "
+    "locked behind a login. If the same video exists on YouTube or "
+    "TikTok, paste that link, or type the claim as text instead."
+)
 
 
 def ingest(url: str) -> dict:
@@ -95,6 +117,13 @@ def ingest(url: str) -> dict:
     import yt_dlp  # imported here so the app can boot even if install fails
 
     platform = detect_platform(url)
+
+    # FACEBOOK POSTS: never downloadable without login — say so honestly
+    # and helpfully, instead of failing with a raw downloader error.
+    # (Video-shaped FB links still get a yt-dlp attempt below; some
+    # public videos do open.)
+    if platform == "facebook" and not _fb_looks_like_video(url):
+        raise IngestError(FB_POST_MSG)
 
     # INSTAGRAM: yt-dlp almost never gets a Reel (login wall) and when it
     # "succeeds" it often yields an empty file. Go straight to the rescue
@@ -184,6 +213,8 @@ def ingest(url: str) -> dict:
                 "videos harder than any other platform. Try again in a "
                 "few minutes, or paste the claim as text instead."
             )
+        if platform == "facebook":
+            raise IngestError(FB_VIDEO_MSG)
         if platform == "other":
             # not a video the downloader knows — maybe it's a NEWS ARTICLE
             article = _article_ingest(url)

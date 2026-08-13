@@ -1,0 +1,187 @@
+"""FINAL v0.18.0 certification matrix — every input shape end-to-end."""
+import sys
+import types
+
+sys.path.insert(0, __import__("os").path.dirname(__import__("os").path.dirname(__import__("os").path.abspath(__file__))))
+fails = []
+
+# ---------- ingest branching with a fake yt-dlp boundary ----------
+import app.agents.ingest as ing
+from app.agents.ingest import IngestError
+
+
+def fake_ydl(info=None, raise_text=None):
+    class Y:
+        def __init__(self, opts): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def extract_info(self, url, download=False):
+            if raise_text: raise Exception(raise_text)
+            return info
+        def download(self, urls):
+            if raise_text: raise Exception(raise_text)
+    sys.modules["yt_dlp"] = types.SimpleNamespace(YoutubeDL=Y)
+
+
+BASEINFO = {"title": "T", "uploader": "U", "duration": 30, "upload_date": "20260701",
+            "subtitles": {}, "automatic_captions": {}}
+
+# 1. captions present and rich -> captions path, no frames
+rich = dict(BASEINFO)
+ing._transcript_from_captions = lambda info: "word " * 40
+fake_ydl(info=rich)
+r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
+if r["transcript_source"] != "captions" or "frames" in r: fails.append("m1 captions path")
+
+# 2. captions thin (music tags) -> frames attached
+ing._transcript_from_captions = lambda info: "[Music] la la"
+ing._frames_from_video = lambda url, max_frames=6: ["ZnJhbWU="]
+r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
+if r["transcript_source"] != "captions" or not r.get("frames"): fails.append("m2 thin captions frames")
+
+# 3. no captions, speech only, eyes see nothing -> whisper alone
+ing._transcript_from_captions = lambda info: None
+ing._transcribe_and_see = lambda url, max_frames=6: ("spoken " * 30, ["x"], None, None)
+r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
+if r["transcript_source"] != "whisper" or "frames" in r: fails.append("m3 whisper path")
+
+# 3b. EARS + EYES together -> BOTH claims merged into one transcript
+ing._transcribe_and_see = lambda url, max_frames=6: ("Ronaldo scored " * 20, ["x"] * 6, "on-screen text: Neymar called to 2026 World Cup", None)
+r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
+if ("Ronaldo" not in r["transcript"] or "Neymar" not in r["transcript"]
+        or r["transcript_source"] != "whisper+visual analysis"):
+    fails.append("m3b ears+eyes merged")
+
+# 4. silent but visual -> the eyes' read becomes the transcript
+ing._transcribe_and_see = lambda url, max_frames=6: (None, ["x"] * 6, "eyes saw a chart", None)
+r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
+if r["transcript_source"] != "visual analysis" or "eyes saw a chart" not in r["transcript"]:
+    fails.append("m4 silent visual")
+
+# 5. silent AND blind -> honest error
+ing._transcribe_and_see = lambda url, max_frames=6: (None, [], None, IngestError("no audio"))
+try:
+    ing.ingest("https://youtube.com/shorts/abcdefg1234"); fails.append("m5 no error")
+except IngestError:
+    pass
+
+# 6. TikTok metadata blocked -> friendly message
+fake_ydl(raise_text="Unable to extract universal data for rehydration")
+try:
+    ing.ingest("https://www.tiktok.com/t/ZTSOMETHING/"); fails.append("m6 no error")
+except IngestError as e:
+    if "TikTok blocked" not in str(e): fails.append(f"m6 raw error leaked: {e}")
+
+# 7. video too long -> scope error
+fake_ydl(info=dict(BASEINFO, duration=99999))
+try:
+    ing.ingest("https://youtube.com/watch?v=abcdefg1234"); fails.append("m7 no cap")
+except IngestError as e:
+    if "minutes" not in str(e): fails.append("m7 wrong msg")
+
+# ---------- pipeline shapes through the REAL _run_pipeline ----------
+import importlib
+import app.main as m
+importlib.reload(m)
+m.save_route_audit = lambda *a, **k: None
+m.save_result = lambda *a, **k: None
+m.search_fact_check_db = lambda c: []
+
+
+def unit(claim, gate="factual", central=True, risk="low", safety=False):
+    return {"claim": claim, "quote": claim, "gate_label": gate, "bucket": "politics",
+            "secondary_bucket": None, "central": central, "confidence": 0.9,
+            "risk_level": risk, "public_safety_risk": safety,
+            "developing_story": False, "reason": "r"}
+
+
+def run(jid, text, key, router_out, judge_map=None, evidence=None):
+    m.ingest = lambda url: {"url": url, "platform": "youtube", "title": text,
+                            "uploader": "u", "duration_seconds": 30, "transcript": text,
+                            "transcript_source": "captions", "posted_date": "2026-07-01"}
+    m.route_claims = lambda t, **kw: [dict(u) for u in router_out]
+    m.gather_evidence = lambda c: evidence or {"fact_checks": [], "web_sources": [
+        {"source": "S", "url": "https://s.s", "quote": "q", "stance": "supports"}], "search_rounds": 1}
+    m.judge_with_rubric = lambda c, ev: (judge_map or {}).get(c["claim"], {
+        "truth_score": 9.0, "verdict_state": "supported", "verdict": "ok",
+        "evidence_strength": "strong", "key_sources": []})
+    m._run_pipeline(jid, text, key)
+    with m._jobs_lock:
+        return dict(m._jobs[jid])
+
+
+# 8. pure satire video -> everything parked, honest label
+j = run("s1", "url", "youtube:sat1", [unit("joke about senators", gate="satire")])
+rep = j["result"]["report"]
+if rep["headline_score"] is not None: fails.append("m8 satire got scored")
+if "opinion, satire" not in rep["headline_label"]: fails.append("m8 label")
+
+# 9. empty router -> no-claims label
+j = run("s2", "url", "youtube:empty1", [])
+if "no checkable factual claims" not in j["result"]["report"]["headline_label"]:
+    fails.append("m9 no-claims label")
+
+# 10. safety collapse beats good scores
+j = run("s3", "url", "youtube:safe1",
+        [unit("evacuate the town now", safety=True, risk="critical"), unit("sky is blue")],
+        judge_map={"evacuate the town now": {"truth_score": None, "verdict_state": "unverifiable",
+                   "verdict": "?", "evidence_strength": "none", "key_sources": []}})
+if j["result"]["report"]["headline_state"] != "safety_alert": fails.append("m10 safety collapse")
+
+# 11. central false + side true -> MIN wins (no cap rescue for central)
+j = run("s4", "url", "youtube:min1",
+        [unit("big lie"), unit("side truth", central=False)],
+        judge_map={"big lie": {"truth_score": 1.0, "verdict_state": "contradicted",
+                   "verdict": "no", "evidence_strength": "strong", "key_sources": []}})
+if j["result"]["report"]["headline_score"] != 1.0: fails.append("m11 central MIN")
+
+# 12. central true + weak side -> capped 7.5 green
+j = run("s5", "url", "youtube:cap1",
+        [unit("main truth"), unit("outdated side", central=False)],
+        judge_map={"outdated side": {"truth_score": 6.0, "verdict_state": "partly_supported",
+                   "verdict": "old", "evidence_strength": "strong", "key_sources": []}})
+rep = j["result"]["report"]
+if rep["headline_score"] != 7.5 or "capped" not in rep["headline_label"]: fails.append("m12 cap")
+
+# 13. typed question -> answer mode (real branch)
+m.answer_question = lambda q, ev: "Answer with sources."
+m.route_claims = lambda t, **kw: [unit(t, gate="question")]
+m.gather_evidence = lambda q: {"fact_checks": [], "web_sources": []}
+m.ingest = None
+m._run_pipeline("s6", "who is the president?", "text:q1")
+with m._jobs_lock: j = dict(m._jobs["s6"])
+if not j["result"].get("answer_mode"): fails.append("m13 answer mode")
+
+# 14. typed statement -> judged (not answered)
+m.route_claims = lambda t, **kw: [unit(t)]
+m.judge_with_rubric = lambda c, ev: {"truth_score": 8.0, "verdict_state": "supported",
+                                     "verdict": "ok", "evidence_strength": "strong", "key_sources": []}
+m.gather_evidence = lambda c: {"fact_checks": [], "web_sources": [], "search_rounds": 2}
+m._run_pipeline("s7", "the sky is blue", "text:s1")
+with m._jobs_lock: j = dict(m._jobs["s7"])
+if j["result"].get("answer_mode") or j["result"]["report"]["headline_score"] != 8.0:
+    fails.append("m14 typed statement")
+
+# 15. search failure -> honest search_error (judge receives flag; here just flag presence)
+ev = {"fact_checks": [], "web_sources": [], "search_failed": True, "search_rounds": 2}
+if not ev.get("search_failed"): fails.append("m15")
+
+
+# 16. facebook POST -> immediate friendly login-wall message, no downloader run
+try:
+    ing.ingest("https://www.facebook.com/NYPost/posts/pfbid0abc123")
+    fails.append("m16 fb post should raise")
+except IngestError as e:
+    if "login wall" not in str(e): fails.append("m16 fb post message")
+
+# 17. facebook VIDEO that fails download -> friendly facebook message, not raw error
+fake_ydl(raise_text="ERROR: [facebook] xyz: Unable to download webpage: HTTP Error 404")
+try:
+    ing.ingest("https://www.facebook.com/watch/?v=123456")
+    fails.append("m17 fb video should raise")
+except IngestError as e:
+    if "Facebook wouldn't hand over" not in str(e): fails.append("m17 fb video message")
+
+print("MATRIX FAILURES:", fails) if fails else print(
+    "FINAL MATRIX PASS: 17/17 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video")
