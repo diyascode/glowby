@@ -80,6 +80,8 @@
   details.more .inner{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
   .tr{white-space:pre-wrap;margin-top:8px;max-height:40vh;overflow-y:auto;line-height:1.5;font-size:.85rem}
   .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .aidisc{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--muted);text-align:center}
+  .aidisc a{color:var(--muted)}
   .actions a,.actions button{flex:1;min-width:130px;text-align:center;padding:.6rem .8rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink2);font-size:.85rem;font-weight:600;text-decoration:none;cursor:pointer}
   /* reel view */
   .reel{position:relative;border-radius:18px;overflow:hidden;min-height:440px;background:linear-gradient(160deg,#2b3350 0%,#171b26 55%,#10131c 100%);border:1px solid var(--border)}
@@ -442,7 +444,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.29.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.30.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -655,6 +657,7 @@ function render(){
   if(permalink)html+='<button id="copyLink">🔗 Copy link</button>';
   html+='<button id="repBtn">🛠 Report a mistake</button>';
   html+='</div>';
+  html+='<div class="aidisc">Glowby is AI-powered. Scores and verdicts are automated assessments of the evidence found — they can be wrong. Always check the sources. Not medical, legal, or financial advice. <a href="/about#terms">Terms</a></div>';
   if(d.url_key){
     html+='<div id="fuWrap"><div id="fuThread"></div>';
     html+='<form id="fuForm" class="fu-form"><input type="text" id="fuIn" maxlength="400" placeholder="Ask a follow-up about this check…" autocomplete="off"><button type="button" id="fuMic" class="fu-mic" aria-label="Speak your follow-up" title="Speak your follow-up"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="submit" id="fuGo" aria-label="ask">→</button></form></div>';

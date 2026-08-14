@@ -182,6 +182,85 @@ try:
 except IngestError as e:
     if "Facebook wouldn't hand over" not in str(e): fails.append("m17 fb video message")
 
+
+# ---------- NEW SURFACES (golden-set round 2) ----------
+
+# 18. ARTICLE DOOR: yt-dlp rejects the URL -> article reader parses the page
+import urllib.request as _ur
+_HTML = ("<html><head><title>T</title>"
+         '<meta property="og:title" content="Honey study finds real effect">'
+         '<meta property="og:site_name" content="Example News">'
+         '<meta property="article:published_time" content="2026-08-01T10:00:00Z">'
+         "</head><body><nav><p>menu home about contact word word word word</p></nav>"
+         + "".join("<p>Sentence %d of the article body carries substantial "
+                   "readable factual reporting for the parser to keep.</p>" % i
+                   for i in range(12)) + "</body></html>")
+class _FakeResp:
+    headers = {"Content-Type": "text/html; charset=utf-8"}
+    def read(self, n=None): return _HTML.encode()
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def get(self, k, d=None): return self.headers.get(k, d)
+class _FakeHeaders(dict): pass
+_FakeResp.headers = type("H", (), {"get": lambda self, k, d=None:
+    "text/html; charset=utf-8" if k == "Content-Type" else d})()
+_orig_urlopen = _ur.urlopen
+_ur.urlopen = lambda req, timeout=20: _FakeResp()
+fake_ydl(raise_text="ERROR: Unsupported URL: https://news.example.com/story")
+try:
+    r = ing.ingest("https://news.example.com/story")
+    if r.get("platform") != "article": fails.append("m18 article platform")
+    if r.get("transcript_source") != "article text": fails.append("m18 article source")
+    if "substantial" not in (r.get("transcript") or ""): fails.append("m18 article body")
+    if r.get("title") != "Honey study finds real effect": fails.append("m18 article title")
+except IngestError as e:
+    fails.append("m18 article door raised: " + str(e)[:60])
+finally:
+    _ur.urlopen = _orig_urlopen
+
+# 19. INSTAGRAM with rescue empty -> honest PUBLIC-reel error, never a crash
+import types as _t
+sys.modules["app.agents.rescue"] = _t.SimpleNamespace(
+    rescue_media=lambda url, platform: None)
+try:
+    ing.ingest("https://www.instagram.com/reel/ABC123/")
+    fails.append("m19 instagram should raise")
+except IngestError as e:
+    if "PUBLIC reel" not in str(e): fails.append("m19 instagram message")
+
+# 20. RESCUE CAP GATE: no token -> dormant; at cap -> off; under cap -> on
+del sys.modules["app.agents.rescue"]
+import app.agents.rescue as rsc
+import app.storage as st
+_tok = rsc.RESCUE_TOKEN
+rsc.RESCUE_TOKEN = ""
+if rsc._allowed(): fails.append("m20 tokenless not dormant")
+rsc.RESCUE_TOKEN = "test-token"
+st.event_stats = lambda: {"rescue": {"today": rsc.RESCUE_DAILY_CALLS}}
+if rsc._allowed(): fails.append("m20 cap not enforced")
+st.event_stats = lambda: {"rescue": {"today": rsc.RESCUE_DAILY_CALLS - 1}}
+if not rsc._allowed(): fails.append("m20 under-cap blocked")
+rsc.RESCUE_TOKEN = _tok
+
+# 21. +ASK: question rides the fresh pipeline; answered AFTER analysis;
+# cache storage strips personal Q/A
+m.answer_followup = lambda q, ctx: "Yes - the check's sources support it."
+if hasattr(m, "add_usage"): m.add_usage = lambda *a, **k: None
+m.route_claims = lambda t, **kw: [unit(t)]
+m.judge_with_rubric = lambda c, ev: {"truth_score": 8.0, "verdict_state": "supported",
+                                     "verdict": "ok", "evidence_strength": "strong",
+                                     "key_sources": []}
+m.gather_evidence = lambda c: {"fact_checks": [], "web_sources": [
+    {"source": "S", "url": "https://s.s", "quote": "q", "stance": "supports"}],
+    "search_rounds": 1}
+m._run_pipeline("s9", "the sky is blue", "text:s9", "is that really true?")
+with m._jobs_lock: j = dict(m._jobs["s9"])
+if j["result"].get("user_question") != "is that really true?": fails.append("m21 ask question")
+if "support" not in (j["result"].get("user_answer") or ""): fails.append("m21 ask answer")
+import inspect as _insp
+_sr = _insp.getsource(__import__("app.storage", fromlist=["save_result"]).save_result)
+if "user_question" not in _sr: fails.append("m21 cache must strip user_question")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 17/17 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video")
+    "FINAL MATRIX PASS: 21/21 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask")
