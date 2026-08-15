@@ -179,6 +179,17 @@ is a MID outcome — partly_supported or unverifiable, score 5.0-6.5 — \
 never a red score. Low scores (below 4) are reserved for claims the \
 evidence actually CONTRADICTS. Never let a claim nobody disputes drag \
 the headline into "contradicted" territory.
+- CONTESTED-CLAIM STABILITY: when credible sources GENUINELY DISAGREE \
+about the claim's core assertion — officials say one thing, independent \
+experts another; reputable sources on BOTH sides — the claim is CONTESTED, \
+which is different from thin evidence. Rule: verdict_state \
+"partly_supported", score pinned to the 4.5-5.5 band, and the verdict \
+sentence MUST name both sides ("Treasury officials said X; sanctions \
+experts argue Y"). Genuine disagreement NEVER scores below 4.5 — \
+disagreement between credible sources is not refutation, and a contested \
+claim must land in the same band on every re-check, not swing between \
+"insufficient" and "partly supported" depending on which sources a given \
+search surfaced.
 - NAME THE NUMBER: when a claim asserts a specific figure and the \
 evidence reports a DIFFERENT figure for the same fact, the verdict MUST \
 state the evidence's figure explicitly ("sources report ~14%, not 10%") \

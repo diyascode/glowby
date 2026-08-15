@@ -61,7 +61,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.30.1"
+VERSION = "0.32.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -226,8 +226,55 @@ def _looks_like_question(text: str) -> bool:
     return first in QUESTION_STARTERS
 
 
+def _stop_words():
+    return {"the", "a", "an", "of", "to", "in", "on", "as", "is", "was",
+            "were", "and", "or", "that", "this", "it", "for", "by", "with"}
+
+
+def _merge_prior_evidence(claim_text: str, evidence: dict,
+                          prior_claims) -> dict:
+    """Union a fresh evidence bundle with the best-matching prior claim's
+    stored sources (re-check memory). Dedup by URL; fresh sources first.
+    Caps: 7 web sources, 4 fact-checks. Returns the evidence dict."""
+    if not prior_claims or not isinstance(evidence, dict):
+        return evidence
+    stop = _stop_words()
+    words = {w for w in (claim_text or "").lower().split() if w not in stop}
+    if not words:
+        return evidence
+    best, best_score = None, 0.0
+    for pc in prior_claims:
+        pw = {w for w in str(pc.get("claim", "")).lower().split()
+              if w not in stop}
+        if not pw:
+            continue
+        overlap = len(words & pw) / len(words | pw)
+        if overlap > best_score:
+            best, best_score = pc, overlap
+    if best is None or best_score < 0.45:
+        return evidence
+    prior_ev = best.get("evidence") or {}
+    seen = {w.get("url") for w in (evidence.get("web_sources") or [])}
+    merged_web = list(evidence.get("web_sources") or [])
+    for w in (prior_ev.get("web_sources") or []):
+        if w.get("url") and w["url"] not in seen:
+            merged_web.append(w)
+            seen.add(w["url"])
+    seen_fc = {f.get("url") for f in (evidence.get("fact_checks") or [])}
+    merged_fc = list(evidence.get("fact_checks") or [])
+    for f in (prior_ev.get("fact_checks") or []):
+        if f.get("url") and f["url"] not in seen_fc:
+            merged_fc.append(f)
+            seen_fc.add(f["url"])
+    evidence["web_sources"] = merged_web[:7]
+    evidence["fact_checks"] = merged_fc[:4]
+    if len(merged_web) > len(evidence.get("web_sources") or []) or best_score:
+        evidence["recheck_memory"] = True
+    return evidence
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str,
-                  user_question: str = "") -> None:
+                  user_question: str = "", prior_claims=None) -> None:
     try:
         t0 = time.time()
         if url_key.startswith("text:"):
@@ -277,11 +324,16 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
 
         _set_job(job_id, stage="routing")
         posted = result.get("posted_date")
+        # re-check consistency: anchor claim-splitting to the prior run's
+        # units so the same video carves into the same claims every time
+        prior_units = [str(pc.get("claim", "")).strip()
+                       for pc in (prior_claims or []) if pc.get("claim")]
         claims = route_claims(
             result["transcript"],
             title=result["title"],
             platform=result["platform"],
             uploader=result["uploader"],
+            prior_units=prior_units or None,
         )
 
         # SECOND LOOK: rich audio but ZERO checkable claims in it — the
@@ -381,6 +433,12 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     claims[i]["evidence"] = gather_evidence(claims[i]["claim"])
                 except Exception:
                     claims[i]["evidence"] = {"fact_checks": [], "web_sources": []}
+                # re-check memory: add what the previous run found
+                try:
+                    claims[i]["evidence"] = _merge_prior_evidence(
+                        claims[i]["claim"], claims[i]["evidence"], prior_claims)
+                except Exception:
+                    pass
                 try:
                     claims[i]["verdict"] = judge_with_rubric(claims[i], claims[i]["evidence"])
                 except Exception:
@@ -578,10 +636,24 @@ def api_check(req: CheckRequest, request: Request):
         )
     add_usage(COST_PER_CHECK_EST)
 
+    # EVIDENCE MEMORY: a re-check keeps what the last run learned. The
+    # prior result's per-claim sources are merged into the fresh hunt,
+    # so every re-check judges on MORE evidence, never a thinner draw —
+    # this damps run-to-run score wobble on contested claims.
+    prior_claims = None
+    if req.force:
+        try:
+            prior = get_cached(url_key, 0)  # any age — memory, not cache
+            if prior and prior.get("claims"):
+                prior_claims = prior["claims"]
+        except Exception:
+            prior_claims = None
+
     job_id = uuid.uuid4().hex[:12]
     _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
-        target=_run_pipeline, args=(job_id, req.url, url_key, question),
+        target=_run_pipeline,
+        args=(job_id, req.url, url_key, question, prior_claims),
         daemon=True,
     ).start()
     return {"job_id": job_id}

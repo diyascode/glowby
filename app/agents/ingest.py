@@ -676,7 +676,8 @@ def _whisper_file(audio_file: str):
     try:
         with open(audio_file, "rb") as f:
             transcription = client.audio.transcriptions.create(
-                model="whisper-1", file=f)
+                model="whisper-1", file=f,
+                temperature=0)  # deterministic: same audio -> same text
     except Exception as e:
         raise IngestError(f"Transcription failed. (Details: {str(e)[:200]})")
     return (transcription.text or "").strip() or None

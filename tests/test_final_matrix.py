@@ -261,6 +261,80 @@ import inspect as _insp
 _sr = _insp.getsource(__import__("app.storage", fromlist=["save_result"]).save_result)
 if "user_question" not in _sr: fails.append("m21 cache must strip user_question")
 
+
+# 22. RE-CHECK EVIDENCE MEMORY: prior sources merge into the fresh hunt,
+# deduped by URL, fresh first, capped
+prior = [{"claim": "US sanctions on Iranian banks made cash delivery necessary",
+          "evidence": {"web_sources": [
+              {"source": "Lawfare", "url": "https://lawfare.example/a", "quote": "q1", "stance": "mixed"},
+              {"source": "CBS", "url": "https://cbs.example/b", "quote": "q2", "stance": "supports"}],
+              "fact_checks": [{"publisher": "P", "url": "https://fc.example/1", "rating": "Mixed", "title": "t", "review_date": ""}]}},
+         {"claim": "totally unrelated thing about a football match",
+          "evidence": {"web_sources": [{"source": "X", "url": "https://x.example/z", "quote": "z", "stance": "supports"}], "fact_checks": []}}]
+fresh = {"web_sources": [{"source": "CBS", "url": "https://cbs.example/b", "quote": "new", "stance": "supports"}],
+         "fact_checks": []}
+merged = m._merge_prior_evidence(
+    "Sanctions on Iranian banks made physical cash delivery necessary", fresh, prior)
+urls = [w["url"] for w in merged["web_sources"]]
+if urls != ["https://cbs.example/b", "https://lawfare.example/a"]: fails.append("m22 merge urls " + str(urls))
+if len(merged["fact_checks"]) != 1: fails.append("m22 merge fc")
+if not merged.get("recheck_memory"): fails.append("m22 memory flag")
+# unrelated claim must NOT leak its sources in
+merged2 = m._merge_prior_evidence("the moon is made of cheese entirely",
+                                  {"web_sources": [], "fact_checks": []}, prior)
+if merged2["web_sources"]: fails.append("m22 unrelated leak")
+
+# 23. RE-CHECK PIPELINE: prior evidence reaches the judge
+seen_ev = {}
+m.route_claims = lambda t, **kw: [unit("US sanctions made cash delivery necessary")]
+m.gather_evidence = lambda c: {"fact_checks": [], "web_sources": [
+    {"source": "Fresh", "url": "https://fresh.example/f", "quote": "f", "stance": "mixed"}],
+    "search_rounds": 1}
+def _spy_judge(c, ev):
+    seen_ev["ev"] = ev
+    return {"truth_score": 5.0, "verdict_state": "partly_supported", "verdict": "contested",
+            "evidence_strength": "moderate", "key_sources": []}
+m.judge_with_rubric = _spy_judge
+m._run_pipeline("s10", "the sanctions claim video", "text:s10", "",
+                [{"claim": "US sanctions made cash delivery necessary",
+                  "evidence": {"web_sources": [{"source": "Old", "url": "https://old.example/o", "quote": "o", "stance": "refutes"}],
+                               "fact_checks": []}}])
+ev_urls = [w["url"] for w in (seen_ev.get("ev", {}).get("web_sources") or [])]
+if "https://old.example/o" not in ev_urls or "https://fresh.example/f" not in ev_urls:
+    fails.append("m23 pipeline memory " + str(ev_urls))
+
+
+# 24. CONTESTED-DRIVER LABEL: green claims + one contested driver ->
+# honest sentence, not "questionable claims" smear
+from app.agents.output import build_report as _br
+def _cl(txt, score, state, central=True):
+    return {"claim": txt, "gate_label": "factual", "central": central,
+            "risk_level": "low",
+            "verdict": {"truth_score": score, "verdict_state": state,
+                        "verdict": "v", "evidence_strength": "strong",
+                        "key_sources": []}}
+r = _br({"title": "iran video", "claims": [
+    _cl("transfer happened", 8.5, "supported"),
+    _cl("hague settlement", 8.7, "supported"),
+    _cl("sanctions made cash necessary", 5.5, "partly_supported")]})
+rep = r["report"]
+if rep["headline_score"] != 5.5: fails.append("m24 headline")
+if "disputed by experts" not in rep["headline_label"]: fails.append("m24 label: " + rep["headline_label"])
+# a truly CONTRADICTED driver must keep the warning label
+r2 = _br({"title": "v", "claims": [
+    _cl("true thing", 8.5, "supported"),
+    _cl("false thing", 5.5, "contradicted")]})
+if "disputed by experts" in r2["report"]["headline_label"]: fails.append("m24 contradicted leak")
+
+# 25. RE-CHECK CLAIM ANCHORING: prior units ride into the router prompt
+from app.agents.router import build_prompt as _bp
+p = _bp("some transcript", "t", "tiktok", "u",
+        prior_units=["sanctions made cash delivery necessary", "hague case"])
+if "RE-CHECK CONSISTENCY RULE" not in p: fails.append("m25 rule missing")
+if "sanctions made cash delivery necessary" not in p: fails.append("m25 units missing")
+p2 = _bp("some transcript", "t", "tiktok", "u")
+if "RE-CHECK CONSISTENCY RULE" in p2: fails.append("m25 leaks into fresh checks")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 21/21 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask")
+    "FINAL MATRIX PASS: 25/25 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring")

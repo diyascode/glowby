@@ -175,8 +175,19 @@ is NEVER grounds to park a typed claim — forward it and let the evidence \
 hunt resolve who or what it refers to."""
 
 
+RECHECK_RULE = """
+
+RE-CHECK CONSISTENCY RULE: a previous analysis of this SAME video split it
+into the claim units listed below. Keep the SAME segmentation and near-same
+wording, so re-checks stay comparable — do not merge two previous units into
+one or carve one differently. You may refine a unit's wording for accuracy,
+add a genuinely NEW claim the previous pass missed, or drop a unit that is
+plainly not in the transcript. Previous claim units:
+{prior_units}"""
+
+
 def build_prompt(transcript: str, title: str, platform: str,
-                 uploader: str) -> str:
+                 uploader: str, prior_units=None) -> str:
     p = PROMPT.format(
         max_claims=MAX_CLAIMS,
         title=title or "(unknown)",
@@ -186,11 +197,15 @@ def build_prompt(transcript: str, title: str, platform: str,
     )
     if (platform or "").strip().lower() == "typed claim":
         p += TYPED_RULE
+    if prior_units:
+        listing = "\n".join(
+            f"- {str(u)[:300]}" for u in prior_units[:MAX_CLAIMS])
+        p += RECHECK_RULE.format(prior_units=listing)
     return p
 
 
 def route_claims(transcript: str, title: str = "", platform: str = "",
-                 uploader: str = "") -> list:
+                 uploader: str = "", prior_units=None) -> list:
     """Gate + split + route a transcript. Returns list of claim dicts."""
     if not transcript or not transcript.strip():
         raise RouterError("No transcript text to analyze.")
@@ -218,7 +233,7 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
 
     import anthropic
 
-    prompt = build_prompt(transcript, title, platform, uploader)
+    prompt = build_prompt(transcript, title, platform, uploader, prior_units)
     client = anthropic.Anthropic(api_key=api_key)
     last_err = None
     got_unreadable = False

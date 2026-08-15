@@ -153,6 +153,23 @@ def build_report(result: dict) -> dict:
             if headline >= cutoff:
                 state, label = s, text
                 break
+        # CONTESTED-DRIVER LABEL: when the score-setting claim is merely
+        # CONTESTED (partly_supported — experts genuinely disagree) and
+        # every other counting claim verified green, "mixes accurate and
+        # questionable claims" smears the whole video. Same honest number,
+        # truthful sentence: nothing here is false.
+        if state == "mixed" and counting:
+            drivers = [c for c in counting
+                       if c["verdict"]["truth_score"] == headline]
+            others = [c for c in counting if c not in drivers]
+            if (drivers and others
+                    and all(c["verdict"].get("verdict_state")
+                            == "partly_supported" for c in drivers)
+                    and all(c["verdict"]["truth_score"] >= 8.0
+                            for c in others)):
+                label = ("The main claims check out. One claim is genuinely "
+                         "disputed by experts — and the lowest claim sets "
+                         "the score.")
         if side_capped:
             label += (" The score is capped because a side detail didn't "
                       "fully check out - see below.")

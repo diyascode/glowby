@@ -71,6 +71,8 @@ def describe_frames(frames: list, title: str = "", uploader: str = ""):
         message = client.messages.create(
             model=MODEL,
             max_tokens=1000,
+            temperature=0,  # same frames -> same description (re-check
+            # consistency: the eyes must not re-word the video each run)
             messages=[{"role": "user", "content": content}],
         )
     except Exception:
