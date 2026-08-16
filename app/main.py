@@ -61,7 +61,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.32.0"
+VERSION = "0.33.0"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -274,10 +274,36 @@ def _merge_prior_evidence(claim_text: str, evidence: dict,
 
 
 def _run_pipeline(job_id: str, url: str, url_key: str,
-                  user_question: str = "", prior_claims=None) -> None:
+                  user_question: str = "", prior_claims=None,
+                  image_b64: str = None) -> None:
     try:
         t0 = time.time()
-        if url_key.startswith("text:"):
+        if image_b64:
+            # UPLOADED IMAGE (screenshot or camera photo): the EYES read
+            # it, then it enters the normal pipeline like any transcript.
+            # PRIVACY: the image itself is never stored — only the text
+            # description Glowby derives from it.
+            _set_job(job_id, status="running", stage="fetching")
+            desc = describe_frames(
+                [image_b64], title="(user-uploaded screenshot or photo)")
+            if not desc:
+                _set_job(job_id, status="error", detail=(
+                    "Glowby looked at the image but found nothing "
+                    "checkable in it — no readable text, chart, or "
+                    "factual assertion. Try a clearer screenshot, or "
+                    "type the claim instead."))
+                return
+            result = {
+                "url": None,
+                "platform": "image",
+                "title": (desc[:90] + "…") if len(desc) > 90 else desc,
+                "uploader": "uploaded image",
+                "duration_seconds": 0,
+                "posted_date": None,
+                "transcript": "[WHAT THE IMAGE SHOWS] " + desc,
+                "transcript_source": "visual analysis",
+            }
+        elif url_key.startswith("text:"):
             # typed claim: no video to fetch — enter at the router
             _set_job(job_id, status="running", stage="routing")
             text = url.strip()
@@ -561,17 +587,57 @@ def permalink_page(key: str, request: Request) -> str:
 
 
 class CheckRequest(BaseModel):
-    url: str
+    url: str = ""
     force: bool = False  # true = ignore the cache and re-run (recheck)
     captcha_token: str = ""  # Turnstile token (required when captcha is on)
     question: str = ""  # optional "+ask": what the user wants to know
+    image_b64: str = ""  # uploaded screenshot/photo (JPEG, base64)
+
+
+MAX_IMAGE_B64 = 10_000_000  # ~7.5 MB decoded — client resizes first
+
+
+def _clean_image_b64(data: str):
+    """Strip a data-URL prefix, size-check, and lightly validate.
+    Returns clean base64 or None if unusable."""
+    d = (data or "").strip()
+    if d.startswith("data:"):
+        comma = d.find(",")
+        if comma == -1:
+            return None
+        d = d[comma + 1:]
+    if not d or len(d) > MAX_IMAGE_B64:
+        return None
+    import base64 as _b64
+    try:  # must decode — garbage never reaches the vision agent
+        raw = _b64.b64decode(d, validate=True)
+    except Exception:
+        return None
+    if len(raw) < 1000:  # not a real photo
+        return None
+    return d
+
+
+def _image_key(clean_b64: str) -> str:
+    """Cache key for an uploaded image: same image -> same result."""
+    return "img:" + hashlib.sha256(clean_b64.encode()).hexdigest()[:32]
 
 
 @app.post("/api/check")
 def api_check(req: CheckRequest, request: Request):
-    """Start a check of a video URL OR a typed claim."""
+    """Start a check of a video URL, a typed claim, OR an uploaded image."""
     raw = (req.url or "").strip()
-    if not looks_like_url(raw):
+    image_b64 = None
+    if req.image_b64:
+        image_b64 = _clean_image_b64(req.image_b64)
+        if image_b64 is None:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "That image couldn't be read — try a "
+                                   "JPEG or PNG under ~7 MB."},
+            )
+        url_key = _image_key(image_b64)
+    elif not looks_like_url(raw):
         if len(raw) < 12:
             return JSONResponse(
                 status_code=422,
@@ -653,7 +719,7 @@ def api_check(req: CheckRequest, request: Request):
     _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
         target=_run_pipeline,
-        args=(job_id, req.url, url_key, question, prior_claims),
+        args=(job_id, req.url, url_key, question, prior_claims, image_b64),
         daemon=True,
     ).start()
     return {"job_id": job_id}

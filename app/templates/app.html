@@ -127,8 +127,8 @@ html.light #f{background:#ffffff;border:1.5px solid rgba(0,0,0,.35);box-shadow:0
 html.light #url{color:#111114}
 html.light #url::placeholder{color:#8a8a94}
 html.light #go{background:#111114;box-shadow:none}
-html.light #mic,html.light .fu-mic{border-color:rgba(0,0,0,.3);color:#63636e}
-html.light #mic:hover,html.light .fu-mic:hover{color:#111114;border-color:#111114}
+html.light #cam,html.light #mic,html.light .fu-mic{border-color:rgba(0,0,0,.3);color:#63636e}
+html.light #cam:hover,html.light #mic:hover,html.light .fu-mic:hover{color:#111114;border-color:#111114}
 html.light #mic.rec,html.light .fu-mic.rec{background:#111114;color:#fff}
 html.light .fu-form button[type=submit]{background:#111114}
 html.light .fu-q{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.2);color:#111114}
@@ -165,7 +165,7 @@ html.appmode.has-tabbar body{padding-bottom:0}
 /* slimmer input — shorter height, thumb-friendly */
 html.appmode #f{padding:6px 6px 6px 18px;border-radius:20px}
 html.appmode #url{font-size:16px;padding:3px 0}
-html.appmode #go,html.appmode #mic{width:42px;height:42px}
+html.appmode #go,html.appmode #mic,html.appmode #cam{width:42px;height:42px}
 /* one-tap Paste button — removed from app for a cleaner home (kept for
    easy revert: change the next line's display back to inline-flex) */
 #pasteBtn{display:none}
@@ -278,8 +278,8 @@ body{background:transparent;font-family:"IBM Plex Sans",system-ui,-apple-system,
 #url{border:none;background:transparent;font-size:16px}
 #url:focus{outline:none}
 #go{width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center;flex:none;background:linear-gradient(135deg,#6A5AF0,#8A7CFF);box-shadow:0 8px 24px -8px rgba(124,108,246,.85);transition:transform .18s cubic-bezier(.22,.61,.36,1)}
-#mic,.fu-mic{width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center;flex:none;background:transparent;border:1px solid rgba(255,255,255,.18);color:var(--muted);cursor:pointer;transition:color .2s,border-color .2s}
-#mic:hover,.fu-mic:hover{color:var(--ink);border-color:rgba(138,124,255,.6)}
+#cam,#mic,.fu-mic{width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center;flex:none;background:transparent;border:1px solid rgba(255,255,255,.18);color:var(--muted);cursor:pointer;transition:color .2s,border-color .2s}
+#cam:hover,#mic:hover,.fu-mic:hover{color:var(--ink);border-color:rgba(138,124,255,.6)}
 #mic.rec,.fu-mic.rec{color:#fff;background:linear-gradient(135deg,#FF6378,#C46BF2);border-color:transparent;animation:micPulse 1.1s infinite alternate}
 .fu-mic{width:38px;height:38px}
 @keyframes micPulse{from{box-shadow:0 0 0 0 rgba(255,99,120,.5)}to{box-shadow:0 0 0 9px rgba(255,99,120,0)}}
@@ -405,7 +405,7 @@ html.light .uq-q{color:#111114}
 
   <form id="f">
     <input type="text" id="url" placeholder="Paste a video link — or type any claim to fact-check..." required>
-    <button id="mic" type="button" aria-label="Speak instead of typing" title="Speak instead of typing"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button>
+    <button id="cam" type="button" aria-label="Check a screenshot or photo" title="Check a screenshot or photo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button><input type="file" id="camIn" accept="image/*" hidden><button id="mic" type="button" aria-label="Speak instead of typing" title="Speak instead of typing"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button>
     <button id="go" type="submit" aria-label="Check it"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
@@ -433,7 +433,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div class="sugg2" aria-hidden="true">
-    <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📰 Articles</span><span>💬 Claims</span><span>❓ Questions</span>
+    <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📰 Articles</span><span>💬 Claims</span><span>❓ Questions</span><span>📷 Screenshots</span>
   </div>
   <div class="mini"><span class="alive">● Glowby is alive</span></div>
   <div class="aihint">AI-powered · results can be wrong · always check the sources</div>
@@ -446,7 +446,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.32.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.33.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -746,6 +746,54 @@ async function poll(jobId){
   }
   throw new Error('Timed out. Please try again.');
 }
+
+// ---- image check: screenshot / camera photo ----
+let pendingImage=null;
+const camBtn=$('cam'),camIn=$('camIn');
+if(camBtn&&camIn){
+  camBtn.onclick=()=>camIn.click();
+  camIn.onchange=()=>{
+    const file=camIn.files&&camIn.files[0]; if(!file)return;
+    const img=new Image();
+    img.onload=async()=>{
+      const MAX=1568;
+      let w=img.naturalWidth,h=img.naturalHeight;
+      const s=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(img.src);
+      pendingImage=cv.toDataURL('image/jpeg',0.85);
+      camIn.value='';
+      $('url').value='';
+      runImageCheck();
+    };
+    img.onerror=()=>{URL.revokeObjectURL(img.src);alert("Couldn't read that image — try a JPEG or PNG.");camIn.value='';};
+    img.src=URL.createObjectURL(file);
+  };
+}
+async function runImageCheck(){
+  if(!pendingImage)return;
+  const go=$('go');go.disabled=true;go.textContent='…';
+  $('out').style.display='none';setStage('fetching');
+  try{
+    const r=await checkFetch({url:'',image_b64:pendingImage,question:userQuestion()});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Something went wrong.');
+    currentResult=d.job_id?await poll(d.job_id):d;
+    $('steps').style.display='none';
+    currentView='list';render();
+    (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
+      const qo=document.getElementById('qOpen'),qc=document.getElementById('qChip');
+      if(qo)qo.hidden=true;if(qc)qc.hidden=false;}})();
+  }catch(err){
+    $('steps').style.display='none';
+    $('out').style.display='block';
+    $('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';
+  }
+  pendingImage=null;
+  go.disabled=false;go.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';tsReset();
+}
+
 $('f').addEventListener('submit',async(e)=>{
   e.preventDefault();
   const go=$('go');go.disabled=true;go.textContent='…';

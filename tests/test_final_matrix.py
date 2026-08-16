@@ -335,6 +335,39 @@ if "sanctions made cash delivery necessary" not in p: fails.append("m25 units mi
 p2 = _bp("some transcript", "t", "tiktok", "u")
 if "RE-CHECK CONSISTENCY RULE" in p2: fails.append("m25 leaks into fresh checks")
 
+
+# 26. IMAGE VALIDATION: data-URL stripped, garbage rejected, key stable
+import base64 as _b64x
+good = _b64x.b64encode(b"x" * 5000).decode()
+if m._clean_image_b64("data:image/jpeg;base64," + good) != good: fails.append("m26 dataurl")
+if m._clean_image_b64("not!!base64$$") is not None: fails.append("m26 garbage accepted")
+if m._clean_image_b64(_b64x.b64encode(b"tiny").decode()) is not None: fails.append("m26 tiny accepted")
+k1, k2 = m._image_key(good), m._image_key(good)
+if k1 != k2 or not k1.startswith("img:"): fails.append("m26 key unstable")
+
+# 27. IMAGE CHECK PIPELINE: eyes read the upload -> normal pipeline;
+# unreadable image -> honest typed error
+m.describe_frames = lambda frames, title="", uploader="": (
+    "A screenshot of a post claiming honey never spoils.")
+m.route_claims = lambda t, **kw: [unit("honey never spoils")]
+m.judge_with_rubric = lambda c, ev: {"truth_score": 8.4, "verdict_state": "supported",
+                                     "verdict": "ok", "evidence_strength": "strong",
+                                     "key_sources": []}
+m.gather_evidence = lambda c: {"fact_checks": [], "web_sources": [
+    {"source": "S", "url": "https://s.s", "quote": "q", "stance": "supports"}],
+    "search_rounds": 1}
+m._run_pipeline("s11", "", "img:testkey", "", None, good)
+with m._jobs_lock: j = dict(m._jobs["s11"])
+res = j["result"]
+if res.get("platform") != "image": fails.append("m27 platform")
+if "[WHAT THE IMAGE SHOWS]" not in (res.get("transcript") or ""): fails.append("m27 transcript")
+if res["report"]["headline_score"] != 8.4: fails.append("m27 score")
+m.describe_frames = lambda frames, title="", uploader="": None
+m._run_pipeline("s12", "", "img:testkey2", "", None, good)
+with m._jobs_lock: j2 = dict(m._jobs["s12"])
+if j2.get("status") != "error" or "nothing" not in str(j2.get("detail", "")).lower():
+    fails.append("m27 unreadable image not honest")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 25/25 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring")
+    "FINAL MATRIX PASS: 27/27 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline")
