@@ -5,14 +5,17 @@ on:
 jobs:
   certify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install playwright
+          playwright install --with-deps chromium
       - name: Golden-set matrix
         run: python tests/test_final_matrix.py
       - name: Scoring caps
