@@ -1,8 +1,11 @@
 """Render every result shape in a real browser + XSS injection attempt."""
 import json
+import os
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from playwright.sync_api import sync_playwright
 
-html = open("/home/claude/glowby/app/templates/app.html", encoding="utf-8").read()
+html = open(os.path.join(_ROOT, "app", "templates", "app.html"), encoding="utf-8").read()
 
 def claim(text, ts, state, gate="factual", **kw):
     c = {"claim": text, "quote": "q", "gate_label": gate, "bucket": "politics",
@@ -95,7 +98,7 @@ with sync_playwright() as pw:
                 pass
         if errors and name != "xss":
             fails.append(f"{name}: JS errors {errors}")
-        page.screenshot(path=f"/home/claude/shape_{name}.png")
+        page.screenshot(path=os.path.join(_ROOT, f"shape_{name}.png"))
         page.close()
     b.close()
 
