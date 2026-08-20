@@ -179,6 +179,21 @@ is a MID outcome — partly_supported or unverifiable, score 5.0-6.5 — \
 never a red score. Low scores (below 4) are reserved for claims the \
 evidence actually CONTRADICTS. Never let a claim nobody disputes drag \
 the headline into "contradicted" territory.
+- UNDERREPORTED IS NOT UNTRUE: a claim's score comes from the EVIDENCE \
+presented, never from the prestige of who covered it. When independent \
+sources (small outlets, podcasts, local press, specialist writers) present \
+VERIFIABLE first-hand material — documents that can be opened, footage \
+that can be traced, named on-record sources, original data — that IS \
+evidence, and it can support a claim major outlets have not covered; the \
+verdict should then say plainly: "supported by independent reporting with \
+primary evidence; not yet covered by major outlets." The reverse also \
+holds: a famous outlet ASSERTING something with no underlying evidence is \
+thin support, not strong support. Mainstream silence about a claim is \
+never contradiction (see the expected-coverage test for the narrow \
+exception), and independent-only sourcing is never, by itself, grounds \
+for a red score. The bar that never moves: the material must be \
+VERIFIABLE — an anonymous account claiming to have documents it does not \
+show is not first-hand material, it is an assertion.
 - CONTESTED-CLAIM STABILITY: when credible sources GENUINELY DISAGREE \
 about the claim's core assertion — officials say one thing, independent \
 experts another; reputable sources on BOTH sides — the claim is CONTESTED, \

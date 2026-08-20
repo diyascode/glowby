@@ -1,4 +1,5 @@
 """FINAL v0.18.0 certification matrix — every input shape end-to-end."""
+import os
 import sys
 import types
 
@@ -368,6 +369,20 @@ with m._jobs_lock: j2 = dict(m._jobs["s12"])
 if j2.get("status") != "error" or "nothing" not in str(j2.get("detail", "")).lower():
     fails.append("m27 unreadable image not honest")
 
+
+# 28. EVIDENCE-OVER-PRESTIGE CONTRACT: the rules ship in the prompts and
+# the site says the same true thing (docs, judge, and hunt stay in sync)
+from app.agents.judge import PROMPT as _JP
+from app.agents.evidence import PROMPT as _EP
+if "UNDERREPORTED IS NOT UNTRUE" not in _JP: fails.append("m28 judge rule missing")
+if "VERIFIABLE" not in _JP: fails.append("m28 verifiability bar missing")
+if "EVIDENCE OVER PRESTIGE" not in _EP: fails.append("m28 evidence rule missing")
+_TRUST = open(os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "app", "templates", "trust.html"),
+    encoding="utf-8").read()
+if "Documents outrank names" not in _TRUST: fails.append("m28 site text missing")
+if "underreported is not untrue" not in _TRUST: fails.append("m28 site rule missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 27/27 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline")
+    "FINAL MATRIX PASS: 28/28 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline, evidence-over-prestige")
