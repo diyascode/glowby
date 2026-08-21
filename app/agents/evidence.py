@@ -136,14 +136,6 @@ sources say. Prefer scientific bodies, major news organizations, government \
 agencies, and academic sources. Look for evidence AGAINST the claim as well \
 as for it — do not stop at the first agreeing source.
 
-EVIDENCE OVER PRESTIGE: independent outlets, podcasts, local press, and \
-specialist writers COUNT as sources when they present verifiable \
-first-hand material — documents they show, footage they trace, named \
-on-record sources, original data. Quote the underlying material itself, \
-not the outlet's opinion about it. Do not exclude a source merely for \
-being small or independent; do exclude assertions with nothing shown \
-behind them, however famous the asserter.
-
 If the claim is about what a LAW, RULING, STUDY, or DOCUMENT says: search snippets are NOT enough — use web_fetch to OPEN the primary source page and read it before quoting. Quote the document's OPERATIVE text — the part that directly addresses the claim's core assertion (e.g. for a statute: the clause listing prohibited acts, starting from its first sentence — not just penalty clauses). Partial quotes of the wrong section create false verdicts downstream.
 
 Claim: "{claim}"
