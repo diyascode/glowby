@@ -1,8 +1,8 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
-pydantic>=2.0
+pydantic>=2.0,<3
 yt-dlp>=2026.7.4
-openai>=1.40
-anthropic>=0.40
-psycopg[binary]>=3.1
-youtube-transcript-api>=1.0
+openai>=1.40,<3
+anthropic>=0.40,<1
+psycopg[binary]>=3.1,<4
+youtube-transcript-api>=1.0,<2
