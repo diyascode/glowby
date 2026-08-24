@@ -446,7 +446,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.33.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.33.4 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -750,6 +750,9 @@ async function poll(jobId){
 // ---- image check: screenshot / camera photo ----
 let pendingImage=null;
 const camBtn=$('cam'),camIn=$('camIn');
+// app-mode double lock (2.1a): force library-only BEFORE any tap is
+// possible, even if this script runs ahead of the appmode gate
+if(/[?&]app=1(&|$)/.test(location.search)&&camIn){camIn.setAttribute('multiple','');}
 if(camBtn&&camIn){
   camBtn.onclick=()=>camIn.click();
   camIn.onchange=()=>{
@@ -977,6 +980,13 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
   var isApp = /[?&]app=1(&|$)/.test(location.search);
   if(!isApp) return;
   document.documentElement.classList.add('appmode','has-tabbar');
+
+  // 2.1a CRASH FIX: in the app, image upload is PHOTO-LIBRARY ONLY.
+  // A multi-select image input never offers "Take Photo" on iOS (a camera
+  // returns one photo), so the camera-permission crash path cannot appear.
+  // The library picker is Apple's out-of-process UI: zero permissions.
+  var camI = document.getElementById('camIn');
+  if(camI) camI.setAttribute('multiple','');
 
   var scoreChip = document.getElementById('appScore');
   if(scoreChip) scoreChip.onclick = function(){ location.href='/about?app=1#ratings'; };
