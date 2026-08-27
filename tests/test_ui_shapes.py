@@ -100,6 +100,43 @@ with sync_playwright() as pw:
             fails.append(f"{name}: JS errors {errors}")
         page.screenshot(path=os.path.join(_ROOT, f"shape_{name}.png"))
         page.close()
+    # ---- iOS APP MODE: camera control must NOT exist (2.1a crash fix);
+    # website keeps it. Checked at iPad Air 11" and iPhone sizes.
+    for label, w, h in (("ipad", 820, 1180), ("iphone", 390, 760)):
+        page = b.new_page(viewport={"width": w, "height": h})
+        aerr = []
+        page.on("pageerror", lambda e: aerr.append(str(e)))
+        def aroute(r, _req=None):
+            u = r.request.url
+            if u.endswith("app=1") or "/?app=1" in u:
+                r.fulfill(status=200, content_type="text/html", body=html)
+            else:
+                r.fulfill(status=404, body="nf")
+        page.route("**/*", aroute)
+        page.goto("http://fake.test/?app=1")
+        page.wait_for_timeout(500)
+        if not page.evaluate("!!document.getElementById('cam')"):
+            fails.append(f"appmode-{label}: upload button MISSING in app mode")
+        if not page.evaluate("document.getElementById('camIn') && document.getElementById('camIn').hasAttribute('multiple')"):
+            fails.append(f"appmode-{label}: picker NOT library-only (multiple attr missing -> camera option would appear)")
+        if not page.evaluate("document.documentElement.classList.contains('appmode')"):
+            fails.append(f"appmode-{label}: appmode gate did not engage")
+        if aerr:
+            fails.append(f"appmode-{label}: JS errors {aerr}")
+        page.screenshot(path=os.path.join(_ROOT, f"shape_app_{label}.png"))
+        page.close()
+    # website (non-app) must still HAVE the camera button
+    page = b.new_page(viewport={"width": 1024, "height": 900})
+    def wroute(r, _req=None):
+        r.fulfill(status=200, content_type="text/html", body=html)
+    page.route("**/*", wroute)
+    page.goto("http://fake.test/")
+    page.wait_for_timeout(400)
+    if not page.evaluate("!!document.getElementById('cam')"):
+        fails.append("website: upload button MISSING")
+    if page.evaluate("document.getElementById('camIn').hasAttribute('multiple')"):
+        fails.append("website: picker wrongly library-only (camera allowed on web)")
+    page.close()
     b.close()
 
 print("FAILURES:", fails) if fails else print(

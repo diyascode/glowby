@@ -365,9 +365,21 @@ if res["report"]["headline_score"] != 8.4: fails.append("m27 score")
 m.describe_frames = lambda frames, title="", uploader="": None
 m._run_pipeline("s12", "", "img:testkey2", "", None, good)
 with m._jobs_lock: j2 = dict(m._jobs["s12"])
-if j2.get("status") != "error" or "nothing" not in str(j2.get("detail", "")).lower():
-    fails.append("m27 unreadable image not honest")
+# a nothing-checkable photo must be a FRIENDLY RESULT, never a red error
+# (App Review 2.1a, Aug 27)
+if j2.get("status") != "done": fails.append("m27 no-claims image must be done, not error")
+r2 = j2.get("result", {})
+if r2.get("report", {}).get("headline_score") is not None:
+    fails.append("m27 no-claims image should have no score")
+if "didn't find a checkable claim" not in r2.get("report", {}).get("headline_label", ""):
+    fails.append("m27 friendly label missing")
+
+
+# 28. SECURITY.TXT: RFC 9116 route serves required fields
+_sec = m.security_txt()
+for needle in ("Contact: mailto:hello@glowby.io", "Expires:", "Canonical:"):
+    if needle not in _sec: fails.append("m28 security.txt missing " + needle)
 
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 27/27 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline")
+    "FINAL MATRIX PASS: 28/28 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt")
