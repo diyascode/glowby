@@ -21,7 +21,7 @@ from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
 from app.agents.answer import answer_followup, answer_question
@@ -61,7 +61,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.33.4"
+VERSION = "0.33.6"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -287,11 +287,33 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             desc = describe_frames(
                 [image_b64], title="(user-uploaded screenshot or photo)")
             if not desc:
-                _set_job(job_id, status="error", detail=(
-                    "Glowby looked at the image but found nothing "
-                    "checkable in it — no readable text, chart, or "
-                    "factual assertion. Try a clearer screenshot, or "
-                    "type the claim instead."))
+                # NEVER a red error: a photo with nothing checkable gets a
+                # normal, friendly result card. (App Review 2.1a, Aug 27:
+                # reviewer picked an arbitrary photo, our honest "nothing
+                # checkable" rendered as an error message and read as a bug.)
+                result = {
+                    "url": None,
+                    "platform": "image",
+                    "title": "Uploaded image",
+                    "uploader": "uploaded image",
+                    "duration_seconds": 0,
+                    "posted_date": None,
+                    "transcript": None,
+                    "transcript_source": "visual analysis",
+                    "url_key": url_key,
+                    "claims": [],
+                }
+                build_report(result)
+                result["report"]["headline_label"] = (
+                    "Glowby looked at your image and didn't find a "
+                    "checkable claim — no readable text, chart, or factual "
+                    "statement. Try a screenshot of a post, a headline, or "
+                    "a chart — or type the claim instead.")
+                try:
+                    save_result(url_key, result)
+                except Exception:
+                    pass
+                _set_job(job_id, status="done", result=result)
                 return
             result = {
                 "url": None,
@@ -569,6 +591,19 @@ _TRUST_PATH = os.path.join(os.path.dirname(__file__), "templates", "trust.html")
 _trust_cache = None
 
 
+@app.get("/.well-known/security.txt", response_class=PlainTextResponse)
+@app.get("/security.txt", response_class=PlainTextResponse)
+def security_txt() -> str:
+    """RFC 9116 — tells security researchers how to reach us."""
+    return (
+        "Contact: mailto:hello@glowby.io\n"
+        "Expires: 2027-09-01T00:00:00.000Z\n"
+        "Preferred-Languages: en\n"
+        "Canonical: https://glowby.io/.well-known/security.txt\n"
+        "Policy: https://glowby.io/about#terms\n"
+    )
+
+
 @app.get("/about", response_class=HTMLResponse)
 def about() -> str:
     """Trust pages: methodology, ratings, corrections, terms, privacy."""
@@ -674,13 +709,21 @@ def api_check(req: CheckRequest, request: Request):
     # ---- armor: cached results above stay free & unlimited; fresh runs
     # must pass the bot check, per-visitor rate limit, and daily budget ----
     if not _verify_turnstile(req.captcha_token, _client_ip(request)):
-        return JSONResponse(
-            status_code=403,
-            content={"detail": (
-                "Bot check failed — please try again (the checkbox may "
-                "have expired)."
-            )},
-        )
+        # APP LENIENCY: the iOS app's WKWebView (and App Review's
+        # datacenter network) can fail the invisible captcha through no
+        # fault of the user. App-page requests always carry a Referer
+        # containing app=1 — let those through; the rate limit and daily
+        # budget below still bound any abuse.
+        _ref = request.headers.get("referer", "")
+        _is_app = "app=1" in _ref
+        if not _is_app:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": (
+                    "Bot check failed — please try again (the checkbox may "
+                    "have expired)."
+                )},
+            )
     if _rate_limited(_client_ip(request)):
         return JSONResponse(
             status_code=429,
