@@ -137,6 +137,33 @@ with sync_playwright() as pw:
     if page.evaluate("document.getElementById('camIn').hasAttribute('multiple')"):
         fails.append("website: picker wrongly library-only (camera allowed on web)")
     page.close()
+    # ---- Phase-1 resume: a pending job left in localStorage is picked up
+    # on load, rendered, welcomed back, and the pending marker cleared
+    page = b.new_page(viewport={"width": 900, "height": 1100})
+    resume_result = dict(shapes["mixed_full"])
+    def rroute(r, _req=None):
+        u = r.request.url
+        if "/api/job/testjob1" in u:
+            r.fulfill(status=200, content_type="application/json",
+                      body=json.dumps({"status": "done", "result": resume_result}))
+        elif u.rstrip("/").endswith("fake.test"):
+            r.fulfill(status=200, content_type="text/html", body=html)
+        else:
+            r.fulfill(status=404, body="nf")
+    page.route("**/*", rroute)
+    page.add_init_script(
+        "try{localStorage.setItem('gbPending', JSON.stringify("
+        "{job_id:'testjob1', url:'https://youtube.com/watch?v=x', t:Date.now()}))}catch(e){}")
+    page.goto("http://fake.test/")
+    page.wait_for_timeout(1800)  # poll ticks at 800ms
+    body_txt = page.inner_text("#out")
+    if "finished while you were away" not in body_txt:
+        fails.append("resume: welcome-back note missing")
+    if "true thing" not in body_txt:
+        fails.append("resume: result not rendered")
+    if page.evaluate("localStorage.getItem('gbPending')") is not None:
+        fails.append("resume: pending marker not cleared")
+    page.close()
     b.close()
 
 print("FAILURES:", fails) if fails else print(
