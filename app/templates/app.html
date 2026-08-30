@@ -557,7 +557,9 @@ function renderList(d){
   let html='';
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
-  html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
+  const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
+  const titleHtml=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(d.title)+' \u2197</a>'):esc(d.title);
+  html+='<div class="meta">'+esc(d.platform)+' · '+titleHtml+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
   if(d.answer_mode){
     function splitLead(t){
       const re=/[.!?]\s+/g; let m;
@@ -621,7 +623,7 @@ function renderReel(d){
   chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted);font-size:.68rem">AI fact-check · can be wrong · sources on every claim · glowby.io</div>';
   let html='';
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
-  html+='<div class="reel"><div class="reeltitle">'+esc(d.title)+'</div><div class="corner">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6)+'</div><div class="chips">'+chipsHtml+'</div></div>'+
+  html+='<div class="reel"><div class="reeltitle">'+((d.url&&/^https?:\/\//.test(d.url))?('<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(d.title)+' ↗</a>'):esc(d.title))+'</div><div class="corner">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6)+'</div><div class="chips">'+chipsHtml+'</div></div>'+
     '<div class="meta" style="text-align:center;margin-top:10px">Screenshot this view to share · the link below travels with it</div>';
   return html;
 }
@@ -655,8 +657,7 @@ function render(){
   html+=currentView==='list'?renderList(d):renderReel(d);
   const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
   html+='<div class="actions">';
-  html+='<button id="copyRes">📋 Copy result</button>';
-  if(permalink)html+='<button id="copyLink">🔗 Copy link</button>';
+  html+='<button id="copyRes">🔗 Copy result link</button>';
   html+='<button id="repBtn">🛠 Report a mistake</button>';
   html+='</div>';
   html+='<div class="aidisc">Glowby is AI-powered. Scores and verdicts are automated assessments of the evidence found — they can be wrong. Always check the sources. Not medical, legal, or financial advice. <a href="/about#terms">Terms</a></div>';
@@ -700,11 +701,10 @@ function render(){
   $('tl').onclick=()=>{currentView='list';render();};
   $('tr').onclick=()=>{currentView='reel';render();};
   const cr=$('copyRes');
-  if(cr)cr.onclick=async()=>{const t=resultText(d);try{await navigator.clipboard.writeText(t);cr.textContent='✓ Result copied';}catch(e){prompt('Copy this:',t);}
+  if(cr)cr.onclick=async()=>{
+    const t=permalink||resultText(d);  // the link IS the result; text only if no permalink exists
+    try{await navigator.clipboard.writeText(t);cr.textContent='✓ Link copied';}catch(e){prompt('Copy this:',t);}
     try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_result'})});}catch(e){}};
-  const cb=$('copyLink');
-  if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(permalink);cb.textContent='✓ Link copied';}catch(e){prompt('Copy this link:',permalink);}
-    try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_link'})});}catch(e){}};
   const rb=$('repBtn');
   if(rb)rb.onclick=async()=>{
     const msg=prompt('What looks wrong with this result? (Glowby reviews every report — add your email if you want a reply)');
