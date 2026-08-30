@@ -371,6 +371,7 @@ html.light .uq-q{color:#111114}
   </a>
   <nav class="tb-links">
     <button id="tbTrend" type="button">Trending</button>
+    <button id="tbShare" type="button" title="Copy glowby.io to share">🔗 Copy link</button>
     <a href="/about#methodology">How it works</a>
     <a href="/about#ratings">The score</a>
     <button id="tbTheme" type="button" aria-label="Switch light/dark mode" title="Switch light/dark mode">☾</button>
@@ -868,6 +869,20 @@ $('f').addEventListener('submit',async(e)=>{
     $('out').insertAdjacentHTML('afterbegin',
       '<div class="meta" style="color:var(--good)">\u2713 Your earlier check finished while you were away.</div>');
   }
+})();
+
+// topbar: copy the plain site link (glowby.io) to share
+(function(){
+  const tb=document.getElementById('tbShare');
+  if(!tb)return;
+  tb.onclick=async()=>{
+    const link=location.origin;
+    try{await navigator.clipboard.writeText(link);
+      const old=tb.textContent;tb.textContent='\u2713 Copied';
+      setTimeout(()=>{tb.textContent=old;},1600);
+    }catch(e){prompt('Copy this link:',link);}
+    try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_link'})});}catch(e){}
+  };
 })();
 
 // ---- sidebar: trending (server) + your checks (this device) ----
