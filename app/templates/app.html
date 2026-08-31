@@ -80,6 +80,10 @@
   details.more .inner{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
   .tr{white-space:pre-wrap;margin-top:8px;max-height:40vh;overflow-y:auto;line-height:1.5;font-size:.85rem}
   .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .dial-row{display:flex;justify-content:center;align-items:flex-start;gap:44px;flex-wrap:wrap;margin-bottom:4px}
+  .dial-col{text-align:center}
+  .dial-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--muted);margin-top:7px}
+  .dial-state{font-size:12px;font-weight:600;margin-top:3px;max-width:160px;margin-left:auto;margin-right:auto}
   .aidisc{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--muted);text-align:center}
   .aidisc a{color:var(--muted)}
   .aihint{margin-top:9px;font-size:10.5px;letter-spacing:.04em;color:var(--muted);opacity:.8;text-align:center}
@@ -447,7 +451,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.35.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.36.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -587,17 +591,39 @@ function renderList(d){
     return html;
   }
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
-  if(d.authenticity&&d.authenticity.display){
-    const au=d.authenticity;
-    html+='<div class="meta" style="text-align:center;margin:6px 0">'+
-      (au.show_ai_badge?'<span style="display:inline-block;background:#7c3aed;color:#fff;font-weight:700;border-radius:6px;padding:2px 9px;margin-right:8px">AI</span>':'')+
-      esc(au.display)+'</div>';
-  }
   const cnt=rep.counts||{};
+  // TWIN DIALS: when the authenticity lane has a real FINDING, the
+  // headline shows two equal dials (CLAIMS + AI). "No signal" never gets
+  // a dial - absence is the honest blank (founder design, Sep 2026).
+  const au=d.authenticity;
+  const AU_STYLES={verified_ai_provenance:['#a78bfa','verified AI \u2014 signed provenance',1.0],
+                   declared_ai:['#38bdf8','creator-labeled AI',0.68],
+                   likely_synthetic:['#fab219','strong synthetic signals',0.85],
+                   inconclusive:['#8a86a3','authenticity unclear',0.45]};
+  const auStyle=au?AU_STYLES[au.origin_result]:null;
+  if(auStyle){
+    const CIRC=(2*Math.PI*60);
+    html+='<div class="headline"><div class="dial-row">'
+      +'<div class="dial-col"><div class="hero-ring" style="display:inline-block">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,140,10)+'</div>'
+      +'<div class="dial-lbl">CLAIMS</div></div>'
+      +'<div class="dial-col">'
+      +'<div style="position:relative;width:140px;height:140px;display:inline-grid;place-items:center">'
+      +'<svg width="140" height="140" style="position:absolute;inset:0;transform:rotate(-90deg)">'
+      +'<circle cx="70" cy="70" r="60" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="10"/>'
+      +'<circle cx="70" cy="70" r="60" fill="none" stroke="'+auStyle[0]+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+CIRC.toFixed(1)+'" stroke-dashoffset="'+(CIRC*(1-auStyle[2])).toFixed(1)+'"/></svg>'
+      +'<div style="font-weight:700;font-size:32px">AI</div></div>'
+      +'<div class="dial-lbl">MEDIA</div>'
+      +'<div class="dial-state" style="color:'+auStyle[0]+'">'+esc(auStyle[1])+'</div>'
+      +'</div></div>'+
+    '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
+    '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div>'+
+    '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check · can be wrong · sources on every claim · glowby.io</div></div>';
+  }else{
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
     '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div>'+
     '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check · can be wrong · sources on every claim · glowby.io</div></div>';
+  }
   const claims=d.claims||[];
   const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
   const checked=claims.filter(c=>c.verdict);

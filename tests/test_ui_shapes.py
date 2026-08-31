@@ -164,6 +164,44 @@ with sync_playwright() as pw:
     if page.evaluate("localStorage.getItem('gbPending')") is not None:
         fails.append("resume: pending marker not cleared")
     page.close()
+    # ---- TWIN DIALS: authenticity finding -> AI dial appears; no finding
+    # or "no signal" -> classic single ring, no dial (absence = honest blank)
+    twin = dict(shapes["mixed_full"])
+    twin = json.loads(json.dumps(twin))
+    twin["authenticity"] = {"assessment_status": "completed",
+        "origin_result": "declared_ai", "manipulation_scope": "whole_media",
+        "display": "Creator or platform labeled this content as AI-generated",
+        "show_ai_badge": False, "evidence": [], "stage": 1}
+    nosig = json.loads(json.dumps(shapes["mixed_full"]))
+    nosig["authenticity"] = {"assessment_status": "completed",
+        "origin_result": "no_synthetic_signal", "manipulation_scope": "unknown",
+        "display": "No synthetic signal detected", "show_ai_badge": False,
+        "evidence": [], "stage": 1}
+    for label, payload, expect_dial in (("declared", twin, True),
+                                        ("nosignal", nosig, False)):
+        page = b.new_page(viewport={"width": 900, "height": 1200})
+        def droute(r, _req=None, res=payload):
+            u = r.request.url
+            if "/api/result/" in u:
+                r.fulfill(status=200, content_type="application/json", body=json.dumps(res))
+            elif u.endswith("/r/test"):
+                r.fulfill(status=200, content_type="text/html", body=html)
+            else:
+                r.fulfill(status=404, body="nf")
+        page.route("**/*", droute)
+        page.goto("http://fake.test/r/test")
+        page.wait_for_timeout(600)
+        has_dial = page.evaluate("!!document.querySelector('.dial-row')")
+        if has_dial != expect_dial:
+            fails.append(f"twin-dial {label}: dial present={has_dial}, expected {expect_dial}")
+        if expect_dial:
+            txt = page.inner_text(".dial-row")
+            if "CLAIMS" not in txt or "MEDIA" not in txt or "creator-labeled" not in txt:
+                fails.append("twin-dial declared: labels missing")
+            if "true thing" not in page.inner_text("#out"):
+                fails.append("twin-dial declared: claims list broken")
+        page.screenshot(path=os.path.join(_ROOT, f"shape_dial_{label}.png"))
+        page.close()
     b.close()
 
 print("FAILURES:", fails) if fails else print(
