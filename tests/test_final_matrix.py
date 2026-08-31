@@ -502,6 +502,14 @@ _j36 = open("app/agents/judge.py").read()
 if "MEDIA CONTEXT: independent authenticity analysis reports" not in _j36:
     fails.append("m36 injection missing")
 
+
+# 37. BALLPARK RULE CONTRACT: numeric gaps in the same ballpark can
+# never be "contradicted"; developing-story counts get temporal grace
+from app.agents.judge import PROMPT as _JP37
+if "THE RIGHT BALLPARK IS NOT A LIE" not in _JP37: fails.append("m37 rule missing")
+if "COUNTS GROW IN DEVELOPING STORIES" not in _JP37: fails.append("m37 growth rule missing")
+if "order of magnitude" not in _JP37: fails.append("m37 contradiction boundary missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 36/36 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context")
+    "FINAL MATRIX PASS: 37/37 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers")

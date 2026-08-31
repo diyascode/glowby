@@ -214,11 +214,25 @@ search surfaced.
 - NAME THE NUMBER: when a claim asserts a specific figure and the \
 evidence reports a DIFFERENT figure for the same fact, the verdict MUST \
 state the evidence's figure explicitly ("sources report ~14%, not 10%") \
-so the reader leaves knowing the real number. Score by the size and \
-direction of the gap: a modest understatement or overstatement of a \
-real event is partly_supported (5.5-7.0); a materially wrong figure is \
-contradicted. NEVER return a vague "insufficient evidence" verdict when \
-the evidence actually contains the correct number.
+so the reader leaves knowing the real number. NEVER return a vague \
+"insufficient evidence" verdict when the evidence actually contains the \
+correct number.
+- THE RIGHT BALLPARK IS NOT A LIE (hard boundary for numeric gaps): \
+when the EVENT ITSELF is real and the claim's figure is in the same \
+ballpark as the evidence's (within roughly a factor of two, same \
+direction of the story), that is partly_supported with a MID score \
+(5.5-7.0) — never "contradicted". "400 missing" against "more than 500 \
+missing" confirms the story: people are missing in the hundreds; the \
+claim is an undercount, not a falsehood. Reserve "contradicted" for a \
+figure that CHANGES THE STORY: wrong by an order of magnitude ("400" \
+vs "4"), wrong direction ("400 missing" vs "everyone accounted for"), \
+or an event that did not happen at all.
+- COUNTS GROW IN DEVELOPING STORIES: casualty, missing-person, and \
+damage figures in disasters and breaking news RISE as reporting \
+matures. A lower figure that matched reporting at the video's posting \
+date ({posted_date}) and was later overtaken is EXPIRED TRUTH under \
+temporal fairness: partly_supported, 6.0-7.0, with a verdict like \
+"about right when posted; the count has since risen to X".
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
 "{claim}"
