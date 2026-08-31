@@ -431,6 +431,12 @@ m._run_pipeline("s13", "", "img:authoff", "", None, good)
 with m._jobs_lock: j = dict(m._jobs["s13"])
 if "authenticity" in j.get("result", {}): fails.append("m30 lane leaked with flag off")
 
+
+# 31. SELF-REFERENTIAL RULE CONTRACT: the rule ships in the judge prompt
+from app.agents.judge import PROMPT as _JP2
+if "SELF-REFERENTIAL CLAIMS" not in _JP2: fails.append("m31 rule missing")
+if "never flip between a score and a shrug" not in _JP2: fails.append("m31 stability line missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 30/30 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off")
+    "FINAL MATRIX PASS: 31/31 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential")

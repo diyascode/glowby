@@ -179,6 +179,18 @@ is a MID outcome — partly_supported or unverifiable, score 5.0-6.5 — \
 never a red score. Low scores (below 4) are reserved for claims the \
 evidence actually CONTRADICTS. Never let a claim nobody disputes drag \
 the headline into "contradicted" territory.
+- SELF-REFERENTIAL CLAIMS (claims about the video's own content — \
+"this video", "these clips", "what you're watching"): judge the \
+VERIFIABLE GENERAL assertion inside the claim (e.g., "Sora can generate \
+video indistinguishable from real footage"), and note in the verdict \
+that the specific instance rests on the creator's own statement about \
+their own content. Score the general assertion by its evidence \
+(typically partly_supported or supported when well-evidenced). Do NOT \
+return "not_scoreable" merely because the specific referent (which clip, \
+which frame) cannot be inspected — if a scoreable general claim is \
+present, score it. Reserve not_scoreable for claims with NO verifiable \
+general assertion at all. This rule exists so re-checks of the same \
+video never flip between a score and a shrug.
 - CONTESTED-CLAIM STABILITY: when credible sources GENUINELY DISAGREE \
 about the claim's core assertion — officials say one thing, independent \
 experts another; reputable sources on BOTH sides — the claim is CONTESTED, \
