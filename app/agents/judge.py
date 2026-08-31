@@ -179,6 +179,15 @@ is a MID outcome — partly_supported or unverifiable, score 5.0-6.5 — \
 never a red score. Low scores (below 4) are reserved for claims the \
 evidence actually CONTRADICTS. Never let a claim nobody disputes drag \
 the headline into "contradicted" territory.
+- AI-MEDIA CONTEXT: when a MEDIA CONTEXT line below reports that this \
+video's footage is AI-generated (verified provenance, creator label, or \
+strong forensic signals), any claim that the video "depicts", "shows", \
+"captures" or "is footage of" a real place, person, or event is judged \
+in TWO parts: the underlying world-fact may be scored on its evidence, \
+but the DEPICTION is false — this footage is synthetic, not a recording \
+of the real thing. Such a claim is at most "partly_supported" with a \
+score no higher than 5.5, and the verdict MUST say plainly that the \
+footage itself is AI-generated even if the thing it imitates exists.
 - SELF-REFERENTIAL CLAIMS (claims about the video's own content — \
 "this video", "these clips", "what you're watching"): judge the \
 VERIFIABLE GENERAL assertion inside the claim (e.g., "Sora can generate \
@@ -276,7 +285,11 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
         rubric=load_rubric(bucket),
         secondary_note=f" (also touches {secondary})" if secondary else "",
         risk_level=claim.get("risk_level", "low"),
-        claim=str(claim.get("claim", ""))[:500],
+        claim=(("MEDIA CONTEXT: independent authenticity analysis reports "
+               "this video's footage is AI-generated (" 
+               + str(claim.get("media_context")) + ").\n"
+               if claim.get("media_context") else "")
+               + str(claim.get("claim", ""))[:500]),
         fact_checks=_format_fact_checks(evidence),
         web_sources=_format_web_sources(evidence),
         max_sources=MAX_KEY_SOURCES,

@@ -63,7 +63,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.37.0"
+VERSION = "0.37.1"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -434,6 +434,30 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 )
         for c in claims:
             c["posted_date"] = posted
+        # TWO LANES, ONE STORY: when the media lane already knows this
+        # footage is AI (verified provenance or creator label), the
+        # claims lane must not contradict it.
+        if AUTHENTICITY_ENABLED:
+            _au0 = result.get("authenticity") or {}
+            _origin0 = _au0.get("origin_result")
+            if _origin0 in ("verified_ai_provenance", "declared_ai",
+                            "likely_synthetic"):
+                _ctx = _au0.get("display") or "AI-generated"
+                _re_origin = re.compile(
+                    r"\b(this|the)\s+(video|clip|footage|image|reel|short)\b"
+                    r".*\b(creat|generat|made|produc)\w*\b"
+                    r".*\b(ai|a\.i\.|sora|veo|midjourney|dall|kling|pika|"
+                    r"artificial intelligence)\b", re.I | re.S)
+                for c in claims:
+                    if _re_origin.search(str(c.get("claim", ""))):
+                        # a statement about the media's own origin is the
+                        # AI dial's job, not a world-claim to judge
+                        c["gate_label"] = "media_origin"
+                        c["reason"] = ("Answered by the media lane: the AI "
+                                       "panel above reports this video's "
+                                       "origin.")
+                    elif c.get("gate_label") in ("factual", "prediction"):
+                        c["media_context"] = _ctx
         try:
             save_route_audit(url_key, url, claims, ROUTER_MODEL, TAXONOMY_VERSION)
         except Exception:

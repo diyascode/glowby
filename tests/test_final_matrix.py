@@ -477,6 +477,31 @@ _declared = {"origin_result": "declared_ai", "evidence": [], "display": _DSP["de
 _m2 = _ms2(_declared, _hd._finding_to_result("likely_synthetic", 0.97, None, "forensic_image"), "t")
 if _m2.get("origin_result") != "declared_ai": fails.append("m34 forensic outranked declared")
 
+
+# 35. TWO LANES, ONE STORY: media-origin claims are parked when the AI
+# dial already answered; world-claims get the media context tag
+import re as _re35
+_m35 = open("app/main.py").read()
+if '"media_origin"' not in _m35: fails.append("m35 parking missing")
+if '"media_context"' not in _m35: fails.append("m35 context tag missing")
+_pat = _re35.compile(
+    r"\b(this|the)\s+(video|clip|footage|image|reel|short)\b"
+    r".*\b(creat|generat|made|produc)\w*\b"
+    r".*\b(ai|a\.i\.|sora|veo|midjourney|dall|kling|pika|"
+    r"artificial intelligence)\b", _re35.I | _re35.S)
+if not _pat.search("This video was created using Sora AI video generation."):
+    fails.append("m35 regex misses sora claim")
+if _pat.search("The bridge was made of glass in this region of China."):
+    fails.append("m35 regex overfires")
+
+# 36. AI-MEDIA CONTEXT contract: rule in judge prompt + context injected
+from app.agents.judge import PROMPT as _JP36
+if "AI-MEDIA CONTEXT" not in _JP36: fails.append("m36 rule missing")
+if "no higher than 5.5" not in _JP36: fails.append("m36 cap missing")
+_j36 = open("app/agents/judge.py").read()
+if "MEDIA CONTEXT: independent authenticity analysis reports" not in _j36:
+    fails.append("m36 injection missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 34/34 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge")
+    "FINAL MATRIX PASS: 36/36 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context")
