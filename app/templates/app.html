@@ -447,7 +447,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.34.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.35.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -587,6 +587,12 @@ function renderList(d){
     return html;
   }
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
+  if(d.authenticity&&d.authenticity.display){
+    const au=d.authenticity;
+    html+='<div class="meta" style="text-align:center;margin:6px 0">'+
+      (au.show_ai_badge?'<span style="display:inline-block;background:#7c3aed;color:#fff;font-weight:700;border-radius:6px;padding:2px 9px;margin-right:8px">AI</span>':'')+
+      esc(au.display)+'</div>';
+  }
   const cnt=rep.counts||{};
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+

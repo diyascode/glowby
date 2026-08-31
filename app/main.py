@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from pydantic import BaseModel
 
 from app.agents.answer import answer_followup, answer_question
+from app.agents.authenticity import assess_stage1
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -61,7 +62,12 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.34.1"
+VERSION = "0.35.0"
+
+# ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
+# OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
+# authenticity lane to results (categories only, never percentages).
+AUTHENTICITY_ENABLED = os.environ.get("GLOWBY_AUTHENTICITY", "") == "1"
 
 # evidence+judgment run for the top N claims by risk (cost control)
 MAX_CLAIMS_WITH_EVIDENCE = 3
@@ -325,6 +331,12 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 "transcript": "[WHAT THE IMAGE SHOWS] " + desc,
                 "transcript_source": "visual analysis",
             }
+            if AUTHENTICITY_ENABLED:
+                try:
+                    result["authenticity"] = assess_stage1(
+                        caption="", ocr_text=desc, image_b64=image_b64)
+                except Exception:
+                    pass  # the lane must never break a check
         elif url_key.startswith("text:"):
             # typed claim: no video to fetch — enter at the router
             _set_job(job_id, status="running", stage="routing")
@@ -342,6 +354,16 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             _set_job(job_id, status="running", stage="fetching")
             result = ingest(url)
         result["url_key"] = url_key
+        if AUTHENTICITY_ENABLED and not url_key.startswith("text:"):
+            try:
+                _vis = ""
+                _tr = result.get("transcript") or ""
+                if "[WHAT THE VIDEO VISUALLY SHOWS]" in _tr:
+                    _vis = _tr.split("[WHAT THE VIDEO VISUALLY SHOWS]", 1)[1]
+                result["authenticity"] = assess_stage1(
+                    caption=(result.get("title") or ""), ocr_text=_vis)
+            except Exception:
+                pass
 
         # THE EYES: a thin transcript with sampled frames means the video
         # makes its claims visually (animation, chart, on-screen text).

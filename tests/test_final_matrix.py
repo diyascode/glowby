@@ -380,6 +380,57 @@ _sec = m.security_txt()
 for needle in ("Contact: mailto:hello@glowby.io", "Expires:", "Canonical:"):
     if needle not in _sec: fails.append("m28 security.txt missing " + needle)
 
+
+# 29. AUTHENTICITY STAGE 1 (Day 1): categories not percentages; hierarchy;
+# badge only for verified provenance; absence never means genuine
+from app.agents import authenticity as auth
+
+# caption label -> declared_ai, NO badge
+a1 = auth.assess_stage1(caption="my new film, made with AI #aiart")
+if a1["origin_result"] != "declared_ai": fails.append("m29 caption label")
+if a1["show_ai_badge"]: fails.append("m29 declared must not badge")
+
+# visible watermark text in the VISUAL channel -> declared_ai
+a2 = auth.assess_stage1(ocr_text="bottom corner shows: Sora")
+if a2["origin_result"] != "declared_ai": fails.append("m29 ocr watermark")
+
+# a bare tool mention in the CAPTION alone must NOT trigger (conservative)
+a3 = auth.assess_stage1(caption="I love talking about Sora and Veo news")
+if a3["origin_result"] != "no_synthetic_signal": fails.append("m29 caption overtrigger")
+
+# nothing found -> no_synthetic_signal, display must carry the caveat
+a4 = auth.assess_stage1(caption="sunset at the beach")
+if a4["origin_result"] != "no_synthetic_signal": fails.append("m29 clean")
+if "does not confirm" not in a4["display"]: fails.append("m29 absence caveat missing")
+if a4["show_ai_badge"]: fails.append("m29 clean must never badge")
+
+# metadata generator tag in image bytes -> declared_ai (weak, no badge)
+import base64 as _b64a
+fake_img = _b64a.b64encode(b"\xff\xd8\xff\xe1META Midjourney v6 XMP" + b"x"*2000).decode()
+a5 = auth.assess_stage1(image_b64=fake_img)
+if a5["origin_result"] != "declared_ai": fails.append("m29 metadata tag")
+if a5["show_ai_badge"]: fails.append("m29 metadata must not badge")
+
+# hierarchy: verified outranks declared (mapping check)
+if auth._ORIGIN_RANK[0] != "verified_ai_provenance": fails.append("m29 hierarchy order")
+
+# no numeric likelihood anywhere in the assessment
+if any(k for k in a1 if "likelihood" in k or "percent" in k):
+    fails.append("m29 numeric likelihood leaked")
+
+# 30. FLAG OFF = lane absent (default): pipeline attaches nothing
+import os as _os
+if m.AUTHENTICITY_ENABLED: fails.append("m30 flag must default OFF")
+m.route_claims = lambda t, **kw: [unit("honey never spoils")]
+m.judge_with_rubric = lambda c, ev: {"truth_score": 8.0, "verdict_state": "supported",
+                                     "verdict": "ok", "evidence_strength": "strong", "key_sources": []}
+m.gather_evidence = lambda c: {"fact_checks": [], "web_sources": [
+    {"source": "S", "url": "https://s.s", "quote": "q", "stance": "supports"}], "search_rounds": 1}
+m.describe_frames = lambda frames, title="", uploader="": "A screenshot of a post claiming honey never spoils."
+m._run_pipeline("s13", "", "img:authoff", "", None, good)
+with m._jobs_lock: j = dict(m._jobs["s13"])
+if "authenticity" in j.get("result", {}): fails.append("m30 lane leaked with flag off")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 28/28 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt")
+    "FINAL MATRIX PASS: 30/30 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off")

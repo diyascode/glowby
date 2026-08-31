@@ -6,3 +6,4 @@ openai>=1.40,<3
 anthropic>=0.40,<1
 psycopg[binary]>=3.1,<4
 youtube-transcript-api>=1.0,<2
+c2pa-python>=0.37,<1
