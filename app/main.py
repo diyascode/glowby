@@ -25,7 +25,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from pydantic import BaseModel
 
 from app.agents.answer import answer_followup, answer_question
-from app.agents.authenticity import assess_stage1
+from app.agents.authenticity import assess_stage1, merge_stage2
+from app.agents import hive_detect
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -62,7 +63,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.36.1"
+VERSION = "0.37.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -370,6 +371,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # The vision agent describes what the video asserts; that
         # description enters the pipeline like any transcript.
         frames = result.pop("frames", None)
+        # keep a small copy for the Stage-2 forensic detector (Day 2):
+        _au_frames = list(frames)[:6] if (AUTHENTICITY_ENABLED and frames) else None
         if frames:
             # speculative vision may have already looked during ingest
             desc = result.pop("visual_desc", None) or describe_frames(
@@ -545,6 +548,27 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         for c in claims:
             c.pop("verifying", None)
         result["claims"] = claims
+        # STAGE 2 (Day 2): paid forensic detection — gated, dormant
+        # without a HIVE key, and never allowed to break a check.
+        if AUTHENTICITY_ENABLED:
+            try:
+                _au = result.get("authenticity") or {}
+                _go, _why = hive_detect.should_run_stage2(
+                    title=result.get("title") or "",
+                    user_question=user_question or "",
+                    claims=claims,
+                    stage1_origin=_au.get("origin_result"))
+                if _go and hive_detect.available():
+                    if url_key.startswith("img:") and image_b64:
+                        _s2 = hive_detect.detect_image(image_b64)
+                    elif _au_frames:
+                        _s2 = hive_detect.detect_video_frames(_au_frames)
+                    else:
+                        _s2 = None
+                    if _s2 is not None:
+                        result["authenticity"] = merge_stage2(_au, _s2, _why)
+            except Exception:
+                pass  # the lane must never break a check
         result = build_report(result)
         result["timings"] = {
             "fetch_s": round(t_fetch, 1),

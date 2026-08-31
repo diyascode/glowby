@@ -212,3 +212,38 @@ def assess_stage1(caption="", ocr_text="", image_b64=None):
         "evidence": evidence,
         "stage": 1,
     }
+
+
+# ------------------------------------------------------------ stage 2 merge
+def merge_stage2(stage1, stage2, gate_reason=None):
+    """Fold a Stage-2 forensic result into a Stage-1 assessment.
+
+    Hierarchy, never weights: the combined origin is the highest-ranked
+    of the two. Forensic evidence is appended to the panel. The badge
+    rule is untouched (verified provenance only). A not_assessed/failed
+    Stage 2 changes nothing except a typed note.
+    """
+    out = dict(stage1 or {})
+    out.setdefault("evidence", [])
+    out.setdefault("origin_result", ORIGIN_NO_SIGNAL)
+    s2 = stage2 or {}
+    out["stage2_status"] = s2.get("assessment_status", STATUS_NOT_ASSESSED)
+    if gate_reason:
+        out["stage2_gate_reason"] = gate_reason
+    if s2.get("assessment_status") != STATUS_COMPLETED:
+        return out
+    out["evidence"] = list(out["evidence"]) + list(s2.get("evidence") or [])
+    s2_origin = s2.get("origin") or ORIGIN_NO_SIGNAL
+    cur = out.get("origin_result") or ORIGIN_NO_SIGNAL
+    for o in _ORIGIN_RANK:
+        if o in (cur, s2_origin):
+            out["origin_result"] = o
+            break
+    if s2.get("manipulation_scope"):
+        out["manipulation_scope"] = s2["manipulation_scope"]
+    if s2.get("frames_analyzed"):
+        out["frames_analyzed"] = s2["frames_analyzed"]
+    out["display"] = DISPLAY.get(out["origin_result"], out.get("display"))
+    out["show_ai_badge"] = out.get("origin_result") == ORIGIN_VERIFIED
+    out["stage"] = 2
+    return out

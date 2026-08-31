@@ -437,6 +437,46 @@ from app.agents.judge import PROMPT as _JP2
 if "SELF-REFERENTIAL CLAIMS" not in _JP2: fails.append("m31 rule missing")
 if "never flip between a score and a shrug" not in _JP2: fails.append("m31 stability line missing")
 
+
+# 32. HIVE DORMANCY: no key -> lane asleep, typed not_assessed, no guess
+import os as _os
+from app.agents import hive_detect as _hd
+_os.environ.pop("HIVE_API_KEY", None)
+if _hd.available(): fails.append("m32 available without key")
+_r32 = _hd.detect_image("aGVsbG8=")
+if _r32.get("assessment_status") != "not_assessed": fails.append("m32 not typed")
+if _r32.get("origin") is not None: fails.append("m32 invented a finding")
+
+# 33. STAGE-2 GATE: fires on AI-topic / high-risk / on-demand; not on cat videos;
+# never re-pays when provenance already settled it
+_g1 = _hd.should_run_stage2(title="Can YOU tell which video is AI?")[0]
+_g2 = _hd.should_run_stage2(title="my cat does a backflip")[0]
+_g3 = _hd.should_run_stage2(title="cute cats", on_demand=True)[0]
+_g4 = _hd.should_run_stage2(title="cats", claims=[{"public_safety_risk": True}])[0]
+_g5 = _hd.should_run_stage2(title="AI video", stage1_origin="declared_ai")[0]
+if not _g1: fails.append("m33 ai-topic gate")
+if _g2: fails.append("m33 cat video fired")
+if not _g3: fails.append("m33 on-demand gate")
+if not _g4: fails.append("m33 safety gate")
+if _g5: fails.append("m33 paid despite declared provenance")
+
+# 34. CATEGORIES NOT PERCENTAGES: score mapping + merge hierarchy + no numeric display
+from app.agents.authenticity import merge_stage2 as _ms2, DISPLAY as _DSP
+_o1, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": 0.97}])
+_o2, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": 0.70}])
+_o3, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": 0.20}])
+if _o1 != "likely_synthetic": fails.append("m34 strong map")
+if _o2 != "inconclusive": fails.append("m34 mid map")
+if _o3 is not None: fails.append("m34 weak fired")
+_s1 = {"origin_result": "no_synthetic_signal", "evidence": [], "display": _DSP["no_synthetic_signal"], "show_ai_badge": False}
+_merged = _ms2(_s1, _hd._finding_to_result("likely_synthetic", 0.97, "sora", "forensic_image"), "test")
+if _merged.get("origin_result") != "likely_synthetic": fails.append("m34 merge elevate")
+if _merged.get("show_ai_badge"): fails.append("m34 badge leaked (verified only)")
+if any(ch.isdigit() for ch in _merged.get("display", "")): fails.append("m34 numeric leak in display")
+_declared = {"origin_result": "declared_ai", "evidence": [], "display": _DSP["declared_ai"], "show_ai_badge": False}
+_m2 = _ms2(_declared, _hd._finding_to_result("likely_synthetic", 0.97, None, "forensic_image"), "t")
+if _m2.get("origin_result") != "declared_ai": fails.append("m34 forensic outranked declared")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 31/31 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential")
+    "FINAL MATRIX PASS: 34/34 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge")
