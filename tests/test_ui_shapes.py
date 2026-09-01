@@ -237,5 +237,41 @@ with sync_playwright() as pw:
         fails.append("source link missing")
     _b.close()
 
+
+# SHARE-EXTENSION / WEBVIEW MODE: the app format must apply even without
+# ?app=1 (the share sheet opens the bare URL). App Review saw the beta
+# label and a dead voice button there — neither may ever render again.
+with sync_playwright() as pw:
+    _b2 = pw.chromium.launch()
+    WKUA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
+    SAFARI_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+                 "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 "
+                 "Mobile/15E148 Safari/604.1")
+    for _label, _ua, _embedded in (("webview", WKUA, True),
+                                   ("safari", SAFARI_UA, False)):
+        _ctx = _b2.new_context(user_agent=_ua,
+                               viewport={"width": 390, "height": 760})
+        _p2 = _ctx.new_page()
+        _p2.route("**/*", lambda r: (
+            r.fulfill(status=200, content_type="text/html", body=html)
+            if r.request.url.endswith("/x") else r.fulfill(status=404, body="nf")))
+        _p2.goto("http://fake.test/x")   # NO ?app=1 — like the share sheet
+        _p2.wait_for_timeout(500)
+        _isapp = _p2.evaluate("document.documentElement.classList.contains('appmode')")
+        if _isapp != _embedded:
+            fails.append(f"{_label}: appmode={_isapp}, expected {_embedded}")
+        if _embedded:
+            _betavis = _p2.evaluate(
+                "(()=>{const e=document.querySelector('.beta2');"
+                "return !!(e&&getComputedStyle(e).display!=='none');})()")
+            if _betavis: fails.append("webview still shows BETA label")
+            _micvis = _p2.evaluate(
+                "(()=>{const e=document.getElementById('mic');"
+                "return !!(e&&getComputedStyle(e).display!=='none');})()")
+            if _micvis: fails.append("webview still shows voice button")
+        _ctx.close()
+    _b2.close()
+
 print("FAILURES:", fails) if fails else print(
-    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim")
+    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode")
