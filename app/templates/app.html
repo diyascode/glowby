@@ -83,7 +83,12 @@
   .dial-row{display:flex;justify-content:center;align-items:flex-start;gap:44px;flex-wrap:wrap;margin-bottom:4px}
   .dial-col{text-align:center}
   .dial-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--muted);margin-top:7px}
-  .dial-state{font-size:12px;font-weight:600;margin-top:3px;max-width:160px;margin-left:auto;margin-right:auto}
+  .audet{margin:6px 0 10px;border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.audet summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.audet-body{margin-top:8px}
+.audet-row{padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.audet-num{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px;margin-left:4px}
+.dial-state{font-size:12px;font-weight:600;margin-top:3px;max-width:160px;margin-left:auto;margin-right:auto}
   .aidisc{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--muted);text-align:center}
   .aidisc a{color:var(--muted)}
   .aihint{margin-top:9px;font-size:10.5px;letter-spacing:.04em;color:var(--muted);opacity:.8;text-align:center}
@@ -462,7 +467,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.41.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.42.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -648,6 +653,26 @@ function renderList(d){
   }
   if(au&&au.stage===2&&au.origin_result==='no_synthetic_signal'){
     html+='<div class="hl-sub" style="margin:2px 0 10px;opacity:.8">\ud83d\udd0d AI check ran \u2014 no synthetic signal found. Detection can miss things; this is not proof the video is real. <a href="/about#aimedia" target="_blank" style="color:#8a7cff">How the AI check works \u2197</a></div>';
+  }
+  // AI-CHECK DETAILS: the promised evidence panel. Categories lead the
+  // headline; the detector's own numbers live here, where a reader who
+  // wants to judge for themselves can see exactly what was found.
+  if(au&&(au.evidence||[]).length){
+    const st={not_assessed:'not run',completed:'completed',partial:'partly completed',failed:'could not complete'};
+    html+='<details class="audet"><summary>\ud83e\uddea AI check details ('+au.evidence.length+') \u2014 what the detectors actually reported</summary>';
+    html+='<div class="audet-body">';
+    for(const e of au.evidence){
+      const num=(e.raw_score===0||e.raw_score)?('<span class="audet-num">confidence '+e.raw_score+'</span>'):'';
+      html+='<div class="audet-row"><b>'+esc(e.provider||'')+'</b> \u00b7 <span class="meta">'+esc(e.signal_type||'')+'</span> '+num
+        +'<div class="meta">'+esc(e.explanation||'')+'</div>'
+        +(e.source_link?'<a href="'+esc(e.source_link)+'" target="_blank" rel="noopener" class="meta">source \u2197</a>':'')
+        +'</div>';
+    }
+    html+='<div class="meta" style="margin-top:8px">Stage 1 '+esc(st[au.assessment_status]||au.assessment_status||'not run')
+      +(au.stage2_status?(' \u00b7 forensic detector '+esc(st[au.stage2_status]||au.stage2_status)):'')
+      +'. Glowby only calls a result \u201cstrong synthetic signals\u201d at very high detector confidence, and \u201cauthenticity unclear\u201d in the middle band \u2014 anything lower is reported as no signal, which never means proven real. '
+      +'<a href="/about#aimedia" target="_blank">how this works \u2197</a></div>';
+    html+='</div></details>';
   }
   if(au&&au.context_note){
     html+='<div class="claim" style="border-left:3px solid #fab219"><div class="ctext">'

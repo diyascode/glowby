@@ -716,6 +716,16 @@ if '_media_frames = result.pop("frames_media", None)' not in _m54:
 if "_src = frames or _media_frames" not in _m54:
     fails.append("m54 no fallback to kept frames")
 
+
+# 55. EVIDENCE PANEL: the detector's own numbers are visible to readers
+# (categories still lead the headline), with the threshold explained
+_h55 = open("app/templates/app.html").read()
+if "AI check details" not in _h55: fails.append("m55 panel missing")
+if "confidence " not in _h55: fails.append("m55 raw score not shown in panel")
+if "never means proven real" not in _h55: fails.append("m55 threshold note missing")
+_i55 = _h55.index("AI check details")
+if "audet" not in _h55[_i55 - 400:_i55]: fails.append("m55 panel not styled block")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 54/54 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector")
+    "FINAL MATRIX PASS: 55/55 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel")
