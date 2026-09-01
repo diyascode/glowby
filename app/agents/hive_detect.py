@@ -29,6 +29,7 @@ Design rules (locked, from the reviewed plan):
 import base64
 import json
 import os
+import re
 import urllib.request
 
 from app.agents.authenticity import (
@@ -55,6 +56,23 @@ _GENERATOR_HINTS = {"sora", "veo", "pika", "kling", "midjourney",
                     "dalle", "dall_e", "stablediffusion",
                     "stable_diffusion", "firefly", "flux", "imagen",
                     "runway", "hedra", "luma"}
+
+
+# ------------------------------------------------------------ face hint
+_FACE_WORDS = re.compile(
+    r"\b(face|faces|man|woman|person|people|speaker|speaking|talking|"
+    r"interview|says|said|president|mayor|senator|governor|celebrity|"
+    r"official|spokesperson|anchor|host|influencer|selfie|portrait|"
+    r"he |she |his |her )\b", re.I)
+
+
+def likely_has_person(text=""):
+    """Pure function (unit-tested): cheap text check — does the video's
+    visual description / transcript suggest a person is on screen? The
+    per-face detector only costs money when this says yes (or the user
+    asked). Errs toward True on ambiguity: missing a deepfake is worse
+    than one spare call."""
+    return bool(_FACE_WORDS.search(text or ""))
 
 
 def _key(name="HIVE_API_KEY"):
@@ -262,6 +280,29 @@ def detect_deepfake_faces(image_b64):
         return res
     except Exception as e:
         return _failed(f"deepfake call failed: {type(e).__name__}")
+
+
+def detect_deepfake_frames(frames_b64):
+    """Adapter 3b: per-face deepfake across sampled video frames.
+    Strongest face finding stands; cost-capped at 3 frames."""
+    if not deepfake_available():
+        return _not_assessed("no HIVE_DEEPFAKE_KEY configured")
+    if not frames_b64:
+        return _not_assessed("no frames supplied")
+    best = None
+    ran = 0
+    for fb in frames_b64[:3]:
+        r = detect_deepfake_faces(fb)
+        if r.get("assessment_status") != STATUS_COMPLETED:
+            continue
+        ran += 1
+        if best is None or (r.get("origin") == ORIGIN_LIKELY
+                            and best.get("origin") != ORIGIN_LIKELY):
+            best = r
+    if best is None:
+        return _failed("no frame could be analyzed") if ran == 0 else             _not_assessed("no completed frame analysis")
+    best["frames_analyzed"] = ran
+    return best
 
 
 def detect_audio(audio_bytes):

@@ -312,10 +312,13 @@ footer{font-size:.74rem}
 .sugg2 span{font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:default;user-select:none}
 /* "+ask" — optional question that rides along with a check */
 #qWrap{max-width:560px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center}
-#qChip{display:inline-flex;align-items:center;gap:6px;background:none;
+#qChip,#aiChip{display:inline-flex;align-items:center;gap:6px;background:none;
   border:1px dashed rgba(255,255,255,.22);color:var(--muted);border-radius:999px;
   padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .18s}
 #qChip:hover{border-color:rgba(138,124,255,.55);color:var(--ink);border-style:solid}
+#aiChip{display:inline-flex;align-items:center;gap:6px;background:none}
+#aiChip:hover{border-color:rgba(56,189,248,.55);color:var(--ink);border-style:solid}
+#aiChip.on{border-style:solid;border-color:rgba(56,189,248,.75);color:#38bdf8}
 #qOpen{display:flex;align-items:center;gap:9px;width:100%;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);
   border-radius:999px;padding:4px 6px 4px 16px;backdrop-filter:blur(12px)}
@@ -416,7 +419,10 @@ html.light .uq-q{color:#111114}
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
   <div id="qWrap">
+    <div style="display:flex;gap:10px;align-items:center;justify-content:center">
     <button id="qChip" type="button">＋ ask</button>
+    <button id="aiChip" type="button">＋ detect AI</button>
+    </div>
     <div id="qOpen" hidden>
       <span class="qmark">?</span>
       <input type="text" id="qIn" maxlength="400" placeholder="What do you want to know about this link?" autocomplete="off">
@@ -451,7 +457,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.38.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.39.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -493,8 +499,14 @@ async function tsGet(){
     document.getElementById('f').requestSubmit?document.getElementById('f').requestSubmit():document.getElementById('go').click();}});
 })();
 function userQuestion(){const q=document.getElementById('qIn');return q?q.value.trim():'';}
+// "+detect AI" toggle: user explicitly requests the media-authenticity check
+(function(){const c=document.getElementById('aiChip');if(!c)return;
+  c.onclick=()=>{c.classList.toggle('on');
+    c.textContent=c.classList.contains('on')?'✓ detect AI':'＋ detect AI';};})();
+function detectAiOn(){const c=document.getElementById('aiChip');return !!(c&&c.classList.contains('on'));}
 async function checkFetch(body){
   const uq=userQuestion(); if(uq)body.question=uq;
+  if(detectAiOn())body.detect_ai=true;
   body.captcha_token=await tsGet();
   let r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.status===403&&tsOn){tsReset();body.captcha_token=await tsGet();
@@ -597,8 +609,8 @@ function renderList(d){
   // a dial - absence is the honest blank (founder design, Sep 2026).
   const au=d.authenticity;
   const AU_STYLES={verified_ai_provenance:['#a78bfa','verified AI \u2014 signed provenance',1.0],
-                   declared_ai:['#38bdf8','creator-labeled AI',0.68],
-                   likely_synthetic:['#fab219','strong synthetic signals',0.85],
+                   declared_ai:['#38bdf8','creator-labeled AI',0.95],
+                   likely_synthetic:['#f87171','strong synthetic signals',0.95],
                    inconclusive:['#8a86a3','authenticity unclear',0.45]};
   const auStyle=au?AU_STYLES[au.origin_result]:null;
   if(auStyle){
@@ -614,6 +626,7 @@ function renderList(d){
       +'<div style="font-weight:700;font-size:32px">AI</div></div>'
       +'<div class="dial-lbl">MEDIA</div>'
       +'<div class="dial-state" style="color:'+auStyle[0]+'">'+esc(auStyle[1])+'</div>'
+      +(au.manipulation_scope==='face'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">signals concentrated on a face \u2014 rest not verified</div>':'')
       +'</div></div>'+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
     '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div>'+

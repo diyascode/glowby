@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.38.0"
+VERSION = "0.39.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -283,7 +283,7 @@ def _merge_prior_evidence(claim_text: str, evidence: dict,
 
 def _run_pipeline(job_id: str, url: str, url_key: str,
                   user_question: str = "", prior_claims=None,
-                  image_b64: str = None) -> None:
+                  image_b64: str = None, detect_ai: bool = False) -> None:
     try:
         t0 = time.time()
         if image_b64:
@@ -582,7 +582,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     title=result.get("title") or "",
                     user_question=user_question or "",
                     claims=claims,
-                    stage1_origin=_au.get("origin_result"))
+                    stage1_origin=_au.get("origin_result"),
+                    on_demand=detect_ai)
                 if _go and hive_detect.available():
                     if url_key.startswith("img:") and image_b64:
                         _s2 = hive_detect.detect_image(image_b64)
@@ -592,6 +593,22 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                         _s2 = None
                     if _s2 is not None:
                         result["authenticity"] = merge_stage2(_au, _s2, _why)
+                    # per-face deepfake pass (own key/project): the
+                    # face-swap catch — signals concentrated on a face
+                    _face_likely = hive_detect.likely_has_person(
+                        (result.get("transcript") or "")
+                        + " " + (result.get("title") or "")
+                        + " " + (user_question or ""))
+                    if hive_detect.deepfake_available() and _face_likely:
+                        if url_key.startswith("img:") and image_b64:
+                            _sdf = hive_detect.detect_deepfake_faces(image_b64)
+                        elif _au_frames:
+                            _sdf = hive_detect.detect_deepfake_frames(_au_frames)
+                        else:
+                            _sdf = None
+                        if _sdf is not None:
+                            result["authenticity"] = merge_stage2(
+                                result.get("authenticity") or {}, _sdf, _why)
                 # STAGE 3 (Day 3): reverse search — where did this
                 # footage first appear? (context lane, free tier)
                 if _go and reverse_search.available():
@@ -716,6 +733,7 @@ class CheckRequest(BaseModel):
     captcha_token: str = ""  # Turnstile token (required when captcha is on)
     question: str = ""  # optional "+ask": what the user wants to know
     image_b64: str = ""  # uploaded screenshot/photo (JPEG, base64)
+    detect_ai: bool = False  # "+detect AI": user asked for the media check
 
 
 MAX_IMAGE_B64 = 10_000_000  # ~7.5 MB decoded — client resizes first
@@ -773,6 +791,12 @@ def api_check(req: CheckRequest, request: Request):
         url_key = canonical_key(raw)
     question = (req.question or "").strip()[:400]
     cached = None if req.force else get_cached(url_key, CACHE_TTL_DAYS)
+    # "+detect AI" on a cached result that never ran the detector:
+    # serve nothing stale — run fresh so the media check actually happens
+    if cached is not None and req.detect_ai:
+        _cau = cached.get("authenticity") or {}
+        if _cau.get("stage") != 2:
+            cached = None
     if cached is not None:
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
@@ -851,7 +875,8 @@ def api_check(req: CheckRequest, request: Request):
     _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
         target=_run_pipeline,
-        args=(job_id, req.url, url_key, question, prior_claims, image_b64),
+        args=(job_id, req.url, url_key, question, prior_claims, image_b64,
+              bool(req.detect_ai)),
         daemon=True,
     ).start()
     return {"job_id": job_id}

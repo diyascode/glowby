@@ -542,6 +542,50 @@ _e2, _n2 = _rs.pick_earliest([{"url": "https://news.com/2026/08/flood",
                                "pageTitle": "Flood"}], posted_date="2026-08-26")
 if _n2 is not None: fails.append("m40 same-week coverage flagged")
 
+
+# 41. PER-FACE DEEPFAKE LANE: dormant without its own key; face scope
+# survives the merge into the assessment
+import os as _os41
+from app.agents import hive_detect as _hd41
+_os41.environ.pop("HIVE_DEEPFAKE_KEY", None)
+if _hd41.deepfake_available(): fails.append("m41 available without key")
+_r41 = _hd41.detect_deepfake_frames(["aGVsbG8="])
+if _r41.get("assessment_status") != "not_assessed": fails.append("m41 not typed")
+from app.agents.authenticity import merge_stage2 as _ms41, DISPLAY as _D41
+_fake = {"assessment_status": "completed", "origin": "likely_synthetic",
+         "manipulation_scope": "face",
+         "evidence": [{"provider": "hive", "signal_type": "forensic_deepfake_faces",
+                       "raw_score": 0.96, "band": "strong",
+                       "explanation": "x", "source_link": None}]}
+_s41 = {"origin_result": "no_synthetic_signal", "evidence": [],
+        "display": _D41["no_synthetic_signal"], "show_ai_badge": False}
+_m41 = _ms41(_s41, _fake, "t")
+if _m41.get("manipulation_scope") != "face": fails.append("m41 scope lost in merge")
+if _m41.get("origin_result") != "likely_synthetic": fails.append("m41 origin not elevated")
+
+
+# 42. FACE-HINT ECONOMY: face detector only when a person is likely
+from app.agents.hive_detect import likely_has_person as _lhp
+if not _lhp("[WHAT THE VIDEO VISUALLY SHOWS] A man speaking to camera"):
+    fails.append("m42 person missed")
+if _lhp("A wall of water sweeps through an empty border checkpoint"):
+    fails.append("m42 empty scene flagged")
+_m42 = open("app/main.py").read()
+if "_face_likely" not in _m42 or "deepfake_available() and _face_likely" not in _m42:
+    fails.append("m42 gate not wired")
+
+
+# 43. "+DETECT AI" ON-DEMAND: request flag exists, reaches the gate as
+# on_demand, and a cached result without stage-2 is not served stale
+_m43 = open("app/main.py").read()
+if "detect_ai: bool = False" not in _m43: fails.append("m43 request flag missing")
+if "on_demand=detect_ai" not in _m43: fails.append("m43 gate not honoring flag")
+if 'req.detect_ai' not in _m43 or '_cau.get("stage") != 2' not in _m43:
+    fails.append("m43 cache bypass missing")
+_h43 = open("app/templates/app.html").read()
+if 'id="aiChip"' not in _h43: fails.append("m43 chip missing")
+if "detect_ai=true" not in _h43.replace(" ", ""): fails.append("m43 chip not sent")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 40/40 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note")
+    "FINAL MATRIX PASS: 43/43 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip")
