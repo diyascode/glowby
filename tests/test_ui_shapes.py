@@ -273,5 +273,50 @@ with sync_playwright() as pw:
         _ctx.close()
     _b2.close()
 
+
+# MEDIA LEADS WHEN CLAIMS ARE EMPTY: a checked video with nothing to
+# fact-check must headline the AI answer, not an empty claim ring.
+with sync_playwright() as pw:
+    _b3 = pw.chromium.launch()
+    _p3 = _b3.new_page()
+    _r3 = dict(BASE)
+    _r3["claims"] = []
+    _r3["authenticity"] = {"origin_result": "no_synthetic_signal",
+                           "assessment_status": "completed", "stage": 2,
+                           "stage2_status": "completed",
+                           "display": "No synthetic signal detected",
+                           "show_ai_badge": False,
+                           "evidence": [{"provider": "hive",
+                                         "signal_type": "forensic_video_frames",
+                                         "raw_score": 0.0, "band": "none",
+                                         "classes_seen": 660,
+                                         "explanation": "x",
+                                         "source_link": None}]}
+    _r3["report"] = {"headline_score": None, "headline_state": "unverified",
+                     "headline_label": "no claims", "share_text": "s",
+                     "counts": {"claim_units": 0, "judged": 0,
+                                "not_judged": 0, "parked": 0},
+                     "safety_notice": None}
+    _p3.route("**/*", lambda r: (
+        r.fulfill(status=200, content_type="application/json", body=json.dumps(_r3))
+        if "/api/result/" in r.request.url else
+        (r.fulfill(status=200, content_type="text/html", body=html)
+         if r.request.url.endswith("/r/test") else r.fulfill(status=404, body="nf"))))
+    _p3.goto("http://fake.test/r/test")
+    _p3.wait_for_timeout(700)
+    try:
+        _p3.click(".audet summary")
+        _p3.wait_for_timeout(150)
+    except Exception:
+        fails.append("AI check details panel missing")
+    _t3 = _p3.inner_text("#out")
+    if "No synthetic signal found" not in _t3:
+        fails.append("media answer does not lead when claims are empty")
+    if _t3.index("No synthetic signal found") > _t3.index("nothing to fact-check"):
+        fails.append("claims line placed above the media answer")
+    if "660" not in _t3:
+        fails.append("class-scores-read count missing from panel")
+    _b3.close()
+
 print("FAILURES:", fails) if fails else print(
-    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode")
+    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads")
