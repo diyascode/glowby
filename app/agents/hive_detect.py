@@ -30,6 +30,7 @@ import base64
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 
 from app.agents.authenticity import (
@@ -184,8 +185,17 @@ def _post_v3(key, image_b64=None, media_url=None):
             "Content-Type": "application/json",
             "accept": "application/json",
         })
-    with urllib.request.urlopen(req, timeout=HIVE_TIMEOUT_S) as r:
-        return json.loads(r.read().decode("utf-8", "replace"))
+    try:
+        with urllib.request.urlopen(req, timeout=HIVE_TIMEOUT_S) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        # keep the vendor's own words — the only reliable way to learn
+        # why a call is refused (surfaced to the admin diagnostic only)
+        try:
+            detail = e.read().decode("utf-8", "replace")[:400]
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"HTTP {e.code}: {detail}") from None
 
 
 def _finding_to_result(origin, top, gen, provider_label):
@@ -247,7 +257,7 @@ def detect_image(image_b64):
             res["manipulation_scope"] = "face"
         return res
     except Exception as e:  # network/HTTP/parse: typed failure, no guess
-        return _failed(f"detector call failed: {type(e).__name__}")
+        return _failed(f"detector call failed: {e}")
 
 
 def detect_video_frames(frames_b64):
@@ -298,7 +308,7 @@ def detect_deepfake_faces(image_b64):
             res["manipulation_scope"] = "face"
         return res
     except Exception as e:
-        return _failed(f"deepfake call failed: {type(e).__name__}")
+        return _failed(f"deepfake call failed: {e}")
 
 
 def detect_deepfake_frames(frames_b64):
@@ -337,7 +347,7 @@ def detect_audio(audio_bytes):
                 best = f
         return _finding_to_result(*best, "forensic_audio_voice")
     except Exception as e:
-        return _failed(f"audio call failed: {type(e).__name__}")
+        return _failed(f"audio call failed: {e}")
 
 
 # ------------------------------------------------------------ the gate
@@ -378,3 +388,29 @@ def should_run_stage2(title="", user_question="", claims=None,
                 and c.get("central"):
             return True, "central claim in a high-stakes category"
     return False, "no gate condition met"
+
+
+def selftest(image_b64=None):
+    """Admin diagnostic: make ONE real call and report exactly what
+    happened, including the vendor's error text. Never used in the
+    pipeline; costs one request."""
+    if not available():
+        return {"ok": False, "stage": "config",
+                "detail": "HIVE_API_KEY missing in environment"}
+    if not image_b64:
+        # 1x1 white JPEG, enough to prove the transport works
+        image_b64 = (
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL"
+            "DBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/"
+            "wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAA"
+            "AAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
+    try:
+        payload = _post_v3(_key(), image_b64=image_b64)
+    except Exception as e:
+        return {"ok": False, "stage": "call", "detail": str(e)[:500]}
+    lists = _extract_class_lists(payload)
+    return {"ok": True, "stage": "parsed",
+            "class_lists_found": len(lists),
+            "first_classes": (lists[0][:6] if lists else []),
+            "raw_keys": list(payload.keys())[:10],
+            "raw_head": json.dumps(payload)[:600]}

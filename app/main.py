@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.41.0"
+VERSION = "0.41.1"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1161,6 +1161,25 @@ def api_admin_resolve(req: ResolveRequest):
     if req.status not in ("new", "reviewed", "fixed", "rejected"):
         return JSONResponse(status_code=422, content={"detail": "Bad status."})
     return {"ok": resolve_mistake_report(req.report_id, req.status, req.note)}
+
+
+@app.get("/api/admin/hivetest")
+def api_admin_hivetest(key: str = ""):
+    """One real Hive call, with the vendor's exact answer. Admin only —
+    this is how we learn WHY a detector call is refused instead of
+    guessing from documentation."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    out = {"authenticity_enabled": AUTHENTICITY_ENABLED,
+           "key_present": bool((os.environ.get("HIVE_API_KEY") or "").strip()),
+           "key_length": len((os.environ.get("HIVE_API_KEY") or "").strip()),
+           "model": hive_detect.HIVE_MODEL,
+           "endpoint": hive_detect.HIVE_V3_BASE}
+    try:
+        out["result"] = hive_detect.selftest()
+    except Exception as e:
+        out["result"] = {"ok": False, "stage": "crash", "detail": str(e)[:400]}
+    return out
 
 
 @app.get("/api/admin/stats")

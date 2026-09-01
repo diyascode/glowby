@@ -690,6 +690,19 @@ if _o52 != "likely_synthetic" or _t52 != 0.98:
 _o52b, _, _ = _ctf52([{"class": "deepfake", "value": 0.95}])
 if _o52b != "likely_synthetic": fails.append("m52 deepfake value parse")
 
+
+# 53. HIVE DIAGNOSTIC: admin-only selftest route exists, is guarded, and
+# reports the vendor's real error text instead of an exception class
+_m53 = open("app/main.py").read()
+if "/api/admin/hivetest" not in _m53: fails.append("m53 route missing")
+_i53 = _m53.index("/api/admin/hivetest")
+if "_admin_ok(key)" not in _m53[_i53:_i53 + 700]: fails.append("m53 route unguarded")
+_j53 = open("app/agents/hive_detect.py").read()
+if "def selftest(" not in _j53: fails.append("m53 selftest missing")
+if 'raise RuntimeError(f"HTTP {e.code}' not in _j53:
+    fails.append("m53 vendor error text not captured")
+if "type(e).__name__" in _j53: fails.append("m53 still hiding error detail")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 52/52 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs")
+    "FINAL MATRIX PASS: 53/53 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic")
