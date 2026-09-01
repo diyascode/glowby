@@ -620,7 +620,7 @@ if not _hd46.should_run_stage2(title="Can YOU tell which video is AI?")[0]:
 if not _hd46.should_run_stage2(title="deepfake of a local mayor")[0]:
     fails.append("m46 deepfake title missed")
 _h46 = open("app/templates/app.html").read()
-if "could not complete this time" not in _h46:
+if "could not complete" not in _h46:
     fails.append("m46 failure line missing")
 
 
@@ -665,7 +665,7 @@ if '"detector not configured"' not in _m49:
 # 50. MEMORY ON EVERY FRESH RUN: the detect-AI cache bypass keeps claim
 # anchoring + evidence memory, same as Re-check
 _m50 = open("app/main.py").read()
-if "if req.force or req.detect_ai:" not in _m50:
+if "if req.force or req.detect_ai or req.ai_only:" not in _m50:
     fails.append("m50 detect-ai run loses memory")
 
 # 51. TYPICAL-PRACTICE RULE: usual practice can never contradict a
@@ -726,6 +726,31 @@ if "never means proven real" not in _h55: fails.append("m55 threshold note missi
 _i55 = _h55.index("AI check details")
 if "audet" not in _h55[_i55 - 400:_i55]: fails.append("m55 panel not styled block")
 
+
+# 56. AI-ONLY MODE: backend skips routing/judging, UI offers the third
+# chip state, and the media answer leads when claims are empty
+_m56 = open("app/main.py").read()
+if "ai_only: bool = False" not in _m56: fails.append("m56 request flag missing")
+if 'result["media_only"] = True' not in _m56: fails.append("m56 no media-only exit")
+_h56 = open("app/templates/app.html").read()
+if "aiChipState()==='only'" not in _h56: fails.append("m56 chip third state missing")
+if "const mediaLeads=" not in _h56: fails.append("m56 evidence-led layout missing")
+if "Media-only check" not in _h56: fails.append("m56 media-only headline missing")
+
+# 57. FOLLOW-UP AI BUTTON + SOURCE LINK + TITLE TRIM
+if 'id="fuAi"' not in _h56: fails.append("m57 follow-up AI button missing")
+if "Open the original video" not in _h56: fails.append("m57 source link missing")
+if "fullTitle.length>90" not in _h56: fails.append("m57 long title not trimmed")
+
+# 58. PARSE-GAP HONESTY: zero readable class scores is reported as a
+# parsing gap, never as a clean bill of health
+from app.agents.hive_detect import _finding_to_result as _ftr58
+_r58 = _ftr58(None, 0.0, None, "forensic_video_frames", classes_seen=0)
+if _r58.get("origin") is not None: fails.append("m58 empty parse read as clean")
+if _r58.get("assessment_status") != "partial": fails.append("m58 not typed partial")
+_r58b = _ftr58(None, 0.01, None, "forensic_image", classes_seen=12)
+if _r58b.get("origin") != "no_synthetic_signal": fails.append("m58 real clean broken")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 55/55 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel")
+    "FINAL MATRIX PASS: 58/58 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap")

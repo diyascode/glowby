@@ -35,7 +35,7 @@ import urllib.request
 
 from app.agents.authenticity import (
     ORIGIN_LIKELY, ORIGIN_INCONCLUSIVE, ORIGIN_NO_SIGNAL,
-    STATUS_NOT_ASSESSED, STATUS_COMPLETED, STATUS_FAILED,
+    STATUS_NOT_ASSESSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_PARTIAL,
 )
 
 HIVE_V3_BASE = "https://api.thehive.ai/api/v3"
@@ -198,7 +198,7 @@ def _post_v3(key, image_b64=None, media_url=None):
         raise RuntimeError(f"HTTP {e.code}: {detail}") from None
 
 
-def _finding_to_result(origin, top, gen, provider_label):
+def _finding_to_result(origin, top, gen, provider_label, classes_seen=None):
     ev = []
     if origin:
         detail = (f" Likely generator: {gen}." if gen else "")
@@ -223,6 +223,16 @@ def _finding_to_result(origin, top, gen, provider_label):
                             "renders as 'genuine'."),
             "source_link": None,
         })
+    if classes_seen is not None:
+        ev[0]["classes_seen"] = classes_seen
+        if not classes_seen:
+            # nothing parsed is NOT a clean bill of health — say so
+            ev[0]["explanation"] = (
+                "The detector replied but no class scores could be read "
+                "from its answer; this is a parsing gap, not a finding.")
+            return {"assessment_status": STATUS_PARTIAL,
+                    "origin": None, "evidence": ev,
+                    "reason": "no class scores parsed"}
     return {"assessment_status": STATUS_COMPLETED,
             "origin": origin or ORIGIN_NO_SIGNAL,
             "evidence": ev, "reason": None}
@@ -252,7 +262,9 @@ def detect_image(image_b64):
                         df_top = max(df_top, float(c.get("score", 0)))
                     except Exception:
                         pass
-        res = _finding_to_result(*best, "forensic_image")
+        res = _finding_to_result(*best, "forensic_image",
+                                 classes_seen=sum(len(c) for c in
+                                                  _extract_class_lists(payload)))
         if df_top >= THRESH_LIKELY:
             res["manipulation_scope"] = "face"
         return res
@@ -271,12 +283,14 @@ def detect_video_frames(frames_b64):
         return _not_assessed("no frames supplied")
     best = (None, 0.0, None)
     ran = 0
+    seen = 0
     for fb in frames_b64[:6]:  # cost cap: at most 6 frames per video
         try:
             base64.b64decode(fb)  # validate only
             payload = _post_v3(_key(), image_b64=fb)
             ran += 1
             for classes in _extract_class_lists(payload):
+                seen += len(classes)
                 f = classes_to_finding(classes)
                 if f[1] >= best[1]:
                     best = f
@@ -284,7 +298,8 @@ def detect_video_frames(frames_b64):
             continue
     if ran == 0:
         return _failed("no frame could be analyzed")
-    res = _finding_to_result(*best, "forensic_video_frames")
+    res = _finding_to_result(*best, "forensic_video_frames",
+                             classes_seen=seen)
     res["frames_analyzed"] = ran
     return res
 

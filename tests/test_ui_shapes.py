@@ -204,5 +204,38 @@ with sync_playwright() as pw:
         page.close()
     b.close()
 
+
+# RENDER SAFETY: render() must never throw on a normal result. A scope
+# slip once blanked the entire page while every server test still passed.
+with sync_playwright() as pw:
+    _b = pw.chromium.launch()
+    _pg = _b.new_page()
+    _res = dict(BASE)
+    _res["title"] = "A very long caption " * 12
+    _res["claims"] = [claim("true thing", 8.2, "supported")]
+    _res["report"] = {"headline_score": 8.2, "headline_state": "good",
+                      "headline_label": "ok", "share_text": "s",
+                      "counts": {"claim_units": 1, "judged": 1,
+                                 "not_judged": 0, "parked": 0},
+                      "safety_notice": None}
+    _pg.route("**/*", lambda r: (
+        r.fulfill(status=200, content_type="application/json",
+                  body=json.dumps(_res))
+        if "/api/result/" in r.request.url else
+        (r.fulfill(status=200, content_type="text/html", body=html)
+         if r.request.url.endswith("/r/test")
+         else r.fulfill(status=404, body="nf"))))
+    _pg.goto("http://fake.test/r/test")
+    _pg.wait_for_timeout(700)
+    _v = _pg.evaluate("(()=>{try{render();return 'ok';}catch(e){return e.message;}})()")
+    if _v != "ok":
+        fails.append(f"render() threw: {_v}")
+    _txt = _pg.inner_text("#out")
+    if "full caption" not in _txt:
+        fails.append("long caption not trimmed to a link")
+    if "Open the original video" not in _txt:
+        fails.append("source link missing")
+    _b.close()
+
 print("FAILURES:", fails) if fails else print(
-    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked")
+    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim")

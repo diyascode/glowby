@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.42.0"
+VERSION = "0.43.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -283,7 +283,8 @@ def _merge_prior_evidence(claim_text: str, evidence: dict,
 
 def _run_pipeline(job_id: str, url: str, url_key: str,
                   user_question: str = "", prior_claims=None,
-                  image_b64: str = None, detect_ai: bool = False) -> None:
+                  image_b64: str = None, detect_ai: bool = False,
+                  ai_only: bool = False) -> None:
     try:
         t0 = time.time()
         if image_b64:
@@ -421,6 +422,57 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # claim may live in on-screen text (overlay captions, headlines).
         # Open the eyes on the standby frames and route again before
         # declaring "nothing to verify."
+        if ai_only:
+            # MEDIA-ONLY CHECK: the user asked "is this real?", not
+            # "is this true?" — skip routing, evidence and judges (the
+            # expensive part) and answer the media question alone.
+            result.pop("frames_standby", None)
+            _set_job(job_id, stage="assembling")
+            if AUTHENTICITY_ENABLED:
+                try:
+                    _auo = result.get("authenticity") or {}
+                    if hive_detect.available():
+                        if url_key.startswith("img:") and image_b64:
+                            _s2o = hive_detect.detect_image(image_b64)
+                        elif _au_frames:
+                            _s2o = hive_detect.detect_video_frames(_au_frames)
+                        else:
+                            _s2o = None
+                        if _s2o is not None:
+                            _auo = merge_stage2(_auo, _s2o, "media-only check")
+                        else:
+                            _auo["stage2_status"] = "failed"
+                            _auo["stage2_reason"] = "no media to analyze"
+                    else:
+                        _auo["stage2_status"] = "failed"
+                        _auo["stage2_reason"] = "detector not configured"
+                    if reverse_search.available():
+                        _f0 = (image_b64 if url_key.startswith("img:")
+                               else (_au_frames[0] if _au_frames else None))
+                        if _f0:
+                            _s3o = reverse_search.analyze(
+                                _f0, posted_date=result.get("posted_date"))
+                            if _s3o.get("assessment_status") == "completed":
+                                _auo.setdefault("evidence", [])
+                                _auo["evidence"] = (list(_auo["evidence"])
+                                                    + list(_s3o["evidence"]))
+                                if _s3o.get("context_note"):
+                                    _auo["context_note"] = _s3o["context_note"]
+                    result["authenticity"] = _auo
+                except Exception:
+                    pass
+            result["claims"] = []
+            result["media_only"] = True
+            result = build_report(result)
+            result["timings"] = {"total_s": round(time.time() - t0, 1)}
+            result["cached"] = False
+            try:
+                save_result(url_key, url, result)
+            except Exception:
+                pass
+            _set_job(job_id, status="done", result=result)
+            return
+
         standby = result.pop("frames_standby", None)
         if AUTHENTICITY_ENABLED and standby and not _au_frames:
             _au_frames = list(standby)[:6]
@@ -752,6 +804,7 @@ class CheckRequest(BaseModel):
     question: str = ""  # optional "+ask": what the user wants to know
     image_b64: str = ""  # uploaded screenshot/photo (JPEG, base64)
     detect_ai: bool = False  # "+detect AI": user asked for the media check
+    ai_only: bool = False  # "AI only": skip claim routing/judging entirely
 
 
 MAX_IMAGE_B64 = 10_000_000  # ~7.5 MB decoded — client resizes first
@@ -811,7 +864,7 @@ def api_check(req: CheckRequest, request: Request):
     cached = None if req.force else get_cached(url_key, CACHE_TTL_DAYS)
     # "+detect AI" on a cached result that never ran the detector:
     # serve nothing stale — run fresh so the media check actually happens
-    if cached is not None and req.detect_ai:
+    if cached is not None and (req.detect_ai or req.ai_only):
         _cau = cached.get("authenticity") or {}
         if _cau.get("stage") != 2:
             cached = None
@@ -881,7 +934,7 @@ def api_check(req: CheckRequest, request: Request):
     # so every re-check judges on MORE evidence, never a thinner draw —
     # this damps run-to-run score wobble on contested claims.
     prior_claims = None
-    if req.force or req.detect_ai:
+    if req.force or req.detect_ai or req.ai_only:
         # detect-AI bypasses the cache too — that fresh run must keep
         # the memory (claim anchoring + evidence merge) or scores wobble
         try:
@@ -896,7 +949,7 @@ def api_check(req: CheckRequest, request: Request):
     threading.Thread(
         target=_run_pipeline,
         args=(job_id, req.url, url_key, question, prior_claims, image_b64,
-              bool(req.detect_ai)),
+              bool(req.detect_ai) or bool(req.ai_only), bool(req.ai_only)),
         daemon=True,
     ).start()
     return {"job_id": job_id}

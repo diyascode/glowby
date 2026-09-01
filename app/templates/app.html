@@ -83,7 +83,10 @@
   .dial-row{display:flex;justify-content:center;align-items:flex-start;gap:44px;flex-wrap:wrap;margin-bottom:4px}
   .dial-col{text-align:center}
   .dial-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--muted);margin-top:7px}
-  .audet{margin:6px 0 10px;border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+  .aicard{margin:8px 0 12px;border:1px solid var(--line);border-left:3px solid #38bdf8;border-radius:12px;padding:10px 14px;background:rgba(255,255,255,.02)}
+.aicard-warn{border-left-color:#fab219}
+.aicard-t{font-weight:600;font-size:13.5px;margin-bottom:3px}
+.audet{margin:6px 0 10px;border:1px solid var(--line);border-radius:12px;padding:8px 12px}
 .audet summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .audet-body{margin-top:8px}
 .audet-row{padding:7px 0;border-top:1px solid var(--line);font-size:13px}
@@ -329,6 +332,7 @@ footer{font-size:.74rem}
 #aiChip{display:inline-flex;align-items:center;gap:6px;background:none}
 #aiChip:hover{border-color:rgba(56,189,248,.55);color:var(--ink);border-style:solid}
 #aiChip.on{border-style:solid;border-color:rgba(56,189,248,.75);color:#38bdf8}
+#aiChip.only{border-color:rgba(167,139,250,.85);color:#a78bfa}
 #qOpen{display:flex;align-items:center;gap:9px;width:100%;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);
   border-radius:999px;padding:4px 6px 4px 16px;backdrop-filter:blur(12px)}
@@ -467,7 +471,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.42.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.43.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -510,13 +514,24 @@ async function tsGet(){
 })();
 function userQuestion(){const q=document.getElementById('qIn');return q?q.value.trim():'';}
 // "+detect AI" toggle: user explicitly requests the media-authenticity check
+// three states: off (gate decides) -> on (claims + AI) -> only (AI only)
 (function(){const c=document.getElementById('aiChip');if(!c)return;
-  c.onclick=()=>{c.classList.toggle('on');
-    c.textContent=c.classList.contains('on')?'✓ detect AI':'＋ detect AI';};})();
-function detectAiOn(){const c=document.getElementById('aiChip');return !!(c&&c.classList.contains('on'));}
+  c.dataset.state='off';
+  c.onclick=()=>{
+    const s=c.dataset.state;
+    const next=(s==='off')?'on':((s==='on')?'only':'off');
+    c.dataset.state=next;
+    c.classList.toggle('on',next!=='off');
+    c.classList.toggle('only',next==='only');
+    c.textContent=(next==='off')?'＋ detect AI':((next==='on')?'✓ detect AI':'✓ AI only');
+    c.title=(next==='only')?'Check the media only — skip fact-checking the claims':'Also run the AI media check';
+  };})();
+function aiChipState(){const c=document.getElementById('aiChip');return c?(c.dataset.state||'off'):'off';}
+function detectAiOn(){return aiChipState()!=='off';}
 async function checkFetch(body){
   const uq=userQuestion(); if(uq)body.question=uq;
   if(detectAiOn())body.detect_ai=true;
+  if(aiChipState()==='only')body.ai_only=true;
   body.captcha_token=await tsGet();
   let r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.status===403&&tsOn){tsReset();body.captcha_token=await tsGet();
@@ -585,8 +600,11 @@ function renderList(d){
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
   const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
-  const titleHtml=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(d.title)+' \u2197</a>'):esc(d.title);
-  html+='<div class="meta">'+esc(d.platform)+' · '+titleHtml+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
+  const fullTitle=String(d.title||'');
+  const shortTitle=(fullTitle.length>90)?(fullTitle.slice(0,90).trim()+'\u2026'):fullTitle;
+  const titleHtml=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(shortTitle)+' \u2197</a>'):esc(shortTitle);
+  const moreTitle=(fullTitle.length>90)?(' <a href="#" class="ttlmore" data-full="'+esc(fullTitle)+'" style="color:var(--brand)">full caption</a>'):'';
+  html+='<div class="meta">'+esc(d.platform)+' · '+titleHtml+moreTitle+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
   if(d.answer_mode){
     function splitLead(t){
       const re=/[.!?]\s+/g; let m;
@@ -623,7 +641,22 @@ function renderList(d){
                    likely_synthetic:['#f87171','strong synthetic signals',0.95],
                    inconclusive:['#8a86a3','authenticity unclear',0.45]};
   const auStyle=au?AU_STYLES[au.origin_result]:null;
-  if(auStyle){
+  // EVIDENCE LEADS: when there is nothing to fact-check but the media
+  // lane HAS an answer, the media answer is the headline — no sad empty
+  // claim ring next to a finding that actually answered the question.
+  const noClaims=((cnt.judged||0)===0);
+  const mediaLeads=!!(auStyle&&(noClaims||d.media_only));
+  if(mediaLeads){
+    const CIRC2=(2*Math.PI*60);
+    html+='<div class="headline"><div style="position:relative;width:170px;height:170px;display:inline-grid;place-items:center">'
+      +'<svg width="170" height="170" style="position:absolute;inset:0;transform:rotate(-90deg)">'
+      +'<circle cx="85" cy="85" r="60" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="12"/>'
+      +'<circle cx="85" cy="85" r="60" fill="none" stroke="'+auStyle[0]+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+CIRC2.toFixed(1)+'" stroke-dashoffset="'+(CIRC2*(1-auStyle[2])).toFixed(1)+'"/></svg>'
+      +'<div style="font-weight:700;font-size:38px">AI</div></div>'
+      +'<div class="hl-label" style="color:'+auStyle[0]+'">'+esc(auStyle[1])+'</div>'
+      +'<div class="hl-sub">'+(d.media_only?'Media-only check \u2014 fact-checking was skipped at your request.':'No factual claims to check \u2014 this video is about the footage itself.')+'</div>'
+      +'<div class="hl-sub" style="margin-top:3px;opacity:.75">Media authenticity \u00b7 detection can be wrong \u00b7 <a href="/about#aimedia" target="_blank">limits \u2197</a></div></div>';
+  }else if(auStyle){
     const CIRC=(2*Math.PI*60);
     html+='<div class="headline"><div class="dial-row">'
       +'<div class="dial-col"><div class="hero-ring" style="display:inline-block">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,140,10)+'</div>'
@@ -649,10 +682,12 @@ function renderList(d){
     '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check · can be wrong · sources on every claim · glowby.io</div></div>';
   }
   if(au&&au.stage2_status==='failed'){
-    html+='<div class="hl-sub" style="margin:2px 0 10px;opacity:.8">\u26a0\ufe0f The AI check could not complete this time \u2014 use Re-check to try again. <a href="/about#aimedia" target="_blank" style="color:#8a7cff">How the AI check works \u2197</a></div>';
+    html+='<div class="aicard aicard-warn"><div class="aicard-t">\u26a0\ufe0f The AI media check could not complete</div>'
+      +'<div class="meta">Use Re-check to try again. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div></div>';
   }
   if(au&&au.stage===2&&au.origin_result==='no_synthetic_signal'){
-    html+='<div class="hl-sub" style="margin:2px 0 10px;opacity:.8">\ud83d\udd0d AI check ran \u2014 no synthetic signal found. Detection can miss things; this is not proof the video is real. <a href="/about#aimedia" target="_blank" style="color:#8a7cff">How the AI check works \u2197</a></div>';
+    html+='<div class="aicard"><div class="aicard-t">\ud83d\udd0d AI media check ran \u2014 no synthetic signal found</div>'
+      +'<div class="meta">The forensic detector examined sampled frames and found no evidence of AI generation. Detection can miss things \u2014 this is not proof the video is real. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div></div>';
   }
   // AI-CHECK DETAILS: the promised evidence panel. Categories lead the
   // headline; the detector's own numbers live here, where a reader who
@@ -663,7 +698,8 @@ function renderList(d){
     html+='<div class="audet-body">';
     for(const e of au.evidence){
       const num=(e.raw_score===0||e.raw_score)?('<span class="audet-num">confidence '+e.raw_score+'</span>'):'';
-      html+='<div class="audet-row"><b>'+esc(e.provider||'')+'</b> \u00b7 <span class="meta">'+esc(e.signal_type||'')+'</span> '+num
+      const seen=(e.classes_seen===0||e.classes_seen)?('<span class="audet-num">'+e.classes_seen+' class scores read</span>'):'';
+      html+='<div class="audet-row"><b>'+esc(e.provider||'')+'</b> \u00b7 <span class="meta">'+esc(e.signal_type||'')+'</span> '+num+seen
         +'<div class="meta">'+esc(e.explanation||'')+'</div>'
         +(e.source_link?'<a href="'+esc(e.source_link)+'" target="_blank" rel="noopener" class="meta">source \u2197</a>':'')
         +'</div>';
@@ -749,13 +785,34 @@ function render(){
   html+='<button id="copyRes">🔗 Copy result link</button>';
   html+='<button id="repBtn">🛠 Report a mistake</button>';
   html+='</div>';
+  const srcUrl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
+  if(srcUrl)html+='<div style="text-align:center;margin:2px 0 10px"><a href="'+esc(srcUrl)+'" target="_blank" rel="noopener" class="meta" style="color:var(--brand)">\u25b6 Open the original video \u2197</a></div>';
   html+='<div class="aidisc">Glowby is AI-powered. Scores and verdicts are automated assessments of the evidence found — they can be wrong. Always check the sources. Not medical, legal, or financial advice. <a href="/about#terms">Terms</a></div>';
   if(d.url_key){
     html+='<div id="fuWrap"><div id="fuThread"></div>';
-    html+='<form id="fuForm" class="fu-form"><input type="text" id="fuIn" maxlength="400" placeholder="Ask a follow-up about this check…" autocomplete="off"><button type="button" id="fuMic" class="fu-mic" aria-label="Speak your follow-up" title="Speak your follow-up"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="submit" id="fuGo" aria-label="ask">→</button></form></div>';
+    html+='<form id="fuForm" class="fu-form"><input type="text" id="fuIn" maxlength="400" placeholder="Ask a follow-up about this check…" autocomplete="off"><button type="button" id="fuMic" class="fu-mic" aria-label="Speak your follow-up" title="Speak your follow-up"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="button" id="fuAi" class="fu-mic" aria-label="Run the AI media check" title="Run the AI media check on this video">🧪</button><button type="submit" id="fuGo" aria-label="ask">→</button></form></div>';
   }
   out.innerHTML=html;
+  const tm=out.querySelector('.ttlmore');
+  if(tm)tm.onclick=(e)=>{e.preventDefault();
+    tm.outerHTML='<span class="meta"> \u2014 '+esc(tm.dataset.full||'')+'</span>';};
   wireMic($('fuMic'),$('fuIn'));
+  const fai=$('fuAi');
+  if(fai)fai.onclick=async()=>{
+    fai.disabled=true; fai.textContent='\u23f3';
+    const th=$('fuThread');
+    if(th)th.insertAdjacentHTML('beforeend','<div class="uq-card"><div class="uq-q">\ud83e\uddea Running the AI media check\u2026</div></div>');
+    try{
+      const r=await checkFetch({url:d.url||'',detect_ai:true,force:true});
+      const j=await r.json();
+      if(!j||!j.job_id)throw new Error('no job');
+      currentResult=await poll(j.job_id);
+      currentView='list';render();
+    }catch(err){
+      fai.disabled=false; fai.textContent='\ud83e\uddea';
+      if(th)th.insertAdjacentHTML('beforeend','<div class="uq-card"><div class="uq-a">Could not start the AI check \u2014 use the \u201c+ detect AI\u201d button on a new check.</div></div>');
+    }
+  };
   const ff=$('fuForm');
   if(ff)ff.onsubmit=async(e)=>{
     e.preventDefault();
