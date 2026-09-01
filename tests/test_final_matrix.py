@@ -609,6 +609,20 @@ if "not proof the video is real" not in _h45:
 if _h45.count("/about#aimedia") < 2:
     fails.append("m45 limitation links missing")
 
+
+# 46. GATE WORD BOUNDARIES: "detail" must not read as "AI"; failed
+# stage-2 shows an honest could-not-complete line
+from app.agents import hive_detect as _hd46
+if _hd46.should_run_stage2(title="attention to detail in packaging")[0]:
+    fails.append("m46 substring ai overfire")
+if not _hd46.should_run_stage2(title="Can YOU tell which video is AI?")[0]:
+    fails.append("m46 real ai title missed")
+if not _hd46.should_run_stage2(title="deepfake of a local mayor")[0]:
+    fails.append("m46 deepfake title missed")
+_h46 = open("app/templates/app.html").read()
+if "could not complete this time" not in _h46:
+    fails.append("m46 failure line missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 45/45 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean")
+    "FINAL MATRIX PASS: 46/46 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries")

@@ -324,9 +324,9 @@ def detect_audio(audio_bytes):
 
 
 # ------------------------------------------------------------ the gate
-_AI_TOPIC_WORDS = ("ai", "a.i.", "deepfake", "deep fake", "sora", "veo",
-                   "midjourney", "ai-generated", "ai generated",
-                   "artificial intelligence", "synthetic")
+_AI_TOPIC_RE = re.compile(
+    r"\b(ai|a\.i\.|deepfake|deep fake|sora|veo|midjourney|"
+    r"ai[- ]generated|artificial intelligence|synthetic)\b", re.I)
 _HIGH_RISK_BUCKETS = {"politics", "news", "health", "law", "science"}
 
 
@@ -347,8 +347,8 @@ def should_run_stage2(title="", user_question="", claims=None,
         return False, "already settled by provenance/label"
     if on_demand:
         return True, "user requested authenticity check"
-    text = f"{title or ''} {user_question or ''}".lower()
-    if any(w in text for w in _AI_TOPIC_WORDS):
+    text = f"{title or ''} {user_question or ''}"
+    if _AI_TOPIC_RE.search(text):
         return True, "content is about AI/synthetic media"
     for c in claims or []:
         if not isinstance(c, dict):
