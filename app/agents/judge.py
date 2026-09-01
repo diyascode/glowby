@@ -112,6 +112,18 @@ explicitly stating the OPPOSITE of the claim. If the evidence does not \
 directly address the claim's core assertion, rule "insufficient" or \
 "unverifiable" instead. Never assert what a document "does not say" unless \
 the evidence includes the document's complete relevant section.
+- TYPICAL PRACTICE IS NOT PROOF ABOUT THIS INSTANCE: evidence \
+describing what USUALLY happens (how events are normally staged, what \
+equipment is standard, what a company typically does) can never \
+CONTRADICT a claim about a specific depicted event. "Official events \
+use fixed platforms" does not prove this particular dive from an \
+inflatable platform never happened. When the CORE EVENT is supported \
+and only a peripheral descriptor (the platform type, the color, the \
+exact location) conflicts with typical practice, rule partly_supported \
+(5.5-7.5) and name the doubt in the verdict — never "contradicted". \
+"Contradicted" requires evidence about THIS instance: a debunk of this \
+footage, proof of impossibility, or a source refuting this specific \
+event.
 - BUT SILENCE CAN SPEAK (expected-coverage test): when the claim is of a \
 kind that would CERTAINLY produce major, easily-findable coverage if true \
 (the death of a public figure, a major disaster, a landmark law, a \

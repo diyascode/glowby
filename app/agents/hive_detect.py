@@ -52,7 +52,8 @@ THRESH_INCONCLUSIVE = 0.50
 
 # class names that count as "synthetic" in Hive AI-content responses
 _SYNTHETIC_CLASSES = {"ai_generated", "deepfake", "yes_deepfake",
-                      "yes_ai_generated", "synthetic"}
+                      "yes_ai_generated", "synthetic",
+                      "ai_generated_audio"}
 # class names that are generator attributions (kept as evidence detail)
 _GENERATOR_HINTS = {"sora", "veo", "pika", "kling", "midjourney",
                     "dalle", "dall_e", "stablediffusion",
@@ -119,7 +120,7 @@ def classes_to_finding(classes):
     for c in classes or []:
         try:
             name = str(c.get("class", "")).lower()
-            score = float(c.get("score", 0.0))
+            score = float(c.get("value", c.get("score", 0.0)))
         except Exception:
             continue
         if name in _SYNTHETIC_CLASSES and score > top:
@@ -173,9 +174,9 @@ def _post_v3(key, image_b64=None, media_url=None):
     """One call to the Hive v3 API (Bearer auth, JSON body). The combined
     AI-generated & deepfake model answers both questions in one call."""
     url = f"{HIVE_V3_BASE}/{HIVE_MODEL}"
-    if image_b64 and not media_url:
-        media_url = "data:image/jpeg;base64," + image_b64
-    body = json.dumps({"input": {"media_url": media_url}}).encode()
+    item = ({"media_url": media_url} if media_url
+            else {"media_base64": image_b64})
+    body = json.dumps({"media_metadata": True, "input": [item]}).encode()
     req = urllib.request.Request(
         url, data=body, method="POST",
         headers={

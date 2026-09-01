@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.40.2"
+VERSION = "0.40.3"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -874,7 +874,9 @@ def api_check(req: CheckRequest, request: Request):
     # so every re-check judges on MORE evidence, never a thinner draw —
     # this damps run-to-run score wobble on contested claims.
     prior_claims = None
-    if req.force:
+    if req.force or req.detect_ai:
+        # detect-AI bypasses the cache too — that fresh run must keep
+        # the memory (claim anchoring + evidence merge) or scores wobble
         try:
             prior = get_cached(url_key, 0)  # any age — memory, not cache
             if prior and prior.get("claims"):

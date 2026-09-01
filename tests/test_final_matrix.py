@@ -661,6 +661,21 @@ if "no frames or image were" not in _m49:
 if '"detector not configured"' not in _m49:
     fails.append("m49 unconfigured failure not reported")
 
+
+# 50. MEMORY ON EVERY FRESH RUN: the detect-AI cache bypass keeps claim
+# anchoring + evidence memory, same as Re-check
+_m50 = open("app/main.py").read()
+if "if req.force or req.detect_ai:" not in _m50:
+    fails.append("m50 detect-ai run loses memory")
+
+# 51. TYPICAL-PRACTICE RULE: usual practice can never contradict a
+# specific depicted event; descriptor doubts stay partly_supported
+from app.agents.judge import PROMPT as _JP51
+if "TYPICAL PRACTICE IS NOT PROOF ABOUT THIS INSTANCE" not in _JP51:
+    fails.append("m51 rule missing")
+if "peripheral descriptor" not in _JP51:
+    fails.append("m51 descriptor guidance missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 49/49 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips")
+    "FINAL MATRIX PASS: 51/51 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice")
