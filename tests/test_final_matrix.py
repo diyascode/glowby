@@ -676,6 +676,20 @@ if "TYPICAL PRACTICE IS NOT PROOF ABOUT THIS INSTANCE" not in _JP51:
 if "peripheral descriptor" not in _JP51:
     fails.append("m51 descriptor guidance missing")
 
+
+# 52. V3 DOCS CONTRACT (from the account's own Quickstart): input is an
+# ARRAY, base64 uses media_base64, and classes parse "value" scores
+_j52 = open("app/agents/hive_detect.py").read()
+if '"input": [item]' not in _j52: fails.append("m52 input not an array")
+if '"media_base64"' not in _j52: fails.append("m52 media_base64 missing")
+from app.agents.hive_detect import classes_to_finding as _ctf52
+_o52, _t52, _ = _ctf52([{"class": "ai_generated", "value": 0.98},
+                        {"class": "not_ai_generated", "value": 0.02}])
+if _o52 != "likely_synthetic" or _t52 != 0.98:
+    fails.append("m52 value-key parse failed")
+_o52b, _, _ = _ctf52([{"class": "deepfake", "value": 0.95}])
+if _o52b != "likely_synthetic": fails.append("m52 deepfake value parse")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 51/51 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice")
+    "FINAL MATRIX PASS: 52/52 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs")
