@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.41.1"
+VERSION = "0.41.2"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -372,8 +372,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # The vision agent describes what the video asserts; that
         # description enters the pipeline like any transcript.
         frames = result.pop("frames", None)
-        # keep a small copy for the Stage-2 forensic detector (Day 2):
-        _au_frames = list(frames)[:6] if (AUTHENTICITY_ENABLED and frames) else None
+        # keep a small copy for the Stage-2 forensic detector (Day 2).
+        # frames_media carries frames the eyes already consumed during
+        # ingest — without it, videos WITH visual analysis had nothing
+        # left for the detector to look at.
+        _media_frames = result.pop("frames_media", None)
+        _au_frames = None
+        if AUTHENTICITY_ENABLED:
+            _src = frames or _media_frames
+            _au_frames = list(_src)[:6] if _src else None
         if frames:
             # speculative vision may have already looked during ingest
             desc = result.pop("visual_desc", None) or describe_frames(

@@ -703,6 +703,19 @@ if 'raise RuntimeError(f"HTTP {e.code}' not in _j53:
     fails.append("m53 vendor error text not captured")
 if "type(e).__name__" in _j53: fails.append("m53 still hiding error detail")
 
+
+# 54. FRAMES REACH THE DETECTOR: ingest keeps the frames it downloaded
+# (frames_media) even after the vision agent consumed them, and the
+# pipeline falls back to them — the real cause of "could not complete"
+_g54 = open("app/agents/ingest.py").read()
+if 'result["frames_media"] = frames' not in _g54:
+    fails.append("m54 ingest still discards frames")
+_m54 = open("app/main.py").read()
+if '_media_frames = result.pop("frames_media", None)' not in _m54:
+    fails.append("m54 pipeline ignores kept frames")
+if "_src = frames or _media_frames" not in _m54:
+    fails.append("m54 no fallback to kept frames")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 53/53 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic")
+    "FINAL MATRIX PASS: 54/54 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector")

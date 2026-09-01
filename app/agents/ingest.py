@@ -291,6 +291,10 @@ def ingest(url: str) -> dict:
         if visual_desc:
             parts.append("visual analysis")
         result["transcript_source"] = "+".join(parts) or "none"
+        # the frames were downloaded and already read by the eyes; keep
+        # them for the AI-media lane instead of throwing them away
+        if frames:
+            result["frames_media"] = frames
         return result
 
     # nothing heard, nothing seen — last door: maybe it's an article
