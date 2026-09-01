@@ -623,6 +623,21 @@ _h46 = open("app/templates/app.html").read()
 if "could not complete this time" not in _h46:
     fails.append("m46 failure line missing")
 
+
+# 47. V3 TRANSPORT CONTRACT: Bearer auth, v3 path, combined-model slug,
+# score-map parsing, deepfake class -> face scope
+from app.agents import hive_detect as _hd47
+if "api/v3" not in _hd47.HIVE_V3_BASE: fails.append("m47 not v3")
+if _hd47.HIVE_MODEL != "hive/ai-generated-and-deepfake-content-detection":
+    fails.append("m47 wrong model slug")
+_j47 = open("app/agents/hive_detect.py").read()
+if 'Bearer' not in _j47: fails.append("m47 bearer auth missing")
+_lists = _hd47._extract_class_lists(
+    {"output": [{"scores": {"ai_generated": 0.97, "not_ai_generated": 0.03}}]})
+_found = any(any(c["class"] == "ai_generated" and c["score"] == 0.97
+                 for c in cl) for cl in _lists)
+if not _found: fails.append("m47 score-map parse failed")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 46/46 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries")
+    "FINAL MATRIX PASS: 47/47 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3")

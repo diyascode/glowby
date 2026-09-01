@@ -37,7 +37,9 @@ from app.agents.authenticity import (
     STATUS_NOT_ASSESSED, STATUS_COMPLETED, STATUS_FAILED,
 )
 
-HIVE_SYNC_URL = "https://api.thehive.ai/api/v2/task/sync"
+HIVE_V3_BASE = "https://api.thehive.ai/api/v3"
+HIVE_MODEL = os.environ.get(
+    "HIVE_MODEL_SLUG", "hive/ai-generated-and-deepfake-content-detection")
 HIVE_TIMEOUT_S = 45
 
 # Conservative thresholds (calibration may later tighten/loosen these
@@ -147,33 +149,38 @@ def _extract_class_lists(payload):
             for v in node:
                 walk(v)
 
+    def walk_maps(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k in ("scores", "class_scores") and isinstance(v, dict):
+                    cl = [{"class": ck, "score": cv}
+                          for ck, cv in v.items()
+                          if isinstance(cv, (int, float)) and 0 <= cv <= 1]
+                    if cl:
+                        out.append(cl)
+                else:
+                    walk_maps(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk_maps(v)
+
     walk(payload)
+    walk_maps(payload)
     return out
 
 
-def _post_media(key, media_bytes=None, media_url=None,
-                filename="media.jpg"):
-    """One sync call to Hive. Returns parsed JSON payload (raises on
-    HTTP/network failure)."""
-    boundary = "----glowby-hive-2"
-    parts = []
-    if media_url:
-        parts.append(
-            (f'--{boundary}\r\nContent-Disposition: form-data; '
-             f'name="url"\r\n\r\n{media_url}\r\n').encode())
-    if media_bytes:
-        parts.append(
-            (f'--{boundary}\r\nContent-Disposition: form-data; '
-             f'name="media"; filename="{filename}"\r\n'
-             f'Content-Type: application/octet-stream\r\n\r\n').encode()
-            + media_bytes + b"\r\n")
-    parts.append(f"--{boundary}--\r\n".encode())
-    body = b"".join(parts)
+def _post_v3(key, image_b64=None, media_url=None):
+    """One call to the Hive v3 API (Bearer auth, JSON body). The combined
+    AI-generated & deepfake model answers both questions in one call."""
+    url = f"{HIVE_V3_BASE}/{HIVE_MODEL}"
+    if image_b64 and not media_url:
+        media_url = "data:image/jpeg;base64," + image_b64
+    body = json.dumps({"input": {"media_url": media_url}}).encode()
     req = urllib.request.Request(
-        HIVE_SYNC_URL, data=body, method="POST",
+        url, data=body, method="POST",
         headers={
-            "Authorization": f"token {key}",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
             "accept": "application/json",
         })
     with urllib.request.urlopen(req, timeout=HIVE_TIMEOUT_S) as r:
@@ -220,13 +227,24 @@ def detect_image(image_b64):
     except Exception:
         return _failed("image bytes unreadable")
     try:
-        payload = _post_media(_key(), media_bytes=img)
+        payload = _post_v3(_key(), image_b64=image_b64)
         best = (None, 0.0, None)
+        df_top = 0.0
         for classes in _extract_class_lists(payload):
             f = classes_to_finding(classes)
             if f[1] >= best[1]:
                 best = f
-        return _finding_to_result(*best, "forensic_image")
+            for c in classes:
+                if str(c.get("class", "")).lower() in ("deepfake",
+                                                       "yes_deepfake"):
+                    try:
+                        df_top = max(df_top, float(c.get("score", 0)))
+                    except Exception:
+                        pass
+        res = _finding_to_result(*best, "forensic_image")
+        if df_top >= THRESH_LIKELY:
+            res["manipulation_scope"] = "face"
+        return res
     except Exception as e:  # network/HTTP/parse: typed failure, no guess
         return _failed(f"detector call failed: {type(e).__name__}")
 
@@ -244,8 +262,8 @@ def detect_video_frames(frames_b64):
     ran = 0
     for fb in frames_b64[:6]:  # cost cap: at most 6 frames per video
         try:
-            img = base64.b64decode(fb)
-            payload = _post_media(_key(), media_bytes=img)
+            base64.b64decode(fb)  # validate only
+            payload = _post_v3(_key(), image_b64=fb)
             ran += 1
             for classes in _extract_class_lists(payload):
                 f = classes_to_finding(classes)
@@ -267,8 +285,8 @@ def detect_deepfake_faces(image_b64):
     if not deepfake_available():
         return _not_assessed("no HIVE_DEEPFAKE_KEY configured")
     try:
-        img = base64.b64decode(image_b64)
-        payload = _post_media(_key("HIVE_DEEPFAKE_KEY"), media_bytes=img)
+        base64.b64decode(image_b64)  # validate only
+        payload = _post_v3(_key("HIVE_DEEPFAKE_KEY"), image_b64=image_b64)
         best = (None, 0.0, None)
         for classes in _extract_class_lists(payload):
             f = classes_to_finding(classes)
@@ -310,9 +328,7 @@ def detect_audio(audio_bytes):
     if not audio_available():
         return _not_assessed("no HIVE_AUDIO_KEY configured")
     try:
-        payload = _post_media(_key("HIVE_AUDIO_KEY"),
-                              media_bytes=audio_bytes,
-                              filename="audio.mp3")
+        payload = _post_v3(_key("HIVE_AUDIO_KEY"))
         best = (None, 0.0, None)
         for classes in _extract_class_lists(payload):
             f = classes_to_finding(classes)
