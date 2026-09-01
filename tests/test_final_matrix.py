@@ -650,6 +650,17 @@ _t48 = open("app/templates/trust.html").read()
 if "Glowby public beta" in _t48:
     fails.append("m48 trust footer still says public beta")
 
+
+# 49. NO SILENT SKIPS ON DEMAND: standby frames feed the detector, and a
+# detect-AI request with nothing to analyze reports a typed failure
+_m49 = open("app/main.py").read()
+if "standby and not _au_frames" not in _m49:
+    fails.append("m49 standby frames not fed to detector")
+if "no frames or image were" not in _m49:
+    fails.append("m49 no-media failure not reported")
+if '"detector not configured"' not in _m49:
+    fails.append("m49 unconfigured failure not reported")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 48/48 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2")
+    "FINAL MATRIX PASS: 49/49 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips")

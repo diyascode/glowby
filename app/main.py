@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.40.1"
+VERSION = "0.40.2"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -415,6 +415,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # Open the eyes on the standby frames and route again before
         # declaring "nothing to verify."
         standby = result.pop("frames_standby", None)
+        if AUTHENTICITY_ENABLED and standby and not _au_frames:
+            _au_frames = list(standby)[:6]
         if standby and not any(
                 c.get("gate_label") in ("factual", "prediction")
                 for c in (claims or [])):
@@ -593,6 +595,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                         _s2 = None
                     if _s2 is not None:
                         result["authenticity"] = merge_stage2(_au, _s2, _why)
+                    elif detect_ai:
+                        _au["stage2_status"] = "failed"
+                        _au["stage2_reason"] = ("no frames or image were "
+                                                "available to analyze")
+                        result["authenticity"] = _au
+                elif _go and detect_ai and not hive_detect.available():
+                    _au["stage2_status"] = "failed"
+                    _au["stage2_reason"] = "detector not configured"
+                    result["authenticity"] = _au
                     # per-face deepfake pass (own key/project): the
                     # face-swap catch — signals concentrated on a face
                     _face_likely = hive_detect.likely_has_person(
