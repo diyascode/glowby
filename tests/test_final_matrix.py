@@ -586,6 +586,18 @@ _h43 = open("app/templates/app.html").read()
 if 'id="aiChip"' not in _h43: fails.append("m43 chip missing")
 if "detect_ai=true" not in _h43.replace(" ", ""): fails.append("m43 chip not sent")
 
+
+# 44. TRUST-PAGE DISCLOSURE CONTRACT: AI-media section + processor
+# disclosure + sampling statement + no-green-checkmark promise
+_t44 = open("app/templates/trust.html").read()
+for needle, tag in [("AI-media detection", "section"),
+                    ("Sampling, not scanning", "sampling"),
+                    ("Absence proves nothing", "absence"),
+                    ("no face recognition, ever", "no-face-recognition"),
+                    ("Hive (synthetic-media", "processor-disclosure"),
+                    ("Cloud Vision reverse", "vision-disclosure")]:
+    if needle not in _t44: fails.append(f"m44 {tag} missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 43/43 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip")
+    "FINAL MATRIX PASS: 44/44 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure")

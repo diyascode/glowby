@@ -108,6 +108,46 @@
   evidence hunt before using it, and an allegation awaiting official findings is
   never scored as guilt — Glowby doesn't judge guilt, courts do.</p>
 
+  <h2 id="aimedia">AI-media detection</h2>
+  <p class="muted">A second, separate question: not "is the claim true?"
+  but "is the media itself AI-made?" Added September 2026.</p>
+  <p><b>Two lanes, never blended.</b> The claims score and the AI-media
+  finding are separate answers shown separately. A real video can carry
+  false claims; an AI video can carry true ones. One never changes the
+  other's number.</p>
+  <p><b>What Glowby looks at, in order of trust:</b> (1) validated
+  Content Credentials — a cryptographic stamp some generators sign into
+  the file; the ONLY evidence that earns Glowby's "verified AI" badge.
+  (2) The creator's or platform's own label ("made with AI"). (3)
+  Forensic detection — an AI model examining the pixels for signs of
+  synthetic generation. (4) Reverse search — finding where the footage
+  appeared on the web before, to catch real-but-recycled media used in
+  a false context. Higher evidence always outranks lower; they are
+  never averaged.</p>
+  <p><b>Categories, not fake precision.</b> Findings are reported in
+  words — "creator-labeled AI," "strong synthetic signals,"
+  "authenticity unclear" — because detection confidence numbers imply
+  a precision the science doesn't have.</p>
+  <p><b>Sampling, not scanning.</b> Glowby examines sampled frames from
+  a video, not every second of it. For short videos this covers the
+  content well. For long videos the AI-media check is a spot check: a
+  brief manipulated segment inside a long, otherwise-authentic video
+  can escape sampling.</p>
+  <p><b>Absence proves nothing.</b> "No synthetic signal" is not a
+  verdict of authenticity. Glowby never certifies a video as real, and
+  there is no green checkmark for "genuine." Detection is never certain
+  in either direction — when the stakes are high, check the sources,
+  not just the dial.</p>
+  <p><b>Findings are automated analysis, not accusations.</b> A
+  "synthetic signals" finding means detection models flagged patterns —
+  it is probabilistic, it can be wrong, and the corrections policy
+  below applies to it exactly as it applies to claim verdicts.</p>
+  <p><b>What Glowby refuses.</b> Glowby does not analyze intimate or
+  sexual imagery and does not process content involving minors. Reports
+  of intimate-image abuse are pointed to StopNCII.org and NCMEC's Take
+  It Down. Glowby detects whether a face is synthetic; it never
+  identifies whose face it is — no face recognition, ever.</p>
+
   <h2 id="corrections">Corrections policy</h2>
   <p>Glowby will get things wrong. What makes a fact-checker trustworthy isn't
   perfection — it's what happens next:</p>
@@ -203,6 +243,12 @@
   what it asserts, and discarded. Only the text description Glowby
   derives from it is kept (as the check's transcript). The photo itself
   never touches our database.</p>
+  <p><b>AI-media detection processing.</b> When a check qualifies for the
+  AI-media analysis (or you tap "detect AI"), the image or a few sampled
+  video frames are sent to detection services — Hive (synthetic-media
+  detection) and Google Cloud Vision (reverse image search) — analyzed,
+  and not stored by Glowby. These providers process the media under
+  their own privacy policies, listed below.</p>
   <p><b>What is stored:</b> the links and typed claims you check, the
   transcripts and fact-check results Glowby produces from them, and anonymous
   counters (how often a stored result is viewed). Stored results are public by
@@ -216,7 +262,9 @@
   <p><b>Services Glowby relies on</b> (each receives only what's needed to do
   its job): Anthropic (AI analysis of transcripts, video frames, and
   evidence), OpenAI (transcription of audio from videos without captions),
-  Google (fact-check database and video captions), Cloudflare (bot
+  Google (fact-check database, video captions, and Cloud Vision reverse
+  image search for the AI-media check), Hive (synthetic-media and deepfake
+  detection for the AI-media check), Cloudflare (bot
   protection), Webshare (a proxy that carries our video-fetching requests),
   and Railway (hosting and database). Their own privacy policies govern
   their processing.</p>
