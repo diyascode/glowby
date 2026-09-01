@@ -598,6 +598,17 @@ for needle, tag in [("AI-media detection", "section"),
                     ("Cloud Vision reverse", "vision-disclosure")]:
     if needle not in _t44: fails.append(f"m44 {tag} missing")
 
+
+# 45. RAN-AND-CLEAN DISCLOSURE: when stage-2 ran and found nothing, the
+# result says so with the can-miss caveat; silent when it never ran
+_h45 = open("app/templates/app.html").read()
+if "au.stage===2&&au.origin_result==='no_synthetic_signal'" not in _h45:
+    fails.append("m45 condition missing")
+if "not proof the video is real" not in _h45:
+    fails.append("m45 caveat missing")
+if _h45.count("/about#aimedia") < 2:
+    fails.append("m45 limitation links missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 44/44 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure")
+    "FINAL MATRIX PASS: 45/45 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean")
