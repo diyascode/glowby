@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from app.agents.answer import answer_followup, answer_question
 from app.agents.authenticity import assess_stage1, merge_stage2
 from app.agents import hive_detect
+from app.agents import reverse_search
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -63,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.37.2"
+VERSION = "0.38.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -591,6 +592,24 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                         _s2 = None
                     if _s2 is not None:
                         result["authenticity"] = merge_stage2(_au, _s2, _why)
+                # STAGE 3 (Day 3): reverse search — where did this
+                # footage first appear? (context lane, free tier)
+                if _go and reverse_search.available():
+                    _frame0 = (image_b64 if url_key.startswith("img:")
+                               else (_au_frames[0] if _au_frames else None))
+                    if _frame0:
+                        _s3 = reverse_search.analyze(
+                            _frame0, posted_date=result.get("posted_date"))
+                        if _s3.get("assessment_status") == "completed":
+                            _au3 = result.get("authenticity") or {}
+                            _au3.setdefault("evidence", [])
+                            _au3["evidence"] = (list(_au3["evidence"])
+                                                + list(_s3["evidence"]))
+                            if _s3.get("earliest"):
+                                _au3["earliest"] = _s3["earliest"]
+                            if _s3.get("context_note"):
+                                _au3["context_note"] = _s3["context_note"]
+                            result["authenticity"] = _au3
             except Exception:
                 pass  # the lane must never break a check
         result = build_report(result)

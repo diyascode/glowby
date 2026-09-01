@@ -510,6 +510,38 @@ if "THE RIGHT BALLPARK IS NOT A LIE" not in _JP37: fails.append("m37 rule missin
 if "COUNTS GROW IN DEVELOPING STORIES" not in _JP37: fails.append("m37 growth rule missing")
 if "order of magnitude" not in _JP37: fails.append("m37 contradiction boundary missing")
 
+
+# 38. REVERSE-SEARCH DORMANCY + BUDGET: no key -> asleep; cap honored
+import os as _os38
+from app.agents import reverse_search as _rs
+_os38.environ.pop("GOOGLE_VISION_KEY", None)
+if _rs.available(): fails.append("m38 available without key")
+_r38 = _rs.analyze("aGVsbG8=")
+if _r38.get("assessment_status") != "not_assessed": fails.append("m38 not typed")
+_rs._counter["month"] = _rs._month(); _rs._counter["count"] = _rs.MONTHLY_CAP
+if _rs._budget_ok(): fails.append("m38 budget cap ignored")
+_rs._counter["count"] = 0
+
+# 39. DATE EXTRACTION: URL dates strong, title years weak, junk ignored
+if _rs.extract_date("https://news.com/2021/05/flood-story") != "2021-05-01":
+    fails.append("m39 url date")
+if _rs.extract_date("https://x.com/post/99887766") is not None:
+    fails.append("m39 junk number treated as date")
+if _rs.extract_date("", "Floods devastate region in 2019 photos") != "2019-01-01":
+    fails.append("m39 title year")
+
+# 40. RECYCLED-FOOTAGE NOTE: fires only when well before the post date,
+# with the honest "earliest credible matching appearance" phrasing
+_pages = [{"url": "https://news.com/2021/05/flood", "pageTitle": "Flood"},
+          {"url": "https://late.com/2024/01/flood", "pageTitle": "Flood again"}]
+_e, _n = _rs.pick_earliest(_pages, posted_date="2026-08-26")
+if not _e or _e["date"] != "2021-05-01": fails.append("m40 earliest pick")
+if not _n or "Earliest credible matching appearance located" not in _n:
+    fails.append("m40 note phrasing")
+_e2, _n2 = _rs.pick_earliest([{"url": "https://news.com/2026/08/flood",
+                               "pageTitle": "Flood"}], posted_date="2026-08-26")
+if _n2 is not None: fails.append("m40 same-week coverage flagged")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 37/37 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers")
+    "FINAL MATRIX PASS: 40/40 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note")
