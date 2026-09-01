@@ -638,6 +638,18 @@ _found = any(any(c["class"] == "ai_generated" and c["score"] == 0.97
                  for c in cl) for cl in _lists)
 if not _found: fails.append("m47 score-map parse failed")
 
+
+# 48. APP REVIEW 2.2 CONTRACT: app mode hides beta labels and the voice
+# button (dead in the in-app web view); trust footer drops "public beta"
+_h48 = open("app/templates/app.html").read()
+if "html.appmode .beta2,html.appmode .ah-beta{display:none" not in _h48:
+    fails.append("m48 beta labels still visible in app")
+if "html.appmode #mic,html.appmode .fu-mic{display:none" not in _h48:
+    fails.append("m48 dead mic button still visible in app")
+_t48 = open("app/templates/trust.html").read()
+if "Glowby public beta" in _t48:
+    fails.append("m48 trust footer still says public beta")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 47/47 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3")
+    "FINAL MATRIX PASS: 48/48 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2")
