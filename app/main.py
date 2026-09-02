@@ -64,7 +64,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.43.2"
+VERSION = "0.43.3"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -864,6 +864,9 @@ def api_check(req: CheckRequest, request: Request):
     cached = None if req.force else get_cached(url_key, CACHE_TTL_DAYS)
     # "+detect AI" on a cached result that never ran the detector:
     # serve nothing stale — run fresh so the media check actually happens
+    if cached is not None and cached.get("media_only") and not req.ai_only:
+        # a stored "AI only" result has no claims — a full check must run
+        cached = None
     if cached is not None and (req.detect_ai or req.ai_only):
         _cau = cached.get("authenticity") or {}
         if _cau.get("stage") != 2:

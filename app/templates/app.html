@@ -471,7 +471,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.43.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.43.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -527,6 +527,8 @@ function userQuestion(){const q=document.getElementById('qIn');return q?q.value.
     c.title=(next==='only')?'Check the media only — skip fact-checking the claims':'Also run the AI media check';
   };})();
 function aiChipState(){const c=document.getElementById('aiChip');return c?(c.dataset.state||'off'):'off';}
+function resetAiChip(){const c=document.getElementById('aiChip');if(!c)return;
+  c.dataset.state='off';c.classList.remove('on','only');c.textContent='＋ detect AI';c.title='Also run the AI media check';}
 function detectAiOn(){return aiChipState()!=='off';}
 async function checkFetch(body){
   const uq=userQuestion(); if(uq)body.question=uq;
@@ -854,6 +856,7 @@ function render(){
       const d=await r.json();
       currentResult=d.job_id?await poll(d.job_id):d;
       $('steps').style.display='none';currentView='list';render();
+      resetAiChip();
     }catch(err){$('steps').style.display='none';$('out').style.display='block';$('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';}
   };
   $('tl').onclick=()=>{currentView='list';render();};
@@ -963,6 +966,7 @@ async function runImageCheck(){
     (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
       const qo=document.getElementById('qOpen'),qc=document.getElementById('qChip');
       if(qo)qo.hidden=true;if(qc)qc.hidden=false;}})();
+    resetAiChip();
   }catch(err){
     clearPending();
     $('steps').style.display='none';
@@ -990,6 +994,7 @@ $('f').addEventListener('submit',async(e)=>{
     (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
       const qo=document.getElementById('qOpen'),qc=document.getElementById('qChip');
       if(qo)qo.hidden=true;if(qc)qc.hidden=false;}})();
+    resetAiChip();
   }catch(err){
     clearPending();
     $('steps').style.display='none';
