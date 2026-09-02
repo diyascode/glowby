@@ -471,7 +471,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.43.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.44.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -950,6 +950,34 @@ if(camBtn&&camIn){
     img.src=URL.createObjectURL(file);
   };
 }
+// NATIVE HANDOFF: the iOS share extension saves a shared photo and the
+// app hands it here as a data URL. Same resize + same check path as the
+// camera button, so the app and the website behave identically.
+window.glowbyReceiveImage=function(dataUrl){
+  if(!dataUrl||typeof dataUrl!=='string')return;
+  const img=new Image();
+  img.onload=()=>{
+    const MAX=1568;
+    let w=img.naturalWidth,h=img.naturalHeight;
+    const s=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(img,0,0,w,h);
+    pendingImage=cv.toDataURL('image/jpeg',0.85);
+    $('url').value='';
+    runImageCheck();
+  };
+  img.onerror=()=>{$('out').style.display='block';
+    $('out').innerHTML='<span class="err">Couldn&rsquo;t read the shared photo &mdash; try choosing it with the camera button instead.</span>';};
+  img.src=dataUrl;
+};
+// in the APP, a shared link (?u=...) runs immediately — the person
+// already chose Glowby from the share sheet; no second tap needed
+(function(){
+  if(!/[?&]app=1(&|$)/.test(location.search))return;
+  if(!/[?&]u=([^&]+)/.test(location.search))return;
+  window.addEventListener('load',()=>{setTimeout(()=>{
+    const f=$('f');if(f&&f.requestSubmit)f.requestSubmit();else $('go').click();},300);});
+})();
 async function runImageCheck(){
   if(!pendingImage)return;
   const go=$('go');go.disabled=true;go.textContent='…';
