@@ -354,5 +354,33 @@ with sync_playwright() as pw:
     if _again: fails.append("consent screen still showing after agreement")
     _b4.close()
 
+
+# DRAWER UX (app): tap outside closes it and returns to Check; tapping
+# the same tab again also closes it
+with sync_playwright() as pw:
+    _b5 = pw.chromium.launch()
+    _c5 = _b5.new_context(viewport={"width": 390, "height": 844}, has_touch=True, is_mobile=True)
+    _p5 = _c5.new_page()
+    _p5.route("**/*", lambda r: (
+        r.fulfill(status=200, content_type="application/json", body="[]")
+        if "/api/recent" in r.request.url else
+        (r.fulfill(status=200, content_type="text/html", body=html)
+         if "/x" in r.request.url else r.fulfill(status=404, body="nf"))))
+    _p5.goto("http://fake.test/x?app=1")
+    _p5.wait_for_timeout(400)
+    _p5.click('#tabbar button[data-tab="trending"]'); _p5.wait_for_timeout(300)
+    if not _p5.evaluate("document.getElementById('sb').classList.contains('open')"):
+        fails.append("drawer did not open")
+    _p5.mouse.click(370, 400); _p5.wait_for_timeout(300)
+    if _p5.evaluate("document.getElementById('sb').classList.contains('open')"):
+        fails.append("tap outside did not close drawer")
+    if _p5.evaluate("document.querySelector('#tabbar button.on').dataset.tab") != "check":
+        fails.append("tap outside did not return to Check")
+    _p5.click('#tabbar button[data-tab="trending"]'); _p5.wait_for_timeout(200)
+    _p5.click('#tabbar button[data-tab="trending"]'); _p5.wait_for_timeout(300)
+    if _p5.evaluate("document.getElementById('sb').classList.contains('open')"):
+        fails.append("tapping Trending again did not close drawer")
+    _b5.close()
+
 print("FAILURES:", fails) if fails else print(
-    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads, consent-gate")
+    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads, consent-gate, drawer-ux")

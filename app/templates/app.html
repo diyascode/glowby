@@ -108,6 +108,9 @@
   #sbBtn:hover{border-color:var(--brand);color:var(--ink)}
   #sb{position:fixed;top:0;left:0;bottom:0;width:280px;max-width:85vw;background:#12141d;border-right:1px solid var(--border);transform:translateX(-102%);transition:transform .25s ease;z-index:55;padding:60px 14px 20px;overflow-y:auto;text-align:left}
   #sb.open{transform:none;box-shadow:24px 0 60px -30px rgba(0,0,0,.8)}
+  /* tap the uncovered half of the screen to close the drawer */
+  #sbBackdrop{position:fixed;inset:0;z-index:54;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .25s ease}
+  #sb.open ~ #sbBackdrop, body.sb-open #sbBackdrop{opacity:1;pointer-events:auto}
   .sb-h{font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
   .sb-item{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;border-radius:9px;text-decoration:none;color:var(--ink2);font-size:.82rem;line-height:1.35}
   .sb-item:hover{background:var(--surface)}
@@ -408,6 +411,7 @@ html.light .uq-q{color:#111114}
   </nav>
 </header>
 <button id="sbBtn" aria-label="Open menu" title="Menu">☰</button>
+<div id="sbBackdrop" aria-hidden="true"></div>
 <nav id="sb" aria-label="Sidebar">
   <div class="sb-h" id="sbTrendHdr">Trending checks</div>
   <div id="sbTrend"><div class="sb-empty">Loading…</div></div>
@@ -498,7 +502,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.44.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.44.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -1118,7 +1122,8 @@ $('f').addEventListener('submit',async(e)=>{
 
 // ---- sidebar: trending (server) + your checks (this device) ----
 const sb=$('sb');
-$('sbBtn').onclick=()=>{sb.classList.toggle('open');try{localStorage.setItem('sbOpen',sb.classList.contains('open')?'1':'0');}catch(e){}};
+$('sbBtn').onclick=()=>{sb.classList.toggle('open');document.body.classList.toggle('sb-open',sb.classList.contains('open'));try{localStorage.setItem('sbOpen',sb.classList.contains('open')?'1':'0');}catch(e){}};
+(function(){const bd=document.getElementById('sbBackdrop');if(bd)bd.addEventListener('click',()=>{sb.classList.remove('open');document.body.classList.remove('sb-open');try{localStorage.setItem('sbOpen','0');}catch(e){}});})();
 try{if(localStorage.getItem('sbOpen')==='1')sb.classList.add('open');}catch(e){}
 function sbItem(c){
   const col=ringColor(c.score===null||c.score===undefined?null:c.score);
@@ -1356,19 +1361,32 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
   }
   function closeDrawer(){ if(sb) sb.classList.remove('open'); }
 
+  var currentTab = 'check';
+  function syncBody(){ document.body.classList.toggle('sb-open', !!(sb && sb.classList.contains('open'))); }
+  function goHome(){ closeDrawer(); setActive('check'); currentTab='check'; syncBody();
+    try{localStorage.setItem('sbOpen','0');}catch(e){} }
+
   bar.addEventListener('click', function(e){
     var btn = e.target.closest('button'); if(!btn) return;
-    var tab = btn.dataset.tab; setActive(tab);
-    if(tab==='check'){ closeDrawer(); window.scrollTo({top:0,behavior:'smooth'});
+    var tab = btn.dataset.tab;
+    // tapping the SAME tab again (Trending/History) closes it — back home
+    if(tab===currentTab && (tab==='trending'||tab==='history') && sb && sb.classList.contains('open')){ goHome(); return; }
+    setActive(tab); currentTab = tab;
+    if(tab==='check'){ goHome(); window.scrollTo({top:0,behavior:'smooth'});
       var u = document.getElementById('url'); if(u) u.focus(); }
-    else if(tab==='trending'){ openDrawer(false); }
-    else if(tab==='history'){ openDrawer(true); }
-    else if(tab==='about'){ closeDrawer(); location.href='/about?app=1'; }
+    else if(tab==='trending'){ openDrawer(false); syncBody(); }
+    else if(tab==='history'){ openDrawer(true); syncBody(); }
+    else if(tab==='about'){ closeDrawer(); syncBody(); location.href='/about?app=1'; }
   });
-  // tapping the drawer's close returns to Check
-  if(sb) sb.addEventListener('click', function(e){
-    if(e.target===sb) { setActive('check'); }
-  });
+  // tapping the uncovered part of the screen closes the drawer — back home
+  var backdrop = document.getElementById('sbBackdrop');
+  if(backdrop) backdrop.addEventListener('click', goHome);
+  // swipe left on the drawer also closes it
+  if(sb){ var sx=null;
+    sb.addEventListener('touchstart', function(e){ sx=e.touches[0].clientX; }, {passive:true});
+    sb.addEventListener('touchend', function(e){ if(sx!==null && e.changedTouches[0].clientX < sx-60) goHome(); sx=null; }, {passive:true});
+  }
+  syncBody();
 })();
 </script>
 </body>
