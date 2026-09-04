@@ -772,6 +772,25 @@ _blk = _h60[_i60:_i60 + 900]
 if "runImageCheck()" not in _blk or "MAX=1568" not in _blk:
     fails.append("m60 receiver does not reuse the image check path")
 
+
+# 61. APP REVIEW 5.1.1/5.1.2: consent gate before any send, on every
+# path; privacy policy names data, recipients, uses, permission, and
+# third-party protection
+_h61 = open("app/templates/app.html").read()
+if 'id="consent"' not in _h61: fails.append("m61 consent screen missing")
+if "async function checkFetch(body){\n  await askConsent();" not in _h61:
+    fails.append("m61 checkFetch not gated")
+if "await askConsent();\n      const r=await fetch('/api/followup'" not in _h61:
+    fails.append("m61 follow-up not gated")
+for _n in ("Anthropic", "OpenAI", "Hive", "Google"):
+    if _n not in _h61[_h61.index('id="consent"'):_h61.index('id="consent"') + 2500]:
+        fails.append(f"m61 consent screen missing recipient {_n}")
+_t61 = open("app/templates/trust.html").read()
+for _needle, _tag in (('id="datasent"', "section"), ("What is collected and how", "collection"),
+                      ("All uses:", "uses"), ("Your permission:", "permission"),
+                      ("Protection by third parties", "equal-protection")):
+    if _needle not in _t61: fails.append(f"m61 privacy {_tag} missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 60/60 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff")
+    "FINAL MATRIX PASS: 61/61 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate")

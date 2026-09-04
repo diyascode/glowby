@@ -163,7 +163,7 @@
   and rules that all future checks use.</p>
 
   <h2 id="terms">Terms of use</h2>
-  <p class="muted">Plain-language beta terms. Last updated August 2026. By
+  <p class="muted">Plain-language beta terms. Last updated September 2026. By
   using Glowby you agree to these terms; if you do not agree, do not use the
   service.</p>
   <p><b>Glowby is AI-powered, and AI can be wrong.</b> Every score, verdict,
@@ -235,7 +235,7 @@
   the rest remains in effect.</p>
 
   <h2 id="privacy">Privacy</h2>
-  <p class="muted">What Glowby stores and why. Last updated August 2026.</p>
+  <p class="muted">What Glowby stores and why. Last updated September 2026.</p>
   <p><b>No accounts, no tracking profiles, no ads.</b> Glowby has no sign-up,
   sets no advertising cookies, and does not sell or share data for marketing.</p>
   <p><b>Uploaded images are never stored.</b> When you check a screenshot
@@ -243,6 +243,40 @@
   what it asserts, and discarded. Only the text description Glowby
   derives from it is kept (as the check's transcript). The photo itself
   never touches our database.</p>
+  <h3 id="datasent">What Glowby sends, to whom, and why</h3>
+  <p><b>What is collected and how:</b> only what you actively submit — a
+  video or article link you paste, a claim you type, a question you ask,
+  or a photo/screenshot you choose. Glowby collects nothing in the
+  background: no account, no contacts, no location, no device identifiers,
+  no advertising profile.</p>
+  <p><b>Where it goes and what each service does with it:</b></p>
+  <p>&bull; <b>Anthropic</b> (Claude models) receives the video's
+  transcript, sampled video frames or your photo, your typed claim or
+  question, and the evidence Glowby gathers &mdash; to extract claims,
+  judge them against evidence, and answer follow-up questions.</p>
+  <p>&bull; <b>OpenAI</b> (Whisper) receives the audio track of a video that
+  has no captions &mdash; to turn speech into text.</p>
+  <p>&bull; <b>Hive</b> receives your photo or a few sampled video frames
+  &mdash; only when the AI-media check runs &mdash; to detect AI-generated
+  or deepfake imagery.</p>
+  <p>&bull; <b>Google</b> receives the video link (captions and fact-check
+  database) and, only when the AI-media check runs, an image or frame for
+  reverse image search.</p>
+  <p>&bull; <b>Webshare</b> (proxy) carries Glowby's request to fetch the
+  public video. <b>Cloudflare</b> sees your connection for bot protection.
+  <b>Railway</b> hosts Glowby and its database.</p>
+  <p><b>All uses:</b> producing the fact-check result you asked for,
+  storing that result so share links work, and improving Glowby's rules
+  when a mistake is reported. Nothing is used for advertising, and nothing
+  is sold.</p>
+  <p><b>Your permission:</b> before the first check on a device, Glowby
+  shows this disclosure and asks you to agree. Nothing is sent until you
+  do. In the app, that agreement screen appears before your first check.</p>
+  <p><b>Protection by third parties:</b> each service processes the data
+  under its own privacy policy and contractual data-protection terms
+  (Anthropic, OpenAI, Hive, Google Cloud, Webshare, Cloudflare, Railway),
+  which provide protection equal to Glowby's own commitments above: no
+  sale, no advertising use, processing limited to the service requested.</p>
   <p><b>AI-media detection processing.</b> When a check qualifies for the
   AI-media analysis (or you tap "detect AI"), the image or a few sampled
   video frames are sent to detection services — Hive (synthetic-media

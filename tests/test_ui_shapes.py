@@ -318,5 +318,41 @@ with sync_playwright() as pw:
         fails.append("class-scores-read count missing from panel")
     _b3.close()
 
+
+# CONSENT GATE (App Review 5.1.1/5.1.2): first submit shows the consent
+# screen and sends NOTHING; agreeing sends and the screen stays gone.
+with sync_playwright() as pw:
+    _b4 = pw.chromium.launch()
+    _p4 = _b4.new_page(viewport={"width": 390, "height": 760})
+    _sent = []
+    def _route4(r):
+        u = r.request.url
+        if "/api/check" in u:
+            _sent.append(u)
+            r.fulfill(status=200, content_type="application/json",
+                      body=json.dumps({"job_id": "j1"}))
+        elif "/api/job/" in u:
+            r.fulfill(status=200, content_type="application/json",
+                      body=json.dumps({"status": "error", "error": "stop"}))
+        elif u.endswith("/x"):
+            r.fulfill(status=200, content_type="text/html", body=html)
+        else:
+            r.fulfill(status=404, body="nf")
+    _p4.route("**/*", _route4)
+    _p4.goto("http://fake.test/x")
+    _p4.wait_for_timeout(400)
+    _p4.fill("#url", "https://youtube.com/shorts/abc123")
+    _p4.click("#go")
+    _p4.wait_for_timeout(400)
+    _vis = _p4.evaluate("!document.getElementById('consent').hidden")
+    if not _vis: fails.append("consent screen did not appear on first submit")
+    if _sent: fails.append("request was sent BEFORE consent")
+    _p4.click("#consentOk")
+    _p4.wait_for_timeout(700)
+    if not _sent: fails.append("request not sent after consent")
+    _again = _p4.evaluate("!document.getElementById('consent').hidden")
+    if _again: fails.append("consent screen still showing after agreement")
+    _b4.close()
+
 print("FAILURES:", fails) if fails else print(
-    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads")
+    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads, consent-gate")

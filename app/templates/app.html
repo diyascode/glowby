@@ -324,6 +324,15 @@ footer{font-size:.74rem}
 .sugg2{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-top:15px}
 .sugg2 span{font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:default;user-select:none}
 /* "+ask" — optional question that rides along with a check */
+#consent{position:fixed;inset:0;z-index:9000;background:rgba(8,8,16,.92);display:flex;align-items:center;justify-content:center;padding:20px}
+#consent[hidden]{display:none}
+.consent-card{text-align:left;max-width:520px;background:#14141f;border:1px solid #2a2a3c;border-radius:18px;padding:22px 22px 18px;color:var(--ink);font-size:14.5px;line-height:1.5}
+.consent-t{font-weight:700;font-size:18px;margin-bottom:10px}
+.consent-card ul{margin:8px 0 10px 18px;padding:0}
+.consent-card li{margin:4px 0}
+.consent-card a{color:#8a7cff}
+#consentOk{width:100%;margin-top:6px;padding:12px;border:none;border-radius:12px;background:linear-gradient(100deg,#8A7CFF,#C46BF2);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+.consent-sub{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
 #qWrap{max-width:560px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center}
 #qChip,#aiChip{display:inline-flex;align-items:center;gap:6px;background:none;
   border:1px dashed rgba(255,255,255,.22);color:var(--muted);border-radius:999px;
@@ -432,6 +441,23 @@ html.light .uq-q{color:#111114}
   </form>
   <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
 
+  <!-- APP REVIEW 5.1.1/5.1.2: explicit permission BEFORE the first send.
+       Shown once per device; nothing is sent until "Agree" is tapped. -->
+  <div id="consent" hidden>
+    <div class="consent-card">
+      <div class="consent-t">Before Glowby checks anything</div>
+      <p>To fact-check, Glowby sends <b>what you submit</b> — the link you paste, the text you type, or the photo you choose — to AI services that analyze it:</p>
+      <ul>
+        <li><b>Anthropic</b> — reads the transcript, video frames and evidence to judge claims</li>
+        <li><b>OpenAI</b> — turns speech in videos into text</li>
+        <li><b>Hive</b> — checks whether photos or video frames are AI-generated (only when that check runs)</li>
+        <li><b>Google</b> — captions, the fact-check database, and reverse image search</li>
+      </ul>
+      <p>Nothing else is sent: no account, no contacts, no location, no tracking profile. Photos are analyzed and discarded, never stored. Each service protects the data under its own policy, linked in our <a href="/about#privacy" target="_blank">privacy policy</a>.</p>
+      <button type="button" id="consentOk">I agree — continue</button>
+      <div class="consent-sub">You can review this any time on the <a href="/about#datasent" target="_blank">privacy page</a>.</div>
+    </div>
+  </div>
   <div id="qWrap">
     <div style="display:flex;gap:10px;align-items:center;justify-content:center">
     <button id="qChip" type="button">＋ ask</button>
@@ -462,6 +488,7 @@ html.light .uq-q{color:#111114}
   </div>
   <div class="mini"><span class="alive">● Glowby is alive</span></div>
   <div class="aihint">AI-powered · results can be wrong · always check the sources</div>
+  <div class="aihint" style="margin-top:2px">What you submit (a link, text, or photo) is sent to AI services to check it · <a href="/about#datasent" target="_blank" style="color:inherit">what &amp; who</a></div>
 
   <div id="steps">
     <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
@@ -471,7 +498,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.44.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.44.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -530,7 +557,20 @@ function aiChipState(){const c=document.getElementById('aiChip');return c?(c.dat
 function resetAiChip(){const c=document.getElementById('aiChip');if(!c)return;
   c.dataset.state='off';c.classList.remove('on','only');c.textContent='＋ detect AI';c.title='Also run the AI media check';}
 function detectAiOn(){return aiChipState()!=='off';}
+// CONSENT GATE — Apple 5.1.1(i)/5.1.2(i): permission before the first
+// send, on every path (link, photo, shared link, follow-up AI check).
+function hasConsent(){try{return localStorage.getItem('gbConsent')==='1';}catch(e){return false;}}
+function askConsent(){
+  return new Promise((resolve)=>{
+    if(hasConsent())return resolve(true);
+    const box=$('consent');if(!box)return resolve(true);
+    box.hidden=false;
+    $('consentOk').onclick=()=>{try{localStorage.setItem('gbConsent','1');}catch(e){}
+      box.hidden=true;resolve(true);};
+  });
+}
 async function checkFetch(body){
+  await askConsent();
   const uq=userQuestion(); if(uq)body.question=uq;
   if(detectAiOn())body.detect_ai=true;
   if(aiChipState()==='only')body.ai_only=true;
@@ -837,6 +877,7 @@ function render(){
     const hold=document.createElement('div'); hold.className='fu-a fu-wait'; hold.textContent='thinking…';
     th.appendChild(hold);
     try{
+      await askConsent();
       const r=await fetch('/api/followup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key,question:q})});
       const j=await r.json();
       hold.classList.remove('fu-wait');
