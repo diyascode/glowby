@@ -794,6 +794,92 @@ for _needle, _tag in (('id="datasent"', "section"), ("What is collected and how"
                       ("Protection by third parties", "equal-protection")):
     if _needle not in _t61: fails.append(f"m61 privacy {_tag} missing")
 
+
+# 62. COST CONTROLS: cached static prefix (no dynamic fields before the
+# claim block), tiered judge model (strong on high stakes, cheap on low),
+# lean vision defaults
+from app.agents import judge as _j62, vision as _v62
+_rules62 = _j62.PROMPT.split("=== YOUR CATEGORY: ")[0]
+if "{" in _rules62.replace("{{", "").replace("}}", ""):
+    fails.append("m62 shared rules block has a dynamic field (breaks cross-category cache)")
+_static62 = _j62.PROMPT.split("Claim (routed to")[0]
+for _f in ("{search_rounds}", "{posted_date}", "{claim}", "{risk_level}"):
+    if _f in _static62: fails.append(f"m62 dynamic field {_f} breaks caching")
+if open("app/agents/judge.py").read().count("_cache_block(") < 3:
+    fails.append("m62 expected two cache breakpoints (rules, rubric)")
+if "cache_control" not in open("app/agents/judge.py").read():
+    fails.append("m62 no prompt caching")
+if _j62.pick_judge_model({"bucket": "health"}) != _j62.MODEL:
+    fails.append("m62 health not on strong judge")
+if _j62.pick_judge_model({"bucket": "politics"}) != _j62.MODEL:
+    fails.append("m62 politics not on strong judge")
+if _j62.pick_judge_model({"bucket": "sports", "risk_level": "high"}) != _j62.MODEL:
+    fails.append("m62 high-risk not on strong judge")
+if _j62.pick_judge_model({"bucket": "sports", "public_safety_risk": True}) != _j62.MODEL:
+    fails.append("m62 safety not on strong judge")
+if _j62.pick_judge_model({"bucket": "other", "media_context": "AI"}) != _j62.MODEL:
+    fails.append("m62 AI-footage case not on strong judge")
+if _j62.JUDGE_TIERING and _j62.pick_judge_model({"bucket": "entertainment"}) == _j62.MODEL:
+    fails.append("m62 low-stakes not tiered down")
+if _v62.MAX_FRAMES > 4: fails.append("m62 vision frames not lean")
+
+
+# 63. LONG-LIVED CACHE: 1h TTL requested with safe fallback; hourly
+# keep-alive exists and re-reads the SHARED rules block only
+from app.agents import judge as _j63
+_cb = _j63._cache_block("x")
+if _cb["cache_control"].get("ttl") != "1h" and _j63.CACHE_TTL == "1h":
+    fails.append("m63 ttl not applied")
+_j63._ttl_supported["ok"] = False
+if "ttl" in _j63._cache_block("x")["cache_control"]:
+    fails.append("m63 fallback does not drop ttl")
+_j63._ttl_supported["ok"] = True
+_blocks = _j63.cached_system_blocks("health")
+if len(_blocks) != 2 or "Fleet-wide rules" not in _blocks[0]["text"] or "RUBRIC" not in _blocks[1]["text"]:
+    fails.append("m63 cached blocks malformed")
+_m63 = open("app/main.py").read()
+if "keep_cache_warm" not in _m63 or "50 * 60" not in _m63:
+    fails.append("m63 keep-alive loop missing")
+_j63src = open("app/agents/judge.py").read()
+if '"ttl" in str(_e).lower()' not in _j63src:
+    fails.append("m63 no retry-without-ttl on rejection")
+
+
+# 64. ADMIN ACCURACY: monthly unique visitors exist (month-rotating code,
+# not daily sums), dashboard metrics are fetched independently, dates
+# survive the timestamp-to-label path
+_s64 = open("app/storage.py").read()
+if "def visitor_monthly" not in _s64 or "monthly_visitors" not in _s64:
+    fails.append("m64 monthly uniques missing")
+if "d.day::date::text" not in _s64: fails.append("m64 daily series still returns timestamps")
+if "def q(sql, params=None):" not in _s64: fails.append("m64 quality_stats not fault-isolated")
+_m64 = open("app/main.py").read()
+if 'f"{salt}:month:{month}:{ip}"' not in _m64: fails.append("m64 monthly hash not salted per month")
+_a64 = open("app/templates/admin.html").read()
+if "String(d).slice(0,10)" not in _a64: fails.append("m64 fmtDay still NaN-prone")
+if "Visitors this month" not in _a64: fails.append("m64 monthly tile missing")
+_t64 = open("app/templates/trust.html").read()
+if "changes every calendar month" not in _t64: fails.append("m64 privacy wording not updated")
+
+
+# 65. ADMIN CALENDAR: month + day endpoints exist, are admin-guarded,
+# validate input, and the page has the calendar UI; default budget $30
+_m65 = open("app/main.py").read()
+for _r in ("/api/admin/calendar", "/api/admin/day"):
+    if _r not in _m65: fails.append(f"m65 route {_r} missing")
+    _i = _m65.index(_r)
+    if "_admin_ok(key)" not in _m65[_i:_i + 500]: fails.append(f"m65 {_r} unguarded")
+if 're.fullmatch(r"\\d{4}-\\d{2}-\\d{2}", date or "")' not in _m65:
+    fails.append("m65 day endpoint does not validate date")
+if 'os.environ.get("GLOWBY_DAILY_BUDGET_USD", "30")' not in _m65:
+    fails.append("m65 default daily budget not $30")
+_s65 = open("app/storage.py").read()
+if "def month_calendar" not in _s65 or "def day_detail" not in _s65:
+    fails.append("m65 storage calendar functions missing")
+_a65 = open("app/templates/admin.html").read()
+for _n in ('id="cal"', "loadCalendar(", "loadDay(", 'id="dayDetail"'):
+    if _n not in _a65: fails.append(f"m65 admin calendar UI missing {_n}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 61/61 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate")
+    "FINAL MATRIX PASS: 65/65 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar")

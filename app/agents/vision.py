@@ -14,8 +14,10 @@ to the judges.
 
 import os
 
-MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
-MAX_FRAMES = 6
+# COST: the eyes describe on-screen text and scenes; the small model does
+# this well at a fifth of the price. Override with GLOWBY_VISION_MODEL.
+MODEL = os.environ.get("GLOWBY_VISION_MODEL", "claude-haiku-4-5")
+MAX_FRAMES = int(os.environ.get("GLOWBY_VISION_FRAMES", "4"))
 NOTHING = "NOTHING_CHECKABLE"
 
 PROMPT = """You are the EYES of Glowby, a fact-checking service. These are \

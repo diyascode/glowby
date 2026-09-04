@@ -215,9 +215,9 @@ def search_web_evidence(claim: str, deep: bool = False):
     for tools, wait in attempts:
         if deep:  # deeper round gets more searches AND more page-reads
             tools = [dict(t) for t in tools]
-            tools[0]["max_uses"] = 6
+            tools[0]["max_uses"] = 4
             if len(tools) > 1:
-                tools[1]["max_uses"] = 2
+                tools[1]["max_uses"] = 1
         if wait:
             _time.sleep(wait)
         try:

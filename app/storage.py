@@ -364,37 +364,43 @@ def resolve_mistake_report(report_id: int, status: str, note: str = "") -> bool:
 
 
 def quality_stats() -> dict:
-    """Aggregate quality metrics from stored checks. {} on failure."""
+    """Aggregate quality metrics from stored checks. Each metric is
+    fetched independently so one missing table (e.g. mistake_reports on
+    a fresh database) never blanks the whole dashboard."""
     conn = _get_conn()
     if conn is None:
         return {}
-    try:
-        out = {}
-        with conn.cursor() as cur:
-            cur.execute("SELECT count(*), COALESCE(sum(hits), 0) FROM checks")
-            row = cur.fetchone()
-            out["checks_stored"] = row[0]
-            out["total_views"] = int(row[1])
-            cur.execute(
-                "SELECT result->'report'->>'headline_state', count(*) "
-                "FROM checks GROUP BY 1 ORDER BY 2 DESC")
-            out["verdict_distribution"] = {
-                (r[0] or "unknown"): r[1] for r in cur.fetchall()}
-            # videos only: typed claims/questions finish much faster and
-            # would flatter the number; cache hits never re-run, so they
-            # were never in it.
-            cur.execute(
-                "SELECT round(avg((result->'timings'->>'total_s')::float)::numeric, 1) "
-                "FROM checks WHERE result->'timings'->>'total_s' IS NOT NULL "
-                "AND result->>'transcript_source' IS DISTINCT FROM 'typed'")
-            row = cur.fetchone()
-            out["avg_check_seconds"] = float(row[0]) if row and row[0] is not None else None
-            cur.execute(
-                "SELECT status, count(*) FROM mistake_reports GROUP BY 1")
-            out["reports_by_status"] = {r[0]: r[1] for r in cur.fetchall()}
-        return out
-    except Exception:
-        return {}
+    out = {}
+
+    def q(sql, params=None):
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, params or ())
+                return cur.fetchall()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return None
+
+    r = q("SELECT count(*), COALESCE(sum(hits), 0) FROM checks")
+    if r:
+        out["checks_stored"] = r[0][0]
+        out["total_views"] = int(r[0][1])
+    r = q("SELECT result->'report'->>'headline_state', count(*) "
+          "FROM checks GROUP BY 1 ORDER BY 2 DESC")
+    if r is not None:
+        out["verdict_distribution"] = {(x[0] or "unknown"): x[1] for x in r}
+    r = q("SELECT round(avg((result->'timings'->>'total_s')::float)::numeric, 1) "
+          "FROM checks WHERE result->'timings'->>'total_s' IS NOT NULL "
+          "AND result->>'transcript_source' IS DISTINCT FROM 'typed'")
+    if r:
+        out["avg_check_seconds"] = float(r[0][0]) if r[0][0] is not None else None
+    r = q("SELECT status, count(*) FROM mistake_reports GROUP BY 1")
+    if r is not None:
+        out["reports_by_status"] = {x[0]: x[1] for x in r}
+    return out
 
 
 # ------------------------------------------------------------ daily usage
@@ -438,7 +444,7 @@ def daily_usage_series(days: int = 14) -> list:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT d.day::text, COALESCE(u.checks, 0),
+                SELECT d.day::date::text, COALESCE(u.checks, 0),
                        COALESCE(u.est_cost, 0)
                 FROM generate_series(
                     CURRENT_DATE - %s::int + 1, CURRENT_DATE, '1 day'
@@ -620,3 +626,120 @@ def today_usage():
         return (row[0], float(row[1])) if row else (0, 0.0)
     except Exception:
         return (0, 0.0)
+
+
+# ------------------------------------------------------------ monthly uniques
+# A second code that rotates MONTHLY (never across months, no IP stored)
+# so "unique visitors this month" is a real number, not daily counts
+# summed. Grand total = sum of monthly uniques, labeled as such.
+
+
+def record_visitor_month(month_hash: str) -> None:
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS monthly_visitors (
+                    month TEXT NOT NULL,
+                    visitor TEXT NOT NULL,
+                    PRIMARY KEY (month, visitor)
+                )
+                """
+            )
+            cur.execute(
+                "INSERT INTO monthly_visitors (month, visitor) "
+                "VALUES (to_char(CURRENT_DATE, 'YYYY-MM'), %s) ON CONFLICT DO NOTHING",
+                (month_hash[:64],),
+            )
+    except Exception:
+        pass
+
+
+def visitor_monthly() -> list:
+    """[{'month': 'YYYY-MM', 'unique': n}] newest first. [] on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT month, count(*) FROM monthly_visitors "
+                        "GROUP BY month ORDER BY month DESC")
+            return [{"month": r[0], "unique": r[1]} for r in cur.fetchall()]
+    except Exception:
+        return []
+
+
+# ------------------------------------------------------------ calendar
+def month_calendar(month: str) -> list:
+    """Per-day rows for a 'YYYY-MM' month: unique visitors, fresh checks,
+    est cost. Every day of the month is present (zeros where quiet)."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                WITH days AS (
+                  SELECT generate_series(
+                    to_date(%s || '-01', 'YYYY-MM-DD'),
+                    (to_date(%s || '-01', 'YYYY-MM-DD') + interval '1 month' - interval '1 day')::date,
+                    '1 day')::date AS day
+                ),
+                v AS (SELECT day, count(*) AS visitors FROM daily_visitors GROUP BY day)
+                SELECT d.day::text, COALESCE(v.visitors, 0),
+                       COALESCE(u.checks, 0), COALESCE(u.est_cost, 0)
+                FROM days d
+                LEFT JOIN v ON v.day = d.day
+                LEFT JOIN daily_usage u ON u.day = d.day
+                ORDER BY d.day
+                """,
+                (month, month),
+            )
+            return [{"day": r[0], "visitors": int(r[1]), "checks": int(r[2]),
+                     "est_cost": float(r[3])} for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def day_detail(day: str) -> dict:
+    """One day: visitors, fresh checks, est cost, events, and the checks
+    stored that day (title + state + views) for the admin calendar."""
+    conn = _get_conn()
+    out = {"day": day, "visitors": 0, "checks": 0, "est_cost": 0.0,
+           "events": {}, "stored": []}
+    if conn is None:
+        return out
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM daily_visitors WHERE day = %s::date", (day,))
+            out["visitors"] = int(cur.fetchone()[0])
+            cur.execute("SELECT checks, est_cost FROM daily_usage WHERE day = %s::date", (day,))
+            r = cur.fetchone()
+            if r:
+                out["checks"], out["est_cost"] = int(r[0]), float(r[1])
+            cur.execute("SELECT kind, count FROM daily_events WHERE day = %s::date", (day,))
+            out["events"] = {r[0]: int(r[1]) for r in cur.fetchall()}
+            cur.execute(
+                """
+                SELECT url_key, result->>'title', result->'report'->>'headline_state',
+                       result->'report'->>'headline_score', hits
+                FROM checks WHERE created_at::date = %s::date
+                ORDER BY created_at DESC LIMIT 100
+                """, (day,))
+            out["stored"] = [{"url_key": r[0], "title": (r[1] or "")[:90],
+                              "state": r[2], "score": r[3], "views": int(r[4] or 0)}
+                             for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return out

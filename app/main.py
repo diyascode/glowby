@@ -49,6 +49,10 @@ from app.storage import (
     get_cached,
     record_event,
     record_visitor,
+    record_visitor_month,
+    visitor_monthly,
+    month_calendar,
+    day_detail,
     visitor_series,
     visitor_total,
     list_mistake_reports,
@@ -64,7 +68,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.44.4"
+VERSION = "0.45.4"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -75,7 +79,7 @@ AUTHENTICITY_ENABLED = os.environ.get("GLOWBY_AUTHENTICITY", "") == "1"
 MAX_CLAIMS_WITH_EVIDENCE = 3
 
 # ---- armor knobs (all overridable via Railway Variables) ----
-DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "10"))
+DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "30"))
 COST_PER_CHECK_EST = float(os.environ.get("GLOWBY_COST_PER_CHECK_EST", "0.15"))
 RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "25"))
 JOB_TIMEOUT_SECONDS = int(os.environ.get("GLOWBY_JOB_TIMEOUT_SECONDS", "480"))
@@ -1180,6 +1184,11 @@ def _count_visitor(request) -> None:
         salt = ADMIN_KEY or "glowby"
         vh = hashlib.sha256(f"{salt}:{day}:{ip}".encode()).hexdigest()[:32]
         threading.Thread(target=record_visitor, args=(vh,), daemon=True).start()
+        # monthly code: one count per person per calendar month, never
+        # linkable across months (different salt input), no IP stored
+        month = time.strftime("%Y-%m")
+        mh = hashlib.sha256(f"{salt}:month:{month}:{ip}".encode()).hexdigest()[:32]
+        threading.Thread(target=record_visitor_month, args=(mh,), daemon=True).start()
     except Exception:
         pass
 
@@ -1245,6 +1254,26 @@ def api_admin_hivetest(key: str = ""):
     return out
 
 
+@app.get("/api/admin/calendar")
+def api_admin_calendar(key: str = "", month: str = ""):
+    """Per-day visitors / fresh checks / cost for one month (admin)."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if not re.fullmatch(r"\d{4}-\d{2}", month or ""):
+        month = time.strftime("%Y-%m")
+    return {"month": month, "days": month_calendar(month)}
+
+
+@app.get("/api/admin/day")
+def api_admin_day(key: str = "", date: str = ""):
+    """Everything about one day (admin)."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""):
+        return JSONResponse(status_code=422, content={"detail": "date must be YYYY-MM-DD"})
+    return day_detail(date)
+
+
 @app.get("/api/admin/stats")
 def api_admin_stats(key: str = ""):
     if not _admin_ok(key):
@@ -1252,6 +1281,7 @@ def api_admin_stats(key: str = ""):
     checks, spent = today_usage()
     stats = quality_stats()
     stats["today"] = {"fresh_checks": checks, "est_spend_usd": spent}
+    stats["cache_keepalive"] = _CACHE_WARM
     return stats
 
 
@@ -1275,6 +1305,7 @@ def api_admin_dashboard(key: str = ""):
             "visitors": visitors.get(today_key, 0),
         },
         "visitors_total": visitor_total(),
+        "visitors_monthly": visitor_monthly(),
         "total_checks": total_fresh_checks(),
         "cache_ttl_days": CACHE_TTL_DAYS,
         "events": event_stats(),
@@ -1421,3 +1452,22 @@ from app.precheck import start_precheck  # noqa: E402
 @app.on_event("startup")
 def _startup_precheck() -> None:
     start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST)
+    # CACHE KEEP-ALIVE: re-read the judges' shared rulebook every 50 min
+    # so its 1-hour cache never lapses — the rulebook is then billed at
+    # 10% on every real judge call, all day, every category. Cost: pennies.
+    if os.environ.get("GLOWBY_CACHE_KEEPALIVE", "1") == "1":
+        def _warm_loop():
+            import time as _t
+            _t.sleep(20)  # let the app finish booting
+            while True:
+                try:
+                    from app.agents.judge import keep_cache_warm
+                    _CACHE_WARM["last"] = keep_cache_warm()
+                    _CACHE_WARM["at"] = _t.time()
+                except Exception as e:
+                    _CACHE_WARM["last"] = {"error": str(e)[:160]}
+                _t.sleep(50 * 60)
+        threading.Thread(target=_warm_loop, daemon=True).start()
+
+
+_CACHE_WARM = {"last": None, "at": None}

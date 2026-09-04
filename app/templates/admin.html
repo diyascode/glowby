@@ -68,6 +68,26 @@ a{color:var(--brand);text-decoration:none}
 .empty{color:var(--muted);font-size:.85rem;padding:8px 0}
 /* verdict distribution */
 .dist{display:flex;flex-wrap:wrap;gap:8px}
+.calnav{display:flex;align-items:center;gap:10px;font-weight:600}
+.calnav button{background:none;border:1px solid var(--line,#2a2a3c);color:inherit;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:12px}
+.cal .dow{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted,#8a86a3);text-align:center;padding-bottom:2px}
+.cal .day{border:1px solid var(--line,#2a2a3c);border-radius:10px;padding:6px 6px 5px;min-height:58px;cursor:pointer;text-align:left;background:rgba(255,255,255,.02);position:relative}
+.cal .day:hover{border-color:#8a7cff}
+.cal .day.on{border-color:#8a7cff;box-shadow:0 0 0 1px #8a7cff inset}
+.cal .day.today .n{color:#8a7cff;font-weight:700}
+.cal .day.empty{visibility:hidden}
+.cal .day .n{font-size:12px;color:var(--muted,#8a86a3)}
+.cal .day .v{font-size:13px;font-weight:600;margin-top:4px}
+.cal .day .c{font-size:11px;color:var(--muted,#8a86a3)}
+.cal .day .heat{position:absolute;left:6px;right:6px;bottom:4px;height:3px;border-radius:2px;background:#8a7cff;opacity:.85}
+.daydetail{margin-top:14px}
+.daydetail .row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.daydetail .row b{font-size:18px}
+.daydetail .row span{font-size:12px;color:var(--muted,#8a86a3)}
+.daydetail table{width:100%;border-collapse:collapse;font-size:12.5px}
+.daydetail td{padding:5px 6px;border-top:1px solid var(--line,#2a2a3c);vertical-align:top}
+.daydetail td.t{max-width:60%}
 .dist span{font-size:.76rem;color:var(--ink2);background:var(--surface2);border:1px solid var(--border);
   border-radius:999px;padding:4px 12px}
 .dist b{color:var(--ink)}
@@ -125,6 +145,16 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Calendar — tap a day</h2>
+        <div class="calnav"><button id="calPrev" type="button">‹</button><span id="calTitle"></span><button id="calNext" type="button">›</button></div>
+      </div>
+      <div id="cal" class="cal"></div>
+      <div id="dayDetail" class="daydetail"></div>
+    </div>
+
+    <div class="card"><h2>Unique visitors by month</h2><div id="monthly" class="dist"></div></div>
+<div class="card">
       <h2>Verdict distribution (all stored checks)</h2>
       <div class="dist" id="dist"></div>
     </div>
@@ -158,8 +188,63 @@ function scoreClass(sc, state){
   if (sc >= 4.5) return "sy";
   return "sr";
 }
-function fmtDay(d){ // "2026-08-01" -> "8/1"
-  const p = d.split("-"); return (+p[1]) + "/" + (+p[2]);
+async function loadCalendar(month){
+  const el = $("cal"), title = $("calTitle"); if (!el) return;
+  title.textContent = month;
+  let data = { days: [] };
+  try {
+    const r = await fetch("/api/admin/calendar?key=" + encodeURIComponent(KEY) + "&month=" + month);
+    if (r.ok) data = await r.json();
+  } catch(e){}
+  const days = data.days || [];
+  const maxV = Math.max(1, ...days.map(x => x.visitors));
+  const first = new Date(month + "-01T00:00:00");
+  const lead = first.getDay(); // 0 = Sunday
+  const today = new Date().toISOString().slice(0,10);
+  let h = ["S","M","T","W","T","F","S"].map(d => `<div class="dow">${d}</div>`).join("");
+  for (let i = 0; i < lead; i++) h += '<div class="day empty"></div>';
+  days.forEach(x => {
+    const n = +x.day.slice(8,10);
+    const heat = Math.round(x.visitors / maxV * 100);
+    h += `<button type="button" class="day${x.day===today?' today':''}" data-day="${x.day}">` +
+         `<div class="n">${n}</div><div class="v">${x.visitors}</div><div class="c">${x.checks} chk · $${x.est_cost.toFixed(2)}</div>` +
+         (x.visitors ? `<div class="heat" style="width:${Math.max(8,heat)}%"></div>` : "") + `</button>`;
+  });
+  el.innerHTML = h;
+  el.querySelectorAll(".day[data-day]").forEach(b => b.onclick = () => {
+    el.querySelectorAll(".day").forEach(x => x.classList.remove("on")); b.classList.add("on");
+    loadDay(b.dataset.day);
+  });
+  $("calPrev").onclick = () => { window.__calMonth = shiftMonth(month, -1); loadCalendar(window.__calMonth); };
+  $("calNext").onclick = () => { window.__calMonth = shiftMonth(month, +1); loadCalendar(window.__calMonth); };
+  const dd = $("dayDetail"); if (dd && !dd.innerHTML) dd.innerHTML = '<div class="empty">Tap a day to see its unique visitors, fresh checks, spend, and what was checked.</div>';
+}
+function shiftMonth(m, delta){
+  const d = new Date(m + "-01T00:00:00"); d.setMonth(d.getMonth() + delta);
+  return d.toISOString().slice(0,7);
+}
+async function loadDay(day){
+  const dd = $("dayDetail"); dd.innerHTML = '<div class="empty">Loading…</div>';
+  let d = null;
+  try {
+    const r = await fetch("/api/admin/day?key=" + encodeURIComponent(KEY) + "&date=" + day);
+    if (r.ok) d = await r.json();
+  } catch(e){}
+  if (!d){ dd.innerHTML = '<div class="empty">Could not load that day.</div>'; return; }
+  const ev = d.events || {};
+  let h = `<div class="row"><div><b>${d.visitors}</b><br><span>unique visitors</span></div>` +
+          `<div><b>${d.checks}</b><br><span>fresh checks</span></div>` +
+          `<div><b>$${(d.est_cost||0).toFixed(2)}</b><br><span>est. spend</span></div>` +
+          `<div><b>${(ev.copy_result||0)+(ev.copy_link||0)+(ev.share||0)}</b><br><span>results shared/copied</span></div></div>`;
+  h += `<div class="s" style="margin-bottom:6px">${esc(day)} · what was checked (${(d.stored||[]).length})</div>`;
+  if (!(d.stored||[]).length) h += '<div class="empty">No checks stored that day.</div>';
+  else h += "<table>" + d.stored.map(c =>
+      `<tr><td class="t"><a href="/r/${encodeURIComponent(c.url_key)}" target="_blank" style="color:inherit">${esc(c.title||c.url_key)}</a></td>` +
+      `<td>${esc(c.state||"")}</td><td>${c.score ?? "—"}</td><td>${c.views} views</td></tr>`).join("") + "</table>";
+  dd.innerHTML = h;
+}
+function fmtDay(d){ // "2026-08-01" (or a timestamp) -> "8/1"
+  const p = String(d).slice(0,10).split("-"); return (+p[1]) + "/" + (+p[2]);
 }
 function tile(k, v, sub, cls){
   return `<div class="tile"><div class="k">${k}</div>` +
@@ -197,7 +282,13 @@ function render(d){
 
   $("tiles").innerHTML =
     tile("Visitors today", t.visitors ?? 0, "unique people (anonymous count)") +
-    tile("Visitors all-time", d.visitors_total ?? 0, "daily counts added up") +
+    (() => {
+      const mo = d.visitors_monthly || [];
+      const thisMo = mo.length ? mo[0].unique : 0;
+      const grand = mo.reduce((a, x) => a + (x.unique || 0), 0);
+      return tile("Visitors this month", thisMo, "unique people (one count per person per month)") +
+             tile("Visitors all-time", grand || (d.visitors_total ?? 0), grand ? "sum of monthly uniques" : "daily counts added up (monthly count starts today)");
+    })() +
     tile("Total checks", d.total_checks ?? 0, "all-time, fresh checks run") +
     tile("Checks today", t.fresh_checks ?? 0, "fresh (not cached views)") +
     `<div class="tile"><div class="k">Spend today</div>` +
@@ -231,6 +322,17 @@ function render(d){
     });
     $("chartWrap").innerHTML = bars + "</div>" + labs + "</div>";
   }
+
+  // ---- calendar (click a day for its visitors / checks / spend) ----
+  if (!window.__calMonth) window.__calMonth = new Date().toISOString().slice(0,7);
+  loadCalendar(window.__calMonth);
+
+  // ---- unique visitors by month ----
+  const mo = d.visitors_monthly || [];
+  const moEl = $("monthly");
+  if (moEl) moEl.innerHTML = mo.length
+    ? mo.map(x => `<span>${esc(x.month)} <b>${x.unique}</b></span>`).join("")
+    : '<div class="empty">Monthly counting started with this version — first numbers appear today.</div>';
 
   // ---- verdict distribution ----
   const dist = s.verdict_distribution || {};

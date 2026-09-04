@@ -32,6 +32,79 @@ import os
 import re
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
+# COST TIERING: a cheaper judge for low-stakes buckets; the strong model
+# stays on every category where a wrong verdict can hurt someone.
+# Disable with GLOWBY_JUDGE_TIERING=0.
+JUDGE_MODEL_LOW = os.environ.get("GLOWBY_JUDGE_MODEL_LOW", "claude-haiku-4-5")
+JUDGE_TIERING = os.environ.get("GLOWBY_JUDGE_TIERING", "1") == "1"
+HIGH_STAKES_BUCKETS = {"politics", "news", "health", "law", "science",
+                       "finance", "economy", "safety", "crime"}
+
+
+# CACHE LIFETIME: "1h" keeps the rulebook warm for an hour per use (the
+# longest Anthropic offers); a keep-alive ping in main.py re-reads it
+# hourly so it effectively never expires. If the API ever rejects the
+# option, we fall back to the default 5-minute cache — never fail a check.
+CACHE_TTL = os.environ.get("GLOWBY_CACHE_TTL", "1h")
+_ttl_supported = {"ok": True}
+
+
+def _cache_block(text: str) -> dict:
+    cc = {"type": "ephemeral"}
+    if CACHE_TTL and CACHE_TTL != "5m" and _ttl_supported["ok"]:
+        cc["ttl"] = CACHE_TTL
+    return {"type": "text", "text": text, "cache_control": cc}
+
+
+def cached_system_blocks(bucket: str) -> list:
+    """The two cacheable prefixes (shared rules, category rubric) exactly
+    as judge_with_rubric sends them — used by the hourly keep-alive."""
+    prompt = PROMPT.format(
+        bucket=bucket, rubric=load_rubric(bucket), secondary_note="",
+        risk_level="low", claim="", fact_checks="", web_sources="",
+        max_sources=MAX_KEY_SOURCES, search_rounds=1, posted_date="unknown")
+    rub_at = prompt.index("=== YOUR CATEGORY: ")
+    claim_at = prompt.index("Claim (routed to ")
+    return [_cache_block(prompt[:rub_at]), _cache_block(prompt[rub_at:claim_at])]
+
+
+def keep_cache_warm(models=None) -> dict:
+    """One tiny call per judge model that re-reads the shared rulebook so
+    its 1-hour cache never lapses. ~2.8k cached tokens + a 1-token reply:
+    pennies per day. Returns a small status dict (for the admin page)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"ok": False, "detail": "no api key"}
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+    out = {}
+    for m in (models or sorted({MODEL, JUDGE_MODEL_LOW})):
+        try:
+            blocks = cached_system_blocks("other")[:1]  # rules only
+            r = client.messages.create(
+                model=m, max_tokens=1, system=blocks,
+                messages=[{"role": "user", "content": "ok"}])
+            u = getattr(r, "usage", None)
+            out[m] = {"ok": True,
+                      "cache_read": getattr(u, "cache_read_input_tokens", None),
+                      "cache_write": getattr(u, "cache_creation_input_tokens", None)}
+        except Exception as e:
+            out[m] = {"ok": False, "detail": str(e)[:160]}
+    return out
+
+
+def pick_judge_model(claim: dict) -> str:
+    """Strong model for high-stakes; cheap model for the rest."""
+    if not JUDGE_TIERING:
+        return MODEL
+    bucket = str(claim.get("bucket", "other")).lower()
+    if bucket in HIGH_STAKES_BUCKETS:
+        return MODEL
+    if claim.get("public_safety_risk") or str(claim.get("risk_level", "")).lower() == "high":
+        return MODEL
+    if claim.get("media_context"):  # AI-footage cases need the careful judge
+        return MODEL
+    return JUDGE_MODEL_LOW
 SPECS_DIR = os.path.join(os.path.dirname(__file__), "..", "specs")
 
 VALID_STATES = {
@@ -78,15 +151,10 @@ def _no_evidence(evidence) -> bool:
     return not (evidence.get("fact_checks") or evidence.get("web_sources"))
 
 
-PROMPT = """You are the {bucket} category judge for Glowby, a fact-checking \
-service. Judge the claim below using ONLY the evidence provided and your \
-category rubric. Do not use outside knowledge to settle the claim; the \
-rubric tells you how to weigh the evidence.
-
-=== YOUR CATEGORY RUBRIC (authoritative — follow its evidence hierarchy, \
-score bands, caps, and harm gates) ===
-{rubric}
-=== END RUBRIC ===
+PROMPT = """You are a category judge for Glowby, a fact-checking service. \
+Judge the claim using ONLY the evidence provided and your category rubric. \
+Do not use outside knowledge to settle the claim; the rubric tells you how \
+to weigh the evidence.
 
 Fleet-wide rules (always apply):
 - TRUTH SCORE is 0.0-9.9, one decimal. Higher = better supported by \
@@ -127,14 +195,14 @@ event.
 - BUT SILENCE CAN SPEAK (expected-coverage test): when the claim is of a \
 kind that would CERTAINLY produce major, easily-findable coverage if true \
 (the death of a public figure, a major disaster, a landmark law, a \
-record-shattering event) AND a two-round search ({search_rounds} rounds ran \
-for this claim) still found no trace of it, that silence is genuine \
+record-shattering event) AND the search (the number of rounds that ran \
+is stated in the claim block below) still found no trace of it, that silence is genuine \
 evidence AGAINST the claim: rule "insufficient" with a LOW score (1.5-3.5) \
 and say plainly: "if this were true, major coverage would exist — none was \
 found."
 - BURDEN OF PROOF ON ASSERTIONS: a claim that asserts something WORKS, IS \
-TRUE, or HAPPENED carries the burden of proof. If the hunt (after \
-{search_rounds} rounds) found no supporting evidence for an asserted \
+TRUE, or HAPPENED carries the burden of proof. If the hunt (see the \
+rounds count in the claim block) found no supporting evidence for an asserted \
 treatment effect, product claim, or factual assertion whose evidence \
 SHOULD exist if real (studies, records, coverage), rule "insufficient" \
 with a low score (2.0-3.5): "no evidence supports this claim" IS a \
@@ -159,7 +227,7 @@ conflicts with the wider consensus, SAY SO in the verdict and score by \
 the consensus, noting the outlier.
 - TEMPORAL FAIRNESS: the truth score protects a viewer acting on this \
 claim TODAY. But when the claim was accurate at the time the video was \
-posted (posted: {posted_date}) and was later outdated by events, the \
+posted (the posting date is in the claim block) and was later outdated by events, the \
 verdict sentence MUST say so ("accurate when this video was posted; \
 outdated since ..."). Expired truth reads as partly_supported with a \
 mid-high score; a claim that was NEVER true reads much lower. Also watch \
@@ -242,11 +310,17 @@ or an event that did not happen at all.
 - COUNTS GROW IN DEVELOPING STORIES: casualty, missing-person, and \
 damage figures in disasters and breaking news RISE as reporting \
 matures. A lower figure that matched reporting at the video's posting \
-date ({posted_date}) and was later overtaken is EXPIRED TRUTH under \
+date (see the claim block) and was later overtaken is EXPIRED TRUTH under \
 temporal fairness: partly_supported, 6.0-7.0, with a verdict like \
 "about right when posted; the count has since risen to X".
 
-Claim (routed to {bucket}{secondary_note}, risk level {risk_level}): \
+=== YOUR CATEGORY: {bucket} — RUBRIC (authoritative — follow its evidence \
+hierarchy, score bands, caps, and harm gates) ===
+{rubric}
+=== END RUBRIC ===
+
+Claim (routed to {bucket}{secondary_note}, risk level {risk_level}; \
+video posted: {posted_date}; evidence search rounds that ran: {search_rounds}): \
 "{claim}"
 
 Evidence — professional fact-checker reviews:
@@ -323,15 +397,42 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
         posted_date=claim.get("posted_date") or "unknown",
     )
 
+    # PROMPT CACHING: everything before the claim block is identical for
+    # every claim in a bucket (fleet rules + rubric, ~5k tokens). It goes
+    # in a cached system block; only the claim + evidence are paid in full.
+    rub_at = prompt.index("=== YOUR CATEGORY: ")
+    claim_at = prompt.index("Claim (routed to ")
+    rules_part = prompt[:rub_at]            # identical for EVERY category
+    rubric_part = prompt[rub_at:claim_at]   # identical within a category
+    dynamic_part = prompt[claim_at:]        # this claim + its evidence
+    model = pick_judge_model(claim)
+
     client = anthropic.Anthropic(api_key=api_key)
     try:
         message = client.messages.create(
-            model=MODEL,
+            model=model,
             max_tokens=1200,
             temperature=0,  # same claim + same evidence -> same verdict
-            messages=[{"role": "user", "content": prompt}],
+            system=[_cache_block(rules_part), _cache_block(rubric_part)],
+            messages=[{"role": "user", "content": dynamic_part}],
         )
-    except Exception:
+    except Exception as _e:
+        # if the extended TTL itself is what got rejected, drop to the
+        # default 5-minute cache and retry ONCE — a check must never fail
+        # because of a caching option
+        if _ttl_supported["ok"] and "ttl" in str(_e).lower():
+            _ttl_supported["ok"] = False
+            try:
+                message = client.messages.create(
+                    model=model, max_tokens=1200, temperature=0,
+                    system=[_cache_block(rules_part), _cache_block(rubric_part)],
+                    messages=[{"role": "user", "content": dynamic_part}],
+                )
+            except Exception:
+                message = None
+        else:
+            message = None
+    if message is None:
         return {
             "truth_score": None,
             "verdict_state": "unverifiable",
