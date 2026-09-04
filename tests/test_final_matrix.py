@@ -647,8 +647,9 @@ if "html.appmode .beta2,html.appmode .ah-beta{display:none" not in _h48:
 if "html.appmode #mic,html.appmode .fu-mic{display:none" not in _h48:
     fails.append("m48 dead mic button still visible in app")
 _t48 = open("app/templates/trust.html").read()
-if "Glowby public beta" in _t48:
-    fails.append("m48 trust footer still says public beta")
+import re as _re48
+if _re48.search(r"(?i)\bbeta\b(?![^<]*\})", _t48.split("<style>")[-1].split("</style>")[-1]):
+    fails.append("m48 trust page still shows beta wording to users")
 
 
 # 49. NO SILENT SKIPS ON DEMAND: standby frames feed the detector, and a
