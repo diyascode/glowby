@@ -880,6 +880,36 @@ _a65 = open("app/templates/admin.html").read()
 for _n in ('id="cal"', "loadCalendar(", "loadDay(", 'id="dayDetail"'):
     if _n not in _a65: fails.append(f"m65 admin calendar UI missing {_n}")
 
+
+# 66. BRAVE SEARCH PATH: provider chosen by key, results parsed (web +
+# news, dedup, extra snippets), URLs restricted to real results, deep
+# round adds fact-check/hoax angles, technical failure falls back
+import os as _os66
+from app.agents import evidence as _ev66
+_os66.environ.pop("BRAVE_SEARCH_KEY", None)
+if _ev66.brave_available(): fails.append("m66 brave available without key")
+_os66.environ["BRAVE_SEARCH_KEY"] = "x"
+if not _ev66.brave_available(): fails.append("m66 brave not enabled with key")
+_os66.environ["GLOWBY_SEARCH_PROVIDER"] = "anthropic"
+if _ev66.brave_available(): fails.append("m66 provider override ignored")
+_os66.environ.pop("GLOWBY_SEARCH_PROVIDER", None); _os66.environ.pop("BRAVE_SEARCH_KEY", None)
+_r66 = _ev66.parse_brave_results({"web": {"results": [
+    {"title": "A", "url": "https://a.com/x", "description": "d", "extra_snippets": ["e1"]},
+    {"title": "dup", "url": "https://a.com/x", "description": "z"},
+    {"title": "bad", "url": "javascript:alert(1)", "description": "z"}]},
+    "news": {"results": [{"title": "N", "url": "https://n.com/y", "description": "nd"}]}})
+if [r["url"] for r in _r66] != ["https://a.com/x", "https://n.com/y"]:
+    fails.append(f"m66 brave parse wrong: {[r['url'] for r in _r66]}")
+if "e1" not in _r66[0]["snippet"]: fails.append("m66 extra snippets dropped")
+_e66 = open("app/agents/evidence.py").read()
+if 'if r["url"] not in seen' not in _e66 or "fact check" not in _e66 or "hoax debunk" not in _e66:
+    fails.append("m66 deep angles missing")
+if "return [s for s in parsed if s[\"url\"] in allowed]" not in _e66:
+    fails.append("m66 URL whitelist missing")
+if "return _search_web_anthropic(claim, deep=deep)" not in _e66:
+    fails.append("m66 fallback to built-in search missing")
+if "_DOC_CLAIM.search(claim)" not in _e66: fails.append("m66 document page-read missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 65/65 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar")
+    "FINAL MATRIX PASS: 66/66 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search")

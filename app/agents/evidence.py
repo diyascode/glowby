@@ -186,7 +186,165 @@ official page, recent news about them). Only return [] if you truly \
 exhausted these angles."""
 
 
+# ------------------------------------------------ Brave Search (cheap path)
+# Half the price of the built-in search tool, 1,000 free requests/month,
+# and one request returns up to 20 results with snippets — so a claim
+# needs ONE request where it used to need two searches. The small model
+# then reads the snippets and tags stances exactly as before. Provider is
+# chosen by the presence of BRAVE_SEARCH_KEY (override:
+# GLOWBY_SEARCH_PROVIDER=anthropic). Any Brave failure falls back to the
+# built-in tool, so a check never fails because of the cheaper path.
+
+BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
+BRAVE_COUNT = 12
+_DOC_CLAIM = re.compile(
+    r"\b(law|statute|bill|act|ruling|court|judge|study|paper|report|"
+    r"document|constitution|amendment|regulation|policy|contract)\b", re.I)
+
+
+def brave_available() -> bool:
+    if os.environ.get("GLOWBY_SEARCH_PROVIDER", "").lower() == "anthropic":
+        return False
+    return bool((os.environ.get("BRAVE_SEARCH_KEY") or "").strip())
+
+
+def _brave_query(q: str, count: int = BRAVE_COUNT) -> list:
+    """One Brave request -> [{title, url, snippet}]. Raises on failure."""
+    key = (os.environ.get("BRAVE_SEARCH_KEY") or "").strip()
+    params = urllib.parse.urlencode({"q": q[:400], "count": count,
+                                     "extra_snippets": "true",
+                                     "text_decorations": "false"})
+    req = urllib.request.Request(
+        f"{BRAVE_URL}?{params}",
+        headers={"Accept": "application/json",
+                 "Accept-Encoding": "identity",
+                 "X-Subscription-Token": key})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    return parse_brave_results(data)
+
+
+def parse_brave_results(data) -> list:
+    """Pure (unit-tested): flatten web + news results into simple dicts."""
+    out, seen = [], set()
+    if not isinstance(data, dict):
+        return out
+    buckets = []
+    for k in ("web", "news"):
+        sec = data.get(k) or {}
+        if isinstance(sec, dict) and isinstance(sec.get("results"), list):
+            buckets.extend(sec["results"])
+    for r in buckets:
+        if not isinstance(r, dict):
+            continue
+        url = str(r.get("url", "")).strip()
+        if not url.startswith("http") or url in seen:
+            continue
+        seen.add(url)
+        snip = str(r.get("description", "") or "")
+        extra = r.get("extra_snippets")
+        if isinstance(extra, list):
+            snip = (snip + " " + " ".join(str(x) for x in extra[:3])).strip()
+        out.append({"title": str(r.get("title", ""))[:160], "url": url,
+                    "snippet": snip[:600], "age": str(r.get("age", "") or "")[:40]})
+    return out
+
+
+def _fetch_page_text(url: str, limit: int = 6000) -> str:
+    """Read one page (deep round, document-type claims only)."""
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Glowby fact-check)"})
+        with urllib.request.urlopen(req, timeout=12) as r:
+            raw = r.read(400_000).decode("utf-8", "replace")
+        raw = re.sub(r"(?is)<(script|style|nav|footer|header).*?</\1>", " ", raw)
+        text = re.sub(r"(?s)<[^>]+>", " ", raw)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:limit]
+    except Exception:
+        return ""
+
+
+BRAVE_READ_PROMPT = """You are the evidence agent for Glowby, a fact-checking \
+service. Below are web search results for a claim. Using ONLY these results, \
+report what credible sources say. Prefer scientific bodies, major news \
+organizations, government agencies, and academic sources. Look for evidence \
+AGAINST the claim as well as for it.
+
+Claim: "{claim}"
+
+Search results:
+{results}
+{page}
+Respond with ONLY a JSON array (no prose, no code fences) of at most \
+{max_sources} sources, each:
+{{"source": "publisher name", "url": "https://...", "quote": "short relevant \
+quote or finding from that source", "stance": "supports|refutes|mixed|context"}}
+
+"stance" is the source's relationship TO THE CLAIM: supports = source agrees \
+claim is true; refutes = source contradicts the claim; mixed = partially \
+true; context = background that helps judge it. Use ONLY URLs that appear in \
+the results above — never invent one. If nothing is relevant, return []."""
+
+
+def _search_web_brave(claim: str, deep: bool = False):
+    """Brave results -> small model tags stances. list, or None on
+    technical failure (caller falls back to the built-in tool)."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+    queries = [claim[:300]]
+    if deep:
+        topic = claim[:120]
+        queries += [f"{topic} fact check", f"{topic} hoax debunk"]
+    results = []
+    seen = set()
+    for q in queries:
+        try:
+            for r in _brave_query(q):
+                if r["url"] not in seen:
+                    seen.add(r["url"])
+                    results.append(r)
+        except Exception:
+            if not results:
+                return None  # Brave itself failed -> fallback path
+    if not results:
+        return []
+    results = results[:20]
+    page = ""
+    if deep and _DOC_CLAIM.search(claim) and results:
+        txt = _fetch_page_text(results[0]["url"])
+        if txt:
+            page = (f"\nFull text of the top result ({results[0]['url']}), "
+                    f"trimmed:\n{txt}\n")
+    listing = "\n".join(
+        f"{i+1}. {r['title']} — {r['url']}" + (f" ({r['age']})" if r['age'] else "")
+        + f"\n   {r['snippet']}" for i, r in enumerate(results))
+    prompt = BRAVE_READ_PROMPT.format(claim=claim[:500], results=listing,
+                                      page=page, max_sources=MAX_WEB_SOURCES)
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+    try:
+        msg = client.messages.create(model=MODEL, max_tokens=1500,
+                                     temperature=0,
+                                     messages=[{"role": "user", "content": prompt}])
+    except Exception:
+        return None
+    raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+    parsed = parse_web_evidence(raw)
+    allowed = {r["url"] for r in results}
+    return [s for s in parsed if s["url"] in allowed]
+
+
 def search_web_evidence(claim: str, deep: bool = False):
+    if brave_available():
+        got = _search_web_brave(claim, deep=deep)
+        if got is not None:
+            return got
+        # Brave had a technical problem: fall through to the built-in tool
+    return _search_web_anthropic(claim, deep=deep)
+
+
+def _search_web_anthropic(claim: str, deep: bool = False):
     """Ask Claude (with web search) for stance-tagged sources.
 
     Returns a list (possibly empty = genuinely nothing found), or None

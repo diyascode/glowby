@@ -68,7 +68,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.45.4"
+VERSION = "0.46.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
