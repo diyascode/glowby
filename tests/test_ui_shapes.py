@@ -382,5 +382,38 @@ with sync_playwright() as pw:
         fails.append("tapping Trending again did not close drawer")
     _b5.close()
 
+
+# SHARED LINK RESPECTS THE CHIP: a link shared into the app must not
+# auto-run; the person's detect-AI choice must reach the server
+with sync_playwright() as pw:
+    _b6 = pw.chromium.launch()
+    _p6 = _b6.new_page(viewport={"width": 390, "height": 844})
+    _bodies = []
+    def _r6(r):
+        u = r.request.url
+        if "/api/check" in u:
+            _bodies.append(r.request.post_data or "")
+            r.fulfill(status=200, content_type="application/json", body=json.dumps({"job_id": "j"}))
+        elif "/api/job/" in u:
+            r.fulfill(status=200, content_type="application/json", body=json.dumps({"status": "error", "error": "stop"}))
+        elif "/api/recent" in u:
+            r.fulfill(status=200, content_type="application/json", body="[]")
+        elif "/x" in u:
+            r.fulfill(status=200, content_type="text/html", body=html)
+        else:
+            r.fulfill(status=404, body="nf")
+    _p6.route("**/*", _r6)
+    _p6.add_init_script("try{localStorage.setItem('gbConsent','1')}catch(e){}")
+    _p6.goto("http://fake.test/x?app=1&u=https%3A%2F%2Fyoutube.com%2Fshorts%2Fzz9")
+    _p6.wait_for_timeout(900)
+    if _bodies: fails.append("shared link auto-ran before the person chose")
+    if "zz9" not in _p6.input_value("#url"): fails.append("shared link not prefilled")
+    _p6.click("#aiChip"); _p6.click("#aiChip")   # -> AI only
+    _p6.click("#go"); _p6.wait_for_timeout(700)
+    if not _bodies: fails.append("shared link did not send on tap")
+    elif '"ai_only":true' not in _bodies[-1].replace(" ", ""):
+        fails.append("AI-only choice not sent for shared link: " + _bodies[-1][:120])
+    _b6.close()
+
 print("FAILURES:", fails) if fails else print(
-    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads, consent-gate, drawer-ux")
+    "UI SHAPES PASS: safety alert, unverified, mixed+parked+reel, XSS blocked, render-safe, caption-trim, webview-appmode, media-leads, consent-gate, drawer-ux, shared-link-chip")

@@ -779,8 +779,10 @@ if "runImageCheck()" not in _blk or "MAX=1568" not in _blk:
 # third-party protection
 _h61 = open("app/templates/app.html").read()
 if 'id="consent"' not in _h61: fails.append("m61 consent screen missing")
-if "async function checkFetch(body){\n  await askConsent();" not in _h61:
-    fails.append("m61 checkFetch not gated")
+_cf = _h61[_h61.index("async function checkFetch(body){"):]
+_cf = _cf[:_cf.index("fetch('/api/check'")]
+if "await askConsent();" not in _cf:
+    fails.append("m61 checkFetch not gated before fetch")
 if "await askConsent();\n      const r=await fetch('/api/followup'" not in _h61:
     fails.append("m61 follow-up not gated")
 for _n in ("Anthropic", "OpenAI", "Hive", "Google"):
