@@ -583,7 +583,7 @@ if "on_demand=detect_ai" not in _m43: fails.append("m43 gate not honoring flag")
 if 'req.detect_ai' not in _m43 or '_cau.get("stage") != 2' not in _m43:
     fails.append("m43 cache bypass missing")
 _h43 = open("app/templates/app.html").read()
-if 'id="aiChip"' not in _h43: fails.append("m43 chip missing")
+if 'id="modeSeg"' not in _h43: fails.append("m43 mode selector missing")
 if "detect_ai=true" not in _h43.replace(" ", ""): fails.append("m43 chip not sent")
 
 
@@ -760,7 +760,7 @@ if 'cached.get("media_only") and not req.ai_only' not in _m59:
     fails.append("m59 media-only cache served to full check")
 _h59 = open("app/templates/app.html").read()
 if _h59.count("resetAiChip();") < 3:
-    fails.append("m59 chip not reset on all submit paths")
+    fails.append("m59 mode not reset on all submit paths")
 
 
 # 60. NATIVE PHOTO HANDOFF: the page exposes glowbyReceiveImage and it
@@ -910,6 +910,18 @@ if "return _search_web_anthropic(claim, deep=deep)" not in _e66:
     fails.append("m66 fallback to built-in search missing")
 if "_DOC_CLAIM.search(claim)" not in _e66: fails.append("m66 document page-read missing")
 
+
+# 67. DESIGN: mode selector (three visible choices, honest hint, reset),
+# transcript as an overlay link, two-part follow-up
+_h67 = open("app/templates/app.html").read()
+for _n in ('data-mode="off"', 'data-mode="on"', 'data-mode="only"', "also runs automatically on high-stakes"):
+    if _n not in _h67: fails.append(f"m67 mode selector missing {_n}")
+if "function resetAiChip(){setMode('off');}" not in _h67: fails.append("m67 mode does not reset to Claims")
+if 'id="trOpen"' not in _h67 or 'id="trOverlay"' not in _h67: fails.append("m67 transcript overlay missing")
+if "<details><summary>Full transcript</summary>" in _h67: fails.append("m67 old transcript dump still present")
+if 'id="fuTabAsk"' not in _h67 or "Run AI detect on this video" not in _h67: fails.append("m67 follow-up tabs missing")
+if "ai_only:true,detect_ai:true,force:true" not in _h67.replace(" ", ""): fails.append("m67 AI tab does not run media-only")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 66/66 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search")
+    "FINAL MATRIX PASS: 67/67 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47")

@@ -408,7 +408,7 @@ with sync_playwright() as pw:
     _p6.wait_for_timeout(900)
     if _bodies: fails.append("shared link auto-ran before the person chose")
     if "zz9" not in _p6.input_value("#url"): fails.append("shared link not prefilled")
-    _p6.click("#aiChip"); _p6.click("#aiChip")   # -> AI only
+    _p6.click('#modeSeg button[data-mode="only"]')   # -> AI only
     _p6.click("#go"); _p6.wait_for_timeout(700)
     if not _bodies: fails.append("shared link did not send on tap")
     elif '"ai_only":true' not in _bodies[-1].replace(" ", ""):
