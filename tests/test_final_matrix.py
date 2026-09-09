@@ -928,6 +928,14 @@ if "＋ ask" in _h67 or "modeglow" in _h67: fails.append("m67 old +ask chip / gl
 if "window.setAsk=setAsk" not in _h67 or _h67.count("setAsk(false)") < 3: fails.append("m67 ask does not reset after a check")
 if "ai_only:true,detect_ai:true,force:true" not in _h67.replace(" ", ""): fails.append("m67 AI tab does not run media-only")
 
+# 68. APP STORE BADGE: on the website home (not inside the iOS app, not on
+# results) and linked from the Trust page; real listing id
+_h68 = open("app/templates/app.html").read(); _t68 = open("app/templates/trust.html").read()
+if "apps.apple.com/us/app/glowby/id6798336220" not in _h68: fails.append("m68 App Store link missing on home")
+if "apps.apple.com/us/app/glowby/id6798336220" not in _t68: fails.append("m68 App Store link missing on trust")
+if "html.appmode .storewrap{display:none !important}" not in _h68: fails.append("m68 badge would show inside the iOS app")
+if ".wrap.active .storewrap{display:none}" not in _h68: fails.append("m68 badge would show on results")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 67/67 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47")
+    "FINAL MATRIX PASS: 68/68 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge")
