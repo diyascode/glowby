@@ -345,30 +345,28 @@ html.light .tr-card{background:#fff;border-color:rgba(0,0,0,.14)}
 .consent-sub{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
 #go.pulse{animation:goPulse 1.2s ease-in-out 3}
 @keyframes goPulse{0%,100%{box-shadow:0 0 0 0 rgba(138,124,255,.55)}50%{box-shadow:0 0 0 10px rgba(138,124,255,0)}}
-.modewrap{display:flex;flex-direction:column;align-items:center;gap:6px}
-.modeseg{position:relative;display:inline-grid;grid-template-columns:repeat(3,1fr);gap:0;padding:4px;border-radius:999px;border:1px solid var(--border);background:var(--surface);isolation:isolate}
-.modeseg button{position:relative;z-index:2;background:none;border:none;color:var(--muted);cursor:pointer;padding:7px 16px;border-radius:999px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;transition:color .2s;white-space:nowrap}
-.modeseg button .mi{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;opacity:.8}
-.modeseg button.on{color:#fff}
-.modeseg button[data-mode="only"].on{color:#fff}
-.modeglow{position:absolute;z-index:1;top:4px;bottom:4px;left:4px;width:calc((100% - 8px)/3);border-radius:999px;background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 100%);transition:transform .25s cubic-bezier(.4,0,.2,1),background .25s;box-shadow:0 6px 18px -8px rgba(138,124,255,.9)}
-.modeseg[data-sel="on"] .modeglow{transform:translateX(100%);background:linear-gradient(100deg,#5B8CFF 0%,#38bdf8 100%)}
-.modeseg[data-sel="only"] .modeglow{transform:translateX(200%);background:linear-gradient(100deg,#a78bfa 0%,#f472b6 100%)}
-.modehint{font-size:11.5px;color:var(--muted);text-align:center;max-width:520px;min-height:1.3em}
-html.light .modeseg{background:#fff;border-color:rgba(0,0,0,.14)}
-html.light .modeseg button{color:#63636e}
-html.light .modeseg button.on{color:#fff}
-@media (max-width:420px){.modeseg button{padding:7px 10px;font-size:12px}.modeseg button .mi{display:none}}
+.modewrap{display:flex;flex-direction:column;align-items:center;gap:7px;width:100%}
+/* four small pills in ONE line: Claims · Claims + AI detect · AI detect only · Ask a question */
+.modeseg{display:flex;gap:5px;justify-content:center;flex-wrap:nowrap;max-width:100%;padding:2px 2px 6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.modeseg::-webkit-scrollbar{display:none}
+.modeseg button{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);color:var(--muted);cursor:pointer;padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:color .2s,background .2s,border-color .2s,box-shadow .2s,transform .15s;line-height:1}
+.modeseg button:hover{color:var(--ink);border-color:rgba(255,255,255,.28)}
+.modeseg button:active{transform:scale(.97)}
+.modeseg button svg{width:11px;height:11px;flex:none;opacity:.85}
+.modeseg button .ms{display:none}
+.modeseg button.on{color:#fff;border-color:transparent;background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 100%);box-shadow:0 6px 18px -8px rgba(138,124,255,.95)}
+.modeseg button.on svg{opacity:1}
+.modeseg button[data-mode="on"].on{background:linear-gradient(100deg,#5B8CFF 0%,#38bdf8 100%);box-shadow:0 6px 18px -8px rgba(56,189,248,.95)}
+.modeseg button[data-mode="only"].on{background:linear-gradient(100deg,#a78bfa 0%,#f472b6 100%);box-shadow:0 6px 18px -8px rgba(244,114,182,.9)}
+.modeseg button#qChip.on{background:rgba(138,124,255,.16);border-color:rgba(138,124,255,.7);color:#d6d0ff;box-shadow:none}
+.modehint{font-size:11px;color:var(--muted);text-align:center;max-width:520px;min-height:1.3em}
+html.light .modeseg button{background:#fff;border-color:rgba(0,0,0,.14);color:#63636e}
+html.light .modeseg button:hover{color:#111114;border-color:rgba(0,0,0,.3)}
+html.light .modeseg button.on{color:#fff;border-color:transparent}
+html.light .modeseg button#qChip.on{background:rgba(138,124,255,.12);border-color:rgba(138,124,255,.7);color:#5b4fd6}
+@media (max-width:480px){.modeseg{gap:4px}.modeseg button{padding:5px 8px;font-size:11px;gap:4px}.modeseg button .ml{display:none}.modeseg button .ms{display:inline}}
 #qWrap{max-width:560px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center}
-#qChip,#aiChip{display:inline-flex;align-items:center;gap:6px;background:none;
-  border:1px dashed rgba(255,255,255,.22);color:var(--muted);border-radius:999px;
-  padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:all .18s}
-#qChip:hover{border-color:rgba(138,124,255,.55);color:var(--ink);border-style:solid}
-#aiChip{display:inline-flex;align-items:center;gap:6px;background:none}
-#aiChip:hover{border-color:rgba(56,189,248,.55);color:var(--ink);border-style:solid}
-#aiChip.on{border-style:solid;border-color:rgba(56,189,248,.75);color:#38bdf8}
-#aiChip.only{border-color:rgba(167,139,250,.85);color:#a78bfa}
-#qOpen{display:flex;align-items:center;gap:9px;width:100%;
+#qOpen{display:flex;align-items:center;gap:9px;width:100%;margin-top:10px;
   background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);
   border-radius:999px;padding:4px 6px 4px 16px;backdrop-filter:blur(12px)}
 #qOpen[hidden]{display:none}
@@ -379,8 +377,6 @@ html.light .modeseg button.on{color:#fff}
 #qOpen .qx{width:26px;height:26px;border-radius:50%;border:none;background:rgba(255,255,255,.08);
   color:var(--muted);font-size:12px;cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
 #qOpen .qx:hover{color:var(--ink)}
-html.light #qChip{border-color:rgba(0,0,0,.25);color:#63636e}
-html.light #qChip:hover{border-color:#111114;color:#111114}
 html.light #qOpen{background:#fff;border-color:rgba(0,0,0,.2)}
 html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 /* the answer-first card on results */
@@ -504,23 +500,17 @@ html.light .uq-q{color:#111114}
   </div>
   <div id="qWrap">
     <div class="modewrap">
-      <div id="modeSeg" class="modeseg" role="radiogroup" aria-label="What to check">
-        <button type="button" data-mode="off" class="on" role="radio" aria-checked="true">
-          <span class="mi">✓</span><span class="ml">Claims</span></button>
-        <button type="button" data-mode="on" role="radio" aria-checked="false">
-          <span class="mi">✓+AI</span><span class="ml">Claims + AI</span></button>
-        <button type="button" data-mode="only" role="radio" aria-checked="false">
-          <span class="mi">AI</span><span class="ml">AI only</span></button>
-        <i class="modeglow" aria-hidden="true"></i>
+      <div id="modeSeg" class="modeseg" role="group" aria-label="What to check">
+        <button type="button" data-mode="off" class="on" role="radio" aria-checked="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span class="ml">Claims</span><span class="ms">Claims</span></button>
+        <button type="button" data-mode="on" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg><span class="ml">Claims + AI detect</span><span class="ms">Claims + AI</span></button>
+        <button type="button" data-mode="only" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M12 8l1.2 2.8L16 12l-2.8 1.2L12 16l-1.2-2.8L8 12l2.8-1.2z"/></svg><span class="ml">AI detect only</span><span class="ms">AI only</span></button>
+        <button type="button" id="qChip" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.8a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.4M12 16.5h.01"/></svg><span class="ml">Ask a question</span><span class="ms">Ask</span></button>
       </div>
       <div id="modeHint" class="modehint">Fact-checks the claims · the AI check also runs automatically on high-stakes videos</div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-top:8px">
-    <button id="qChip" type="button">＋ ask</button>
-    </div>
     <div id="qOpen" hidden>
       <span class="qmark">?</span>
-      <input type="text" id="qIn" maxlength="400" placeholder="What do you want to know about this link?" autocomplete="off">
+      <input type="text" id="qIn" maxlength="400" placeholder="Your question…" autocomplete="off">
       <button type="button" class="qx" id="qClose" aria-label="Remove question">✕</button>
     </div>
   </div>
@@ -553,7 +543,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.47.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.48.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -589,8 +579,10 @@ async function tsGet(){
   const chip=document.getElementById('qChip'),open=document.getElementById('qOpen'),
         qin=document.getElementById('qIn'),qx=document.getElementById('qClose');
   if(!chip)return;
-  chip.onclick=()=>{chip.hidden=true;open.hidden=false;qin.focus();};
-  qx.onclick=()=>{qin.value='';open.hidden=true;chip.hidden=false;};
+  const setAsk=(on)=>{open.hidden=!on;chip.classList.toggle('on',on);chip.setAttribute('aria-pressed',on?'true':'false');if(on)qin.focus();else qin.value='';};
+  window.setAsk=setAsk;
+  chip.onclick=()=>setAsk(open.hidden);
+  qx.onclick=()=>setAsk(false);
   qin.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();
     document.getElementById('f').requestSubmit?document.getElementById('f').requestSubmit():document.getElementById('go').click();}});
 })();
@@ -1107,8 +1099,7 @@ async function runImageCheck(){
     $('steps').style.display='none';
     currentView='list';render();
     (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
-      const qo=document.getElementById('qOpen'),qc=document.getElementById('qChip');
-      if(qo)qo.hidden=true;if(qc)qc.hidden=false;}})();
+      if(window.setAsk)setAsk(false);}})();
     resetAiChip();
   }catch(err){
     clearPending();
@@ -1135,8 +1126,7 @@ $('f').addEventListener('submit',async(e)=>{
     currentView='list';render();
     // question was delivered with this check — reset the +ask chip
     (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
-      const qo=document.getElementById('qOpen'),qc=document.getElementById('qChip');
-      if(qo)qo.hidden=true;if(qc)qc.hidden=false;}})();
+      if(window.setAsk)setAsk(false);}})();
     resetAiChip();
   }catch(err){
     clearPending();

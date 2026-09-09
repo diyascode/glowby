@@ -920,6 +920,12 @@ if "function resetAiChip(){setMode('off');}" not in _h67: fails.append("m67 mode
 if 'id="trOpen"' not in _h67 or 'id="trOverlay"' not in _h67: fails.append("m67 transcript overlay missing")
 if "<details><summary>Full transcript</summary>" in _h67: fails.append("m67 old transcript dump still present")
 if 'id="fuTabAsk"' not in _h67 or "Run AI detect on this video" not in _h67: fails.append("m67 follow-up tabs missing")
+# v0.48: ONE row of four small pills — the 4th ("Ask a question") lives inside #modeSeg;
+# the old standalone "+ ask" chip and sliding glow are gone (no duplication)
+_seg67 = _h67[_h67.index('id="modeSeg"'):_h67.index('id="modeHint"')]
+if 'id="qChip"' not in _seg67 or "Ask a question" not in _seg67: fails.append("m67 ask button not in the mode row")
+if "＋ ask" in _h67 or "modeglow" in _h67: fails.append("m67 old +ask chip / glow still present")
+if "window.setAsk=setAsk" not in _h67 or _h67.count("setAsk(false)") < 3: fails.append("m67 ask does not reset after a check")
 if "ai_only:true,detect_ai:true,force:true" not in _h67.replace(" ", ""): fails.append("m67 AI tab does not run media-only")
 
 print("MATRIX FAILURES:", fails) if fails else print(
