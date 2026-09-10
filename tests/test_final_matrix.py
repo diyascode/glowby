@@ -936,6 +936,49 @@ if "apps.apple.com/us/app/glowby/id6798336220" not in _t68: fails.append("m68 Ap
 if "html.appmode .storewrap{display:none !important}" not in _h68: fails.append("m68 badge would show inside the iOS app")
 if ".wrap.active .storewrap{display:none}" not in _h68: fails.append("m68 badge would show on results")
 
+# 69. CYBERCAB INCIDENT: claim 1's own search came back empty while claims
+# 2 and 3 in the same check found the NHTSA press release; the judge scored
+# claim 1 "silence" 2.5 and it became the headline. Three guards:
+# (a) Brave gets keyword queries, entity-first when cut; (b) an empty DEEP
+# Brave round falls through to the built-in search; (c) sibling rescue
+# re-judges an evidence-less claim with the sources its siblings found.
+from app.agents.evidence import compact_query as _cq
+_cyb = ("Tesla's new Cybercab lacks a steering wheel, brakes, gas pedal, and side "
+        "mirrors, and the NHTSA is questioning how this vehicle was certified for road use.")
+_q = _cq(_cyb)
+if len(_q.split()) > 12 or "NHTSA" not in _q or "Cybercab" not in _q or " the " in f" {_q} ":
+    fails.append(f"m69 compact query wrong: {_q!r}")
+if "NHTSA" not in _cq(_cyb, 8): fails.append("m69 entity-first cut lost NHTSA")
+if _cq("") != "" and len(_cq("")) > 0: fails.append("m69 empty claim not handled")
+_ev69 = open("app/agents/evidence.py").read()
+if "if got is not None and (got or not deep):" not in _ev69: fails.append("m69 empty deep round does not fall through")
+if "queries = [compact]" not in _ev69: fails.append("m69 Brave round 1 not using the compact query")
+import app.main as _m69
+_claims = [
+    {"claim": _cyb, "evidence": {"fact_checks": [], "web_sources": []},
+     "verdict": {"truth_score": 2.5, "verdict_state": "insufficient", "evidence_strength": "none"}},
+    {"claim": "Tesla self-certifies its vehicles in the US.",
+     "evidence": {"fact_checks": [], "web_sources": [{"source": "NHTSA", "url": "https://www.nhtsa.gov/x", "quote": "NHTSA opened an investigation into the Cybercab", "stance": "supports"}]},
+     "verdict": {"truth_score": 8.5, "verdict_state": "supported", "evidence_strength": "strong"}},
+]
+_calls = []
+def _fake_judge(c, ev):
+    _calls.append(ev)
+    return {"truth_score": 7.0, "verdict_state": "supported", "verdict": "ok", "evidence_strength": "moderate", "key_sources": []}
+_orig = _m69.judge_with_rubric
+_m69.judge_with_rubric = _fake_judge
+try:
+    _n = _m69._sibling_rescue(_claims, [0, 1])
+finally:
+    _m69.judge_with_rubric = _orig
+if _n != 1: fails.append(f"m69 sibling rescue re-judged {_n} claims, expected 1")
+if not _claims[0].get("sibling_rescued") or _claims[0]["verdict"]["truth_score"] != 7.0: fails.append("m69 rescued verdict not applied")
+if _claims[1]["verdict"]["truth_score"] != 8.5: fails.append("m69 rescue touched a claim that had evidence")
+if not (_calls and _calls[0]["web_sources"] and _calls[0]["web_sources"][0].get("from_sibling") and _calls[0]["web_sources"][0]["stance"] == "context"):
+    fails.append("m69 sibling sources not tagged/downgraded")
+_j69 = open("app/agents/judge.py").read()
+if "SAME-VIDEO EVIDENCE COUNTS" not in _j69 or "found for another claim in this video" not in _j69: fails.append("m69 judge rule/tag missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 68/68 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge")
+    "FINAL MATRIX PASS: 69/69 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue")

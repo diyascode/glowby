@@ -200,6 +200,11 @@ is stated in the claim block below) still found no trace of it, that silence is 
 evidence AGAINST the claim: rule "insufficient" with a LOW score (1.5-3.5) \
 and say plainly: "if this were true, major coverage would exist — none was \
 found."
+- SAME-VIDEO EVIDENCE COUNTS: sources marked [context · found for another \
+claim in this video] were located while checking a DIFFERENT claim from the \
+same video. Read them for what they say about THIS claim. If they cover the \
+same event, person, or product, they are evidence here — the silence test \
+above does NOT apply, and "no evidence found" would be false.
 - BURDEN OF PROOF ON ASSERTIONS: a claim that asserts something WORKS, IS \
 TRUE, or HAPPENED carries the burden of proof. If the hunt (see the \
 rounds count in the claim block) found no supporting evidence for an asserted \
@@ -474,8 +479,13 @@ def _format_web_sources(evidence: dict) -> str:
     rows = evidence.get("web_sources") or []
     if not rows:
         return "(none found)"
+    def _tag(r):
+        st = r.get("stance", "?")
+        if r.get("from_sibling"):
+            return f"{st} · found for another claim in this video"
+        return st
     return "\n".join(
-        f'- {r.get("source", "?")} [{r.get("stance", "?")}]: '
+        f'- {r.get("source", "?")} [{_tag(r)}]: '
         f'"{r.get("quote", "")}" — {r.get("url", "")}'
         for r in rows
     )

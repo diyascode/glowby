@@ -68,7 +68,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.48.2"
+VERSION = "0.49.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -241,6 +241,64 @@ def _looks_like_question(text: str) -> bool:
 def _stop_words():
     return {"the", "a", "an", "of", "to", "in", "on", "as", "is", "was",
             "were", "and", "or", "that", "this", "it", "for", "by", "with"}
+
+
+def _has_real_evidence(ev) -> bool:
+    if not isinstance(ev, dict):
+        return False
+    if ev.get("fact_checks"):
+        return True
+    return any((w or {}).get("stance") in ("supports", "refutes", "mixed")
+               for w in (ev.get("web_sources") or []))
+
+
+def _sibling_rescue(claims, selected) -> int:
+    """SIBLING RESCUE — the Cybercab incident: claims 2 and 3 of a video
+    found the NHTSA press release and NYT coverage; claim 1's own search
+    came back empty and the judge scored it 2.5 for "silence", which
+    became the headline. Now, after every claim is judged, a claim with
+    NO real evidence of its own is judged AGAIN with the sources its
+    sibling claims found (tagged as such, stance downgraded to context).
+    No extra search; one extra judge call, only on the failing case.
+    Returns the number of claims re-judged."""
+    pool, seen = [], set()
+    for i in selected:
+        ev = claims[i].get("evidence") or {}
+        for w in ev.get("web_sources") or []:
+            u = (w or {}).get("url")
+            if u and u not in seen and not w.get("from_sibling"):
+                seen.add(u)
+                pool.append(dict(w, stance="context", from_sibling=True,
+                                 sibling_claim=(claims[i].get("claim") or "")[:140]))
+    if not pool:
+        return 0
+    rescued = 0
+    for i in selected:
+        c = claims[i]
+        ev = c.get("evidence") or {}
+        v = c.get("verdict") or {}
+        if _has_real_evidence(ev):
+            continue
+        if v.get("verdict_state") not in ("insufficient", "unverifiable", "contradicted"):
+            continue
+        own = {(w or {}).get("url") for w in (ev.get("web_sources") or [])}
+        extra = [w for w in pool if w["url"] not in own][:6]
+        if not extra:
+            continue
+        ev2 = dict(ev)
+        ev2["web_sources"] = list(ev.get("web_sources") or []) + extra
+        ev2["sibling_pool"] = True
+        try:
+            v2 = judge_with_rubric(c, ev2)
+        except Exception:
+            continue
+        if isinstance(v2, dict) and v2.get("verdict_state"):
+            c["evidence"] = ev2
+            c["verdict"] = v2
+            c["sibling_rescued"] = True
+            rescued += 1
+    return rescued
+
 
 
 def _merge_prior_evidence(claim_text: str, evidence: dict,
@@ -632,6 +690,13 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
 
             with ThreadPoolExecutor(max_workers=len(selected)) as ex:
                 list(ex.map(_verify_staggered, enumerate(selected)))
+            # second look: claims that found nothing on their own get the
+            # sources their sibling claims found (see _sibling_rescue)
+            try:
+                if _sibling_rescue(claims, selected):
+                    _publish_partial(job_id, result, claims)
+            except Exception:
+                pass
 
         _set_job(job_id, stage="assembling")
         t_verify = time.time() - t0 - t_fetch - t_route

@@ -286,16 +286,58 @@ true; context = background that helps judge it. Use ONLY URLs that appear in \
 the results above — never invent one. If nothing is relevant, return []."""
 
 
+_STOP = set("""a an the and or but nor so yet of in on at to for from by with without
+about as into onto over under than then that this these those there here is are was were be
+been being has have had do does did not no its it's it he she they them his her their our
+your you we i me my us who whom which what when where why how also very just may might can
+could should would will shall new says said say according while during after before because
+questioning question lacks lack rather instead""".split())
+
+
+def compact_query(claim: str, max_terms: int = 12) -> str:
+    """Pure (unit-tested): turn a long claim sentence into the keyword query
+    a web search engine actually answers well. Keeps proper nouns, numbers
+    and content words; drops function words; when it must cut, it keeps
+    the NAMES and NUMBERS (the entities) over ordinary words, then restores
+    sentence order. The Cybercab lesson: a 28-word sentence returned
+    nothing on Brave while a keyword version of the same claim finds the
+    NHTSA press release on the first page."""
+    text = re.sub(r"[^\w\s'-]", " ", claim or "")
+    toks = []
+    for tok in text.split():
+        t = re.sub(r"'s$", "", tok.strip("'-"))
+        if not t or t.lower() in _STOP:
+            continue
+        if len(t) < 3 and not t.isdigit():
+            continue
+        toks.append(t)
+    if len(toks) > max_terms:
+        # entity-first cut: capitalised words and numbers survive
+        keep = [i for i, t in enumerate(toks) if t[:1].isupper() or any(ch.isdigit() for ch in t)]
+        rest = [i for i in range(len(toks)) if i not in keep]
+        chosen = sorted((keep + rest)[:max_terms])
+        toks = [toks[i] for i in chosen]
+    q = " ".join(toks)
+    return q if len(q) >= 8 else (claim or "")[:300]
+
+
 def _search_web_brave(claim: str, deep: bool = False):
     """Brave results -> small model tags stances. list, or None on
     technical failure (caller falls back to the built-in tool)."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    queries = [claim[:300]]
+    compact = compact_query(claim)
+    # round 1: the keyword form (what search engines answer); the full
+    # sentence only when it is short enough to work as a query itself.
+    queries = [compact]
+    if len(claim) <= 90 and claim.strip() != compact:
+        queries.append(claim[:300])
     if deep:
-        topic = claim[:120]
+        topic = compact_query(claim, max_terms=8)
         queries += [f"{topic} fact check", f"{topic} hoax debunk"]
+        if claim[:300] not in queries:
+            queries.append(claim[:300])
     results = []
     seen = set()
     for q in queries:
@@ -338,9 +380,12 @@ def _search_web_brave(claim: str, deep: bool = False):
 def search_web_evidence(claim: str, deep: bool = False):
     if brave_available():
         got = _search_web_brave(claim, deep=deep)
-        if got is not None:
+        if got is not None and (got or not deep):
             return got
-        # Brave had a technical problem: fall through to the built-in tool
+        # Brave had a technical problem — or the DEEP round still came back
+        # empty. An empty deep round is exactly the case where a wrong
+        # "silence" verdict is born, so it earns the built-in search once
+        # (it crafts its own query angles and documents what it searched).
     return _search_web_anthropic(claim, deep=deep)
 
 
