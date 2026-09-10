@@ -1086,6 +1086,16 @@ for _st, _sc, _want in _cases:
 if _j74.parse_judge_response('{"truth_score": null, "verdict_state": "", "verdict": "x"}') is not None: fails.append("m74 blank-null should be unreadable")
 if "MUST be exactly one of the seven fleet values" not in _j74.PROMPT: fails.append("m74 vocabulary instruction missing")
 
+# 75. ROUNDING vs NAME-THE-NUMBER conflict: with the rounding rule live the
+# judge still wrote "$1,999, not $2,000" (7.2) because NAME THE NUMBER read
+# $1,999 as a "different figure". The two rules now reference each other
+# and rounding explicitly overrides figure-mismatch caps.
+_jp75 = open("app/agents/judge.py").read()
+if "is NOT a different figure" not in _jp75: fails.append("m75 NAME THE NUMBER exemption missing")
+if "overrides NAME THE NUMBER and every rubric" not in _jp75: fails.append("m75 rounding override missing")
+if 'do not write "$1,999, not $2,000"' not in _jp75: fails.append("m75 anti-pattern sentence missing")
+if _jp75.index("NAME THE NUMBER:") > _jp75.index("ROUNDING IS NOT AN ERROR ("): fails.append("m75 rule order wrong")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 74/74 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary")
+    "FINAL MATRIX PASS: 75/75 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override")

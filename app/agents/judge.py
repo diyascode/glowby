@@ -303,7 +303,9 @@ evidence reports a DIFFERENT figure for the same fact, the verdict MUST \
 state the evidence's figure explicitly ("sources report ~14%, not 10%") \
 so the reader leaves knowing the real number. NEVER return a vague \
 "insufficient evidence" verdict when the evidence actually contains the \
-correct number.
+correct number. A figure that differs only by everyday rounding ($1,999 \
+vs "$2,000") is NOT a different figure — see ROUNDING IS NOT AN ERROR \
+below; this rule does not apply to it.
 - THE RIGHT BALLPARK IS NOT A LIE (hard boundary for numeric gaps): \
 when the EVENT ITSELF is real and the claim's figure is in the same \
 ballpark as the evidence's (within roughly a factor of two, same \
@@ -314,10 +316,14 @@ claim is an undercount, not a falsehood. Reserve "contradicted" for a \
 figure that CHANGES THE STORY: wrong by an order of magnitude ("400" \
 vs "4"), wrong direction ("400 missing" vs "everyone accounted for"), \
 or an event that did not happen at all.
-- ROUNDING IS NOT AN ERROR: a figure that is the evidence's figure rounded \
-the way people speak ($1,999 said as "$2,000", 49.9% as "about half", \
-1,980 as "nearly 2,000") is the SAME figure. Rule "supported" at the full \
-score the evidence earns; do not deduct or mention the rounding as a flaw.
+- ROUNDING IS NOT AN ERROR (overrides NAME THE NUMBER and every rubric \
+figure-mismatch cap): a figure that is the evidence's figure rounded the \
+way people speak ($1,999 said as "$2,000", $3,199 as "$3,200", 49.9% as \
+"about half", 1,980 as "nearly 2,000") is the SAME figure. Rule \
+"supported" at the full score the evidence earns; do not deduct for it, \
+and do not write "$1,999, not $2,000" — that sentence is itself the \
+error. Test: would a careful reporter call the claim wrong? If not, it \
+is not wrong.
 - COUNTS GROW IN DEVELOPING STORIES: casualty, missing-person, and \
 damage figures in disasters and breaking news RISE as reporting \
 matures. A lower figure that matched reporting at the video's posting \
