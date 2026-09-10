@@ -56,6 +56,10 @@ CAPTION_PATTERNS = [
     r"\bmade with ai\b", r"\bai[- ]generated\b", r"\bcreated with ai\b",
     r"#aiart\b", r"#aigenerated\b", r"#madewithai\b", r"#aivideo\b",
     r"\bgenerated (?:by|with) (?:ai|sora|veo|midjourney|dall[- ]?e)\b",
+    # AI-video studio tags: a creator tagging the TOOL is declaring origin
+    r"#sora\b", r"#veo\d?\b", r"#runway(?:ml)?\b", r"#kling(?:ai)?\b",
+    r"#midjourney\b", r"#aifilm\b", r"#aivfx\b", r"#aiads?\b",
+    r"#aicommercial\b", r"#aicinema\b", r"#texttovideo\b",
 ]
 # OCR channel: visible watermark text burned into frames. Bare tool names
 # only count in the VISUAL channel (a caption merely mentioning "Sora"

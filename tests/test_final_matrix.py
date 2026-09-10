@@ -41,25 +41,25 @@ if r["transcript_source"] != "captions" or not r.get("frames"): fails.append("m2
 
 # 3. no captions, speech only, eyes see nothing -> whisper alone
 ing._transcript_from_captions = lambda info: None
-ing._transcribe_and_see = lambda url, max_frames=6: ("spoken " * 30, ["x"], None, None)
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: ("spoken " * 30, ["x"], None, None)
 r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
 if r["transcript_source"] != "whisper" or "frames" in r: fails.append("m3 whisper path")
 
 # 3b. EARS + EYES together -> BOTH claims merged into one transcript
-ing._transcribe_and_see = lambda url, max_frames=6: ("Ronaldo scored " * 20, ["x"] * 6, "on-screen text: Neymar called to 2026 World Cup", None)
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: ("Ronaldo scored " * 20, ["x"] * 6, "on-screen text: Neymar called to 2026 World Cup", None)
 r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
 if ("Ronaldo" not in r["transcript"] or "Neymar" not in r["transcript"]
         or r["transcript_source"] != "whisper+visual analysis"):
     fails.append("m3b ears+eyes merged")
 
 # 4. silent but visual -> the eyes' read becomes the transcript
-ing._transcribe_and_see = lambda url, max_frames=6: (None, ["x"] * 6, "eyes saw a chart", None)
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: (None, ["x"] * 6, "eyes saw a chart", None)
 r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
 if r["transcript_source"] != "visual analysis" or "eyes saw a chart" not in r["transcript"]:
     fails.append("m4 silent visual")
 
 # 5. silent AND blind -> honest error
-ing._transcribe_and_see = lambda url, max_frames=6: (None, [], None, IngestError("no audio"))
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: (None, [], None, IngestError("no audio"))
 try:
     ing.ingest("https://youtube.com/shorts/abcdefg1234"); fails.append("m5 no error")
 except IngestError:
@@ -979,6 +979,25 @@ if not (_calls and _calls[0]["web_sources"] and _calls[0]["web_sources"][0].get(
 _j69 = open("app/agents/judge.py").read()
 if "SAME-VIDEO EVIDENCE COUNTS" not in _j69 or "found for another claim in this video" not in _j69: fails.append("m69 judge rule/tag missing")
 
+# 70. DETECTOR-GRADE FRAMES (the Unreel incident): a polished AI reel came
+# back "no synthetic signal" because the detector was fed frames from the
+# LOWEST-quality download (270x480 for a vertical reel) upscaled to 640.
+# Short videos now download at up to 720p, frames keep native width up to
+# 1280 at high JPEG quality; long videos still step down.
+from app.agents.ingest import pick_download_format as _pdf
+if not _pdf(0).startswith("best[height<=720]"): fails.append("m70 unknown-duration not HQ")
+if not _pdf(45).startswith("best[height<=720]"): fails.append("m70 short video not HQ")
+if not _pdf(600).startswith("best[height<=480]"): fails.append("m70 mid video not 480")
+if not _pdf(1100).startswith("worst[height>=240]"): fails.append("m70 long video not stepped down")
+_in70 = open("app/agents/ingest.py").read()
+if "scale=640:-2" in _in70 or '"-q:v", "5"' in _in70: fails.append("m70 frames still low quality")
+if "min({FRAME_MAX_W},iw)" not in _in70 or '"-q:v", "2"' not in _in70: fails.append("m70 frame scale/quality missing")
+if "_transcribe_and_see(url, duration_s=duration)" not in _in70: fails.append("m70 duration not passed to the download")
+from app.agents.authenticity import check_labels as _cl70
+if not _cl70(caption="new spot #sora #ai"): fails.append("m70 #sora caption not declared")
+if not _cl70(caption="#aicommercial for a car brand"): fails.append("m70 #aicommercial not declared")
+if _cl70(caption="Test dummy #unreel #reels #marketing #tesla"): fails.append("m70 plain hashtags wrongly declared")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 69/69 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue")
+    "FINAL MATRIX PASS: 70/70 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames")

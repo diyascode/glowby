@@ -272,7 +272,7 @@ def ingest(url: str) -> dict:
     # feed both the ears (audio -> Whisper) and the eyes (frames) — in
     # PARALLEL. Silent videos no longer wait for the ears to finish
     # before the eyes start.
-    text, frames, visual_desc, whisper_err = _transcribe_and_see(url)
+    text, frames, visual_desc, whisper_err = _transcribe_and_see(url, duration_s=duration)
     speech = (text or "").strip()
 
     # EARS + EYES TOGETHER: whenever the eyes read something, merge it with
@@ -516,7 +516,31 @@ SPECULATIVE_VISION = os.environ.get(
     "GLOWBY_SPECULATIVE_VISION", "on").lower() in ("on", "true", "1", "yes")
 
 
-def _transcribe_and_see(url: str, max_frames: int = 6):
+# DETECTOR-GRADE FRAMES: AI detectors read fine texture and edge artifacts.
+# A 270x480 "worst" download upscaled to 640 wide erases exactly that, and
+# a polished AI reel then reads as "no synthetic signal" (the Unreel
+# incident). Short videos — the reels/shorts that are nearly all of what
+# Glowby checks — are downloaded at up to 720p (a 30-second reel is a few
+# MB); longer videos step down so a 20-minute file stays small.
+SHORT_VIDEO_S = int(os.environ.get("GLOWBY_HQ_FRAMES_UNDER_S", "240"))
+FRAME_MAX_W = int(os.environ.get("GLOWBY_FRAME_MAX_W", "1280"))
+
+
+def pick_download_format(duration_s) -> str:
+    """Pure (unit-tested): yt-dlp format string by duration. Unknown
+    duration is treated as short (most links are)."""
+    try:
+        d = float(duration_s or 0)
+    except Exception:
+        d = 0.0
+    if d <= 0 or d <= SHORT_VIDEO_S:
+        return "best[height<=720]/best[height<=480]/worst/bestvideo+bestaudio/best"
+    if d <= 15 * 60:
+        return "best[height<=480]/worst/bestvideo+bestaudio/best"
+    return "worst[height>=240]/worst/bestvideo+bestaudio/best"
+
+
+def _transcribe_and_see(url: str, max_frames: int = 6, duration_s=0):
     """Download the video ONCE; feed both ears and eyes from it — at
     the same time.
 
@@ -537,7 +561,7 @@ def _transcribe_and_see(url: str, max_frames: int = 6):
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
-            "format": "best[height<=480]/worst/bestvideo+bestaudio/best",
+            "format": pick_download_format(duration_s),
             "outtmpl": outpath,
             # same bot-challenge dodge as the metadata step (finding #15)
             "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
@@ -707,7 +731,7 @@ def _sample_frames(vid: str, tmpdir: str, max_frames: int = 6) -> list:
         try:
             subprocess.run(
                 ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v", "1",
-                 "-vf", "scale=640:-2", "-q:v", "5", "-y", fp],
+                 "-vf", f"scale='min({FRAME_MAX_W},iw)':-2", "-q:v", "2", "-y", fp],
                 capture_output=True, timeout=30)
         except Exception:
             continue
@@ -735,7 +759,7 @@ def _frames_from_video(url: str, max_frames: int = 6) -> list:
                 "quiet": True,
                 "no_warnings": True,
                 "noplaylist": True,
-                "format": "worst[height>=240]/worst/bestvideo+bestaudio/best",
+                "format": pick_download_format(0),
                 "outtmpl": outpath,
                 "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
                 **({"proxy": _proxy_url()} if _proxy_url() else {}),
