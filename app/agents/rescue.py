@@ -17,6 +17,7 @@ Armor:
 
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -48,18 +49,79 @@ def _count() -> None:
         pass
 
 
+# the vendor's last answer, kept for the admin diagnostic (never the token)
+LAST = {"path": None, "http": None, "detail": None, "ok": None, "units_left": None}
+
+
 def _ed_get(path: str, params: dict, timeout: int = 25):
-    """One EnsembleData call -> parsed JSON data, or None."""
+    """One EnsembleData call -> parsed JSON data, or None. The vendor's
+    HTTP status and message are kept in LAST so a failure can be
+    diagnosed (bad token = 401, out of units = 402/403, throttled = 429)
+    instead of guessed."""
     q = dict(params)
     q["token"] = RESCUE_TOKEN
     full = f"{_ED_BASE}{path}?{urllib.parse.urlencode(q)}"
     req = urllib.request.Request(full, headers={"User-Agent": "glowby/1.0"})
+    LAST.update({"path": path, "http": None, "detail": None, "ok": None})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = json.loads(resp.read().decode())
-        return body.get("data") if isinstance(body, dict) else None
-    except Exception:
+            raw = resp.read().decode("utf-8", "replace")
+            LAST["http"] = getattr(resp, "status", 200)
+        body = json.loads(raw)
+        if isinstance(body, dict):
+            LAST["units_left"] = body.get("units_left") or body.get("unitsLeft")
+            LAST["ok"] = True
+            return body.get("data")
+        LAST.update({"ok": False, "detail": "non-object response"})
         return None
+    except urllib.error.HTTPError as e:
+        try:
+            msg = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            msg = ""
+        LAST.update({"http": e.code, "ok": False, "detail": msg or str(e)[:200]})
+        return None
+    except Exception as e:
+        LAST.update({"ok": False, "detail": f"{type(e).__name__}: {str(e)[:200]}"})
+        return None
+
+
+def selftest(url: str) -> dict:
+    """Admin diagnostic: one real Instagram/TikTok rescue call for the
+    given link, with the vendor's exact answer. Reports token presence
+    and today's cap usage — never the token itself."""
+    out = {"token_present": bool(RESCUE_TOKEN), "token_length": len(RESCUE_TOKEN),
+           "daily_cap": RESCUE_DAILY_CALLS}
+    try:
+        from app.storage import event_stats
+        out["used_today"] = (event_stats().get("rescue") or {}).get("today", 0)
+    except Exception as e:
+        out["used_today"] = f"unknown ({type(e).__name__})"
+    out["allowed_now"] = _allowed()
+    if not RESCUE_TOKEN:
+        out.update({"ok": False, "stage": "config",
+                    "detail": "GLOWBY_RESCUE_TOKEN is empty — Instagram cannot be fetched without it"})
+        return out
+    platform = "instagram" if "instagram.com" in url else "tiktok"
+    got = _rescue_instagram(url) if platform == "instagram" else _rescue_tiktok(url)
+    out["platform"] = platform
+    out["vendor"] = dict(LAST)
+    if got and got.get("media_url"):
+        out.update({"ok": True, "stage": "media_link",
+                    "title": got.get("title"), "uploader": got.get("uploader"),
+                    "duration_seconds": got.get("duration_seconds"),
+                    "media_host": urllib.parse.urlparse(got["media_url"]).netloc})
+    else:
+        http = LAST.get("http")
+        hint = {401: "token rejected — paste a NEW token from the EnsembleData dashboard into GLOWBY_RESCUE_TOKEN (a made-up value will not work)",
+                402: "account out of units — top up / check the EnsembleData plan",
+                403: "token refused or plan does not include this endpoint",
+                404: "post not found — private account, deleted reel, or wrong link",
+                429: "vendor throttled us — wait and retry"}.get(http)
+        if http is None and LAST.get("ok"):
+            hint = "vendor answered but no video link was in the response (private/removed reel, or response shape changed)"
+        out.update({"ok": False, "stage": "vendor", "hint": hint or "see vendor.detail"})
+    return out
 
 
 def _first_url(*candidates):

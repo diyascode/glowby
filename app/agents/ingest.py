@@ -139,11 +139,25 @@ def ingest(url: str) -> dict:
             saved = _ingest_rescued(url, "instagram", rescued)
             if saved is not None:
                 return saved
+        # say WHY when the reason is on our side, not the reader's
+        try:
+            from app.agents.rescue import LAST as _last, RESCUE_TOKEN as _rt, _allowed as _ok
+            _why = _last.get("http")
+            _tok = bool(_rt)
+            _cap = (not _ok()) if _tok else False
+        except Exception:
+            _why, _tok, _cap = None, True, False
+        if not _tok or _why in (401, 402, 403) or _cap:
+            raise IngestError(
+                "Instagram fetching is temporarily unavailable on Glowby's "
+                "side (the fetch service needs attention — the team has "
+                "been notified). Paste the claim as text instead, or try "
+                "the same video from Facebook or YouTube."
+            )
         raise IngestError(
             "Instagram wouldn't hand over this Reel. Make sure it's a "
             "PUBLIC reel (private accounts are locked to everyone), or "
-            "paste the claim as text instead. If it's public and this "
-            "keeps happening, the rescue service may be out of daily units."
+            "paste the claim as text instead."
         )
 
     ydl_opts = {

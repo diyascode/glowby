@@ -68,7 +68,7 @@ from app.storage import (
     total_fresh_checks,
 )
 
-VERSION = "0.49.1"
+VERSION = "0.49.2"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1317,6 +1317,23 @@ def api_admin_hivetest(key: str = ""):
     except Exception as e:
         out["result"] = {"ok": False, "stage": "crash", "detail": str(e)[:400]}
     return out
+
+
+@app.get("/api/admin/rescuetest")
+def api_admin_rescuetest(key: str = "", url: str = ""):
+    """One real rescue-service (EnsembleData) call for an Instagram or
+    TikTok link, with the vendor's exact answer: is the token valid, are
+    there units left, did today's cap hit. Admin only; never reveals the
+    token. Usage: /api/admin/rescuetest?key=ADMIN&url=<reel link>"""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if not url:
+        return {"ok": False, "detail": "add &url=<an Instagram reel link> to test"}
+    try:
+        from app.agents import rescue as _rescue
+        return _rescue.selftest(url)
+    except Exception as e:
+        return {"ok": False, "stage": "crash", "detail": str(e)[:400]}
 
 
 @app.get("/api/admin/calendar")

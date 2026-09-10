@@ -998,6 +998,27 @@ if not _cl70(caption="new spot #sora #ai"): fails.append("m70 #sora caption not 
 if not _cl70(caption="#aicommercial for a car brand"): fails.append("m70 #aicommercial not declared")
 if _cl70(caption="Test dummy #unreel #reels #marketing #tesla"): fails.append("m70 plain hashtags wrongly declared")
 
+# 71. INSTAGRAM OUTAGE DIAGNOSTIC: every Instagram reel failed while
+# Facebook worked — Instagram alone rides the rescue service. The vendor's
+# HTTP answer is now kept (never the token), an admin route runs one real
+# call, and the reader is told when the fault is on Glowby's side.
+import app.agents.rescue as _rs
+if not hasattr(_rs, "selftest") or "LAST" not in dir(_rs): fails.append("m71 rescue diagnostic missing")
+_saved_tok = _rs.RESCUE_TOKEN
+_rs.RESCUE_TOKEN = ""
+try:
+    _o = _rs.selftest("https://www.instagram.com/reel/ABC123/")
+    if _o.get("ok") is not False or _o.get("stage") != "config": fails.append(f"m71 empty-token selftest wrong: {_o}")
+finally:
+    _rs.RESCUE_TOKEN = _saved_tok
+_m71 = open("app/main.py").read()
+if '"/api/admin/rescuetest"' not in _m71 or "_rescue.selftest(url)" not in _m71: fails.append("m71 admin route missing")
+if "_admin_ok(key)" not in _m71[_m71.index('"/api/admin/rescuetest"'):_m71.index('"/api/admin/rescuetest"')+900]: fails.append("m71 rescuetest not admin-gated")
+_i71 = open("app/agents/ingest.py").read()
+if "temporarily unavailable on Glowby's" not in _i71 or "_why in (401, 402, 403)" not in _i71: fails.append("m71 honest outage message missing")
+for _bad in ("token", "ensembledata"):
+    if _bad in "temporarily unavailable on Glowby's side (the fetch service needs attention".lower() and _bad == "token": fails.append("m71 user message leaks internals")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 70/70 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames")
+    "FINAL MATRIX PASS: 71/71 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic")
