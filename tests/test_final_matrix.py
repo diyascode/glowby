@@ -1019,6 +1019,38 @@ if "temporarily unavailable on Glowby's" not in _i71 or "_why in (401, 402, 403)
 for _bad in ("token", "ensembledata"):
     if _bad in "temporarily unavailable on Glowby's side (the fetch service needs attention".lower() and _bad == "token": fails.append("m71 user message leaks internals")
 
+# 72. SCRAPE CREATORS RESCUE: the EnsembleData trial expired (Aug 11) and
+# every Instagram reel died with it. Scrape Creators is now the preferred
+# provider (SCRAPECREATORS_KEY), EnsembleData the fallback; documented
+# response shape parsed; provider precedence; disclosure on the Trust page.
+import app.agents.rescue as _rs72
+_body = {"success": True, "credits_remaining": 97, "data": {"xdt_shortcode_media": {
+    "video_url": "https://scontent.cdninstagram.com/v/abc.mp4", "video_duration": 71.1,
+    "taken_at_timestamp": 1739210435, "owner": {"username": "adrianhorning"},
+    "edge_media_to_caption": {"edges": [{"node": {"text": "I built my own gumroad in 24 hours with AI"}}]}}}}
+_r = _rs72.parse_sc_instagram(_body)
+if not _r or _r["media_url"] != "https://scontent.cdninstagram.com/v/abc.mp4": fails.append("m72 SC instagram video url not parsed")
+elif _r["uploader"] != "adrianhorning" or _r["duration_seconds"] != 71 or _r["posted_date"] != "2025-02-10" or "gumroad" not in _r["title"]:
+    fails.append(f"m72 SC instagram fields wrong: {_r}")
+if _rs72.parse_sc_instagram({"success": False, "message": "no credits"}) is not None: fails.append("m72 SC failure body not None")
+if _rs72.parse_sc_instagram("junk") is not None: fails.append("m72 SC junk not None")
+_sk, _tk = _rs72.SC_KEY, _rs72.RESCUE_TOKEN
+try:
+    _rs72.SC_KEY, _rs72.RESCUE_TOKEN = "", ""
+    if _rs72.provider() != "none": fails.append("m72 provider none wrong")
+    _o = _rs72.selftest("https://www.instagram.com/reel/X/")
+    if _o.get("stage") != "config" or "SCRAPECREATORS_KEY" not in _o.get("detail", ""): fails.append("m72 config hint missing")
+    _rs72.SC_KEY, _rs72.RESCUE_TOKEN = "", "abc"
+    if _rs72.provider() != "ensembledata": fails.append("m72 fallback provider wrong")
+    _rs72.SC_KEY, _rs72.RESCUE_TOKEN = "k", "abc"
+    if _rs72.provider() != "scrapecreators": fails.append("m72 SC not preferred")
+finally:
+    _rs72.SC_KEY, _rs72.RESCUE_TOKEN = _sk, _tk
+_rs_src = open("app/agents/rescue.py").read()
+if 'headers={"x-api-key": SC_KEY' not in _rs_src or '"/instagram/post"' not in _rs_src: fails.append("m72 SC request shape wrong")
+if "SCRAPECREATORS_KEY" in open("app/templates/app.html").read(): fails.append("m72 key name leaked to the page")
+if open("app/templates/trust.html").read().count("Scrape Creators") < 3: fails.append("m72 trust disclosure missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 71/71 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic")
+    "FINAL MATRIX PASS: 72/72 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue")

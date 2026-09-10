@@ -2,8 +2,9 @@
 Rescue tier — the locksmith on retainer.
 
 When the free download path (yt-dlp) gets bot-blocked by TikTok or
-Instagram, this module asks a professional scraping API (EnsembleData)
-for the video's direct CDN link — which is served without a bot wall.
+Instagram, this module asks a professional scraping API (Scrape Creators
+when SCRAPECREATORS_KEY is set; otherwise EnsembleData via
+GLOWBY_RESCUE_TOKEN) for the video's direct CDN link — which is served without a bot wall.
 The pipeline then proceeds exactly as if the download had worked.
 
 Armor:
@@ -21,15 +22,30 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-RESCUE_TOKEN = os.environ.get("GLOWBY_RESCUE_TOKEN", "")
+RESCUE_TOKEN = (os.environ.get("GLOWBY_RESCUE_TOKEN", "") or "").strip().strip("\"'")
 RESCUE_DAILY_CALLS = int(os.environ.get("GLOWBY_RESCUE_DAILY_CALLS", "40"))
+# Scrape Creators — the cheaper locksmith (100 free credits, then a
+# one-time credit pack; ~0.2 cents per Instagram fetch). Preferred when
+# its key is present; EnsembleData stays as the fallback provider.
+SC_KEY = (os.environ.get("SCRAPECREATORS_KEY", "") or "").strip().strip("\"'")
+_SC_BASE = "https://api.scrapecreators.com/v1"
 
 _ED_BASE = "https://ensembledata.com/apis"
 
 
+def provider() -> str:
+    """Which rescue service is configured: 'scrapecreators', 'ensembledata'
+    or 'none'. Scrape Creators wins when both keys exist."""
+    if SC_KEY:
+        return "scrapecreators"
+    if RESCUE_TOKEN:
+        return "ensembledata"
+    return "none"
+
+
 def _allowed() -> bool:
-    """Token present and today's rescue count under the cap."""
-    if not RESCUE_TOKEN:
+    """A provider is configured and today's rescue count is under the cap."""
+    if provider() == "none":
         return False
     try:
         from app.storage import event_stats
@@ -50,7 +66,7 @@ def _count() -> None:
 
 
 # the vendor's last answer, kept for the admin diagnostic (never the token)
-LAST = {"path": None, "http": None, "detail": None, "ok": None, "units_left": None}
+LAST = {"path": None, "http": None, "detail": None, "ok": None, "units_left": None, "provider": None}
 
 
 def _ed_get(path: str, params: dict, timeout: int = 25):
@@ -62,7 +78,8 @@ def _ed_get(path: str, params: dict, timeout: int = 25):
     q["token"] = RESCUE_TOKEN
     full = f"{_ED_BASE}{path}?{urllib.parse.urlencode(q)}"
     req = urllib.request.Request(full, headers={"User-Agent": "glowby/1.0"})
-    LAST.update({"path": path, "http": None, "detail": None, "ok": None})
+    LAST.update({"path": path, "http": None, "detail": None, "ok": None,
+                 "provider": "ensembledata"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", "replace")
@@ -90,7 +107,10 @@ def selftest(url: str) -> dict:
     """Admin diagnostic: one real Instagram/TikTok rescue call for the
     given link, with the vendor's exact answer. Reports token presence
     and today's cap usage — never the token itself."""
-    out = {"token_present": bool(RESCUE_TOKEN), "token_length": len(RESCUE_TOKEN),
+    out = {"provider": provider(),
+           "scrapecreators_key_present": bool(SC_KEY),
+           "ensembledata_token_present": bool(RESCUE_TOKEN),
+           "token_present": bool(RESCUE_TOKEN), "token_length": len(RESCUE_TOKEN),
            "daily_cap": RESCUE_DAILY_CALLS}
     try:
         from app.storage import event_stats
@@ -98,12 +118,15 @@ def selftest(url: str) -> dict:
     except Exception as e:
         out["used_today"] = f"unknown ({type(e).__name__})"
     out["allowed_now"] = _allowed()
-    if not RESCUE_TOKEN:
+    if provider() == "none":
         out.update({"ok": False, "stage": "config",
-                    "detail": "GLOWBY_RESCUE_TOKEN is empty — Instagram cannot be fetched without it"})
+                    "detail": "no rescue provider configured — set SCRAPECREATORS_KEY (preferred) or GLOWBY_RESCUE_TOKEN"})
         return out
     platform = "instagram" if "instagram.com" in url else "tiktok"
-    got = _rescue_instagram(url) if platform == "instagram" else _rescue_tiktok(url)
+    if provider() == "scrapecreators":
+        got = _sc_instagram(url) if platform == "instagram" else _sc_tiktok(url)
+    else:
+        got = _rescue_instagram(url) if platform == "instagram" else _rescue_tiktok(url)
     out["platform"] = platform
     out["vendor"] = dict(LAST)
     if got and got.get("media_url"):
@@ -113,7 +136,7 @@ def selftest(url: str) -> dict:
                     "media_host": urllib.parse.urlparse(got["media_url"]).netloc})
     else:
         http = LAST.get("http")
-        hint = {401: "token rejected — paste a NEW token from the EnsembleData dashboard into GLOWBY_RESCUE_TOKEN (a made-up value will not work)",
+        hint = {401: "key/token rejected — paste the key from the provider's dashboard (Scrape Creators: SCRAPECREATORS_KEY; EnsembleData: GLOWBY_RESCUE_TOKEN)",
                 402: "account out of units — top up / check the EnsembleData plan",
                 403: "token refused or plan does not include this endpoint",
                 404: "post not found — private account, deleted reel, or wrong link",
@@ -138,12 +161,137 @@ def _first_url(*candidates):
     return None
 
 
+def _sc_get(path: str, params: dict, timeout: int = 30):
+    """One Scrape Creators call -> parsed JSON body, or None. Vendor
+    status/message kept in LAST (never the key)."""
+    full = f"{_SC_BASE}{path}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(full, headers={"x-api-key": SC_KEY,
+                                                "User-Agent": "glowby/1.0"})
+    LAST.update({"path": path, "http": None, "detail": None, "ok": None,
+                 "provider": "scrapecreators"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+            LAST["http"] = getattr(resp, "status", 200)
+        body = json.loads(raw)
+        if isinstance(body, dict):
+            LAST["units_left"] = body.get("credits_remaining")
+            LAST["ok"] = bool(body.get("success", True))
+            if not LAST["ok"]:
+                LAST["detail"] = str(body.get("message") or body.get("error") or "")[:300]
+            return body
+        LAST.update({"ok": False, "detail": "non-object response"})
+        return None
+    except urllib.error.HTTPError as e:
+        try:
+            msg = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            msg = ""
+        LAST.update({"http": e.code, "ok": False, "detail": msg or str(e)[:200]})
+        return None
+    except Exception as e:
+        LAST.update({"ok": False, "detail": f"{type(e).__name__}: {str(e)[:200]}"})
+        return None
+
+
+def parse_sc_instagram(body) -> dict | None:
+    """Pure (unit-tested): Scrape Creators /v1/instagram/post body ->
+    {media_url, title, uploader, duration_seconds, posted_date} or None.
+    Documented shape: data.xdt_shortcode_media.{video_url, owner.username,
+    video_duration, taken_at_timestamp, edge_media_to_caption.edges[0].node.text}.
+    The video link is also deep-searched in case the wrapper changes."""
+    if not isinstance(body, dict):
+        return None
+    data = body.get("data") if isinstance(body.get("data"), dict) else body
+    m = data.get("xdt_shortcode_media") if isinstance(data, dict) else None
+    if not isinstance(m, dict):
+        m = data if isinstance(data, dict) else {}
+    media = m.get("video_url")
+    if not media:
+        vv = m.get("video_versions")
+        if isinstance(vv, list) and vv and isinstance(vv[0], dict):
+            media = vv[0].get("url")
+    if not media:
+        media = _deep_find_video(body)
+    if not media or not str(media).startswith("http"):
+        return None
+    caption = None
+    try:
+        caption = m["edge_media_to_caption"]["edges"][0]["node"]["text"]
+    except Exception:
+        cap = m.get("caption")
+        caption = cap.get("text") if isinstance(cap, dict) else cap
+    owner = m.get("owner") or {}
+    user = owner.get("username") if isinstance(owner, dict) else None
+    dur = m.get("video_duration") or m.get("duration")
+    posted = None
+    ts = m.get("taken_at_timestamp") or m.get("taken_at")
+    if ts:
+        try:
+            import datetime
+            posted = datetime.datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+        except Exception:
+            posted = None
+    return {
+        "media_url": str(media),
+        "title": (str(caption) if caption else "(Instagram reel)")[:200],
+        "uploader": str(user) if user else "(unknown)",
+        "duration_seconds": int(float(dur)) if dur else 0,
+        "posted_date": posted,
+    }
+
+
+def parse_sc_tiktok(body) -> dict | None:
+    """Pure: Scrape Creators /v1/tiktok/video body -> rescue dict or None.
+    Shape mirrors TikTok's aweme_detail; deep-search covers drift."""
+    if not isinstance(body, dict):
+        return None
+    d = body.get("aweme_detail") or (body.get("data") or {}).get("aweme_detail") or body
+    if not isinstance(d, dict):
+        return None
+    video = d.get("video") or {}
+    media = _first_url(video.get("play_addr"), video.get("download_addr")) if isinstance(video, dict) else None
+    if not media:
+        media = _deep_find_video(body)
+    if not media:
+        return None
+    author = d.get("author") or {}
+    ts = d.get("create_time")
+    posted = None
+    if ts:
+        try:
+            import datetime
+            posted = datetime.datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+        except Exception:
+            posted = None
+    dur = video.get("duration") if isinstance(video, dict) else None
+    return {
+        "media_url": media,
+        "title": (d.get("desc") or "(untitled)")[:200],
+        "uploader": (author.get("nickname") or author.get("unique_id") or "(unknown)") if isinstance(author, dict) else "(unknown)",
+        "duration_seconds": int(dur / 1000) if dur and dur > 1000 else int(dur or 0),
+        "posted_date": posted,
+    }
+
+
+def _sc_instagram(url: str):
+    body = _sc_get("/instagram/post", {"url": url.split("?")[0], "trim": "true"})
+    return parse_sc_instagram(body)
+
+
+def _sc_tiktok(url: str):
+    body = _sc_get("/tiktok/video", {"url": url})
+    return parse_sc_tiktok(body)
+
+
 def rescue_media(url: str, platform: str):
     """Blocked URL in -> {media_url, title, uploader, duration_seconds,
     posted_date} out, or None. Counts against the daily rescue cap."""
     if platform not in ("tiktok", "instagram") or not _allowed():
         return None
     _count()
+    if provider() == "scrapecreators":
+        return _sc_tiktok(url) if platform == "tiktok" else _sc_instagram(url)
     if platform == "tiktok":
         return _rescue_tiktok(url)
     return _rescue_instagram(url)

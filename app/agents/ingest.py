@@ -141,9 +141,9 @@ def ingest(url: str) -> dict:
                 return saved
         # say WHY when the reason is on our side, not the reader's
         try:
-            from app.agents.rescue import LAST as _last, RESCUE_TOKEN as _rt, _allowed as _ok
+            from app.agents.rescue import LAST as _last, provider as _prov, _allowed as _ok
             _why = _last.get("http")
-            _tok = bool(_rt)
+            _tok = _prov() != "none"
             _cap = (not _ok()) if _tok else False
         except Exception:
             _why, _tok, _cap = None, True, False
