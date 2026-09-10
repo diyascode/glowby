@@ -34,9 +34,11 @@ import re
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
 # COST TIERING: a cheaper judge for low-stakes buckets; the strong model
 # stays on every category where a wrong verdict can hurt someone.
-# Disable with GLOWBY_JUDGE_TIERING=0.
+# OFF by default (standing rule: every claim is judged by Sonnet). Opt in
+# with GLOWBY_JUDGE_TIERING=1. The Apple-Watch incident: low-stakes claims
+# quietly went to the cheap model and came back unreadable.
 JUDGE_MODEL_LOW = os.environ.get("GLOWBY_JUDGE_MODEL_LOW", "claude-haiku-4-5")
-JUDGE_TIERING = os.environ.get("GLOWBY_JUDGE_TIERING", "1") == "1"
+JUDGE_TIERING = os.environ.get("GLOWBY_JUDGE_TIERING", "0") == "1"
 HIGH_STAKES_BUCKETS = {"politics", "news", "health", "law", "science",
                        "finance", "economy", "safety", "crime"}
 
@@ -312,6 +314,10 @@ claim is an undercount, not a falsehood. Reserve "contradicted" for a \
 figure that CHANGES THE STORY: wrong by an order of magnitude ("400" \
 vs "4"), wrong direction ("400 missing" vs "everyone accounted for"), \
 or an event that did not happen at all.
+- ROUNDING IS NOT AN ERROR: a figure that is the evidence's figure rounded \
+the way people speak ($1,999 said as "$2,000", 49.9% as "about half", \
+1,980 as "nearly 2,000") is the SAME figure. Rule "supported" at the full \
+score the evidence earns; do not deduct or mention the rounding as a flaw.
 - COUNTS GROW IN DEVELOPING STORIES: casualty, missing-person, and \
 damage figures in disasters and breaking news RISE as reporting \
 matures. A lower figure that matched reporting at the video's posting \
@@ -451,12 +457,31 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
     )
     verdict = parse_judge_response(raw, allowed_urls=_collect_urls(evidence))
     if verdict is None:
+        # SECOND CHANCE: an unreadable reply is a wasted check for the
+        # reader. Ask once more — on the strong model, with a firmer
+        # format reminder — before admitting defeat.
+        try:
+            message2 = client.messages.create(
+                model=MODEL, max_tokens=1500, temperature=0,
+                system=[_cache_block(rules_part), _cache_block(rubric_part)],
+                messages=[{"role": "user", "content": dynamic_part
+                           + "\n\nREMINDER: output the JSON object only — "
+                           "no preamble, no analysis, no code fences."}],
+            )
+            raw2 = "".join(b.text for b in message2.content
+                           if getattr(b, "type", "") == "text")
+            verdict = parse_judge_response(raw2, allowed_urls=_collect_urls(evidence))
+        except Exception:
+            verdict = None
+    if verdict is None:
         return {
             "truth_score": None,
             "verdict_state": "unverifiable",
             "verdict": "The judge engine returned an unreadable response.",
             "evidence_strength": "none",
             "key_sources": [],
+            "why_unverifiable": "search_error",
+            "parse_debug": (raw or "")[:240],
         }
     return verdict
 
@@ -533,6 +558,7 @@ def parse_judge_response(raw: str, allowed_urls=None):
         return None
 
     state = str(data.get("verdict_state", "")).lower().strip()
+    state = re.sub(r"[\s\-]+", "_", state)  # "partly supported" / "not-scoreable"
     if state not in VALID_STATES:
         return None
 

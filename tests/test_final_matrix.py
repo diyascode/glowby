@@ -1051,6 +1051,23 @@ if 'headers={"x-api-key": SC_KEY' not in _rs_src or '"/instagram/post"' not in _
 if "SCRAPECREATORS_KEY" in open("app/templates/app.html").read(): fails.append("m72 key name leaked to the page")
 if open("app/templates/trust.html").read().count("Scrape Creators") < 3: fails.append("m72 trust disclosure missing")
 
+# 73. APPLE-WATCH INCIDENT: low-stakes claims silently went to the cheap
+# judge (tiering defaulted ON) and came back "unreadable"; a $1,999 price
+# said as "$2,000" was docked as "partly supported". Now: Sonnet for every
+# claim unless GLOWBY_JUDGE_TIERING=1; an unreadable reply gets one retry
+# on the strong model; state spellings are normalised; rounding rule.
+import app.agents.judge as _j73
+if _j73.JUDGE_TIERING: fails.append("m73 tiering defaults ON (must be opt-in)")
+if _j73.pick_judge_model({"bucket": "technology"}) != _j73.MODEL: fails.append("m73 low-stakes claim not on Sonnet")
+_src73 = open("app/agents/judge.py").read()
+if 'os.environ.get("GLOWBY_JUDGE_TIERING", "0")' not in _src73: fails.append("m73 tiering default not 0")
+if "SECOND CHANCE" not in _src73 or _src73.count("parse_judge_response(raw2") != 1: fails.append("m73 unreadable retry missing")
+if "ROUNDING IS NOT AN ERROR" not in _src73 or "$1,999" not in _src73: fails.append("m73 rounding rule missing")
+_v = _j73.parse_judge_response('{"truth_score": "8.4", "verdict_state": "Partly Supported", "verdict": "x", "evidence_strength": "strong", "key_sources": []}')
+if not _v or _v["verdict_state"] != "partly_supported" or _v["truth_score"] != 8.4: fails.append(f"m73 tolerant parse failed: {_v}")
+_v = _j73.parse_judge_response('Sure! Here is the verdict:\n```json\n{"truth_score": 9.0, "verdict_state": "supported", "verdict": "ok", "evidence_strength": "strong", "key_sources": []}\n```')
+if not _v or _v["verdict_state"] != "supported": fails.append("m73 fenced-with-preamble parse failed")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 72/72 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue")
+    "FINAL MATRIX PASS: 73/73 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry")
