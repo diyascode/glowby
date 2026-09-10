@@ -344,6 +344,11 @@ Respond with ONLY a JSON object (no prose, no code fences):
 {{"truth_score": 8.2 or null, "verdict_state": "...", "verdict": "one \
 sentence", "evidence_strength": "strong|moderate|thin|none", \
 "key_sources": ["url1", "url2"], "why_unverifiable": null}}
+verdict_state MUST be exactly one of the seven fleet values: supported, \
+partly_supported, provisional, insufficient, contradicted, unverifiable, \
+not_scoreable. The rubric's own state names (record-verified, \
+vendor-claim-only, study-limited, and the like) are for your reasoning — \
+translate them to the fleet value; never output them.
 why_unverifiable: null unless verdict_state is unverifiable/not_scoreable — \
 then exactly one of: "no_sources_found" (nothing relevant surfaced), \
 "sources_dont_address_claim" (sources exist but none speak to the core \
@@ -538,6 +543,36 @@ def clamp_truth_score(value):
     return round(max(0.0, min(9.9, score)), 1)
 
 
+_NULL_WORDS = ("not_scoreable", "unscoreable", "shell", "allegation", "normative",
+               "guilt", "taste", "definition")
+_UNVERIFIED_WORDS = ("unverified", "unverifiable", "no_reliable_basis", "cannot_verify")
+_CONTRA_WORDS = ("contradicted", "unsupported", "refuted", "false", "debunked")
+_PROV_WORDS = ("provisional", "credibly_reported", "provisionally", "deal_state", "reported")
+
+
+def translate_state(state: str, score):
+    """Pure (unit-tested): map a rubric-vocabulary verdict_state to the
+    fleet vocabulary. The SCORE decides the band (it is what the reader
+    sees); the words only settle null-score cases and the
+    provisional/partly split. Returns None only when nothing usable."""
+    st = (state or "").lower()
+    if score is None:
+        if any(w in st for w in _NULL_WORDS):
+            return "not_scoreable"
+        if any(w in st for w in _UNVERIFIED_WORDS) or "insufficient" in st or "capped" in st:
+            return "unverifiable"
+        return "unverifiable" if st else None
+    if any(w in st for w in _CONTRA_WORDS) and score <= 4.9:
+        return "contradicted" if score <= 2.5 else "insufficient"
+    if score >= 8.0:
+        return "supported"
+    if score >= 5.0:
+        return "provisional" if any(w in st for w in _PROV_WORDS) else "partly_supported"
+    if score >= 2.6:
+        return "insufficient"
+    return "contradicted"
+
+
 def parse_judge_response(raw: str, allowed_urls=None):
     """Parse and validate the judge's JSON verdict. None if unreadable."""
     if not raw:
@@ -559,10 +594,16 @@ def parse_judge_response(raw: str, allowed_urls=None):
 
     state = str(data.get("verdict_state", "")).lower().strip()
     state = re.sub(r"[\s\-]+", "_", state)  # "partly supported" / "not-scoreable"
-    if state not in VALID_STATES:
-        return None
-
     score = clamp_truth_score(data.get("truth_score"))
+    if state not in VALID_STATES:
+        # THE APPLE-WATCH BUG: category rubrics carry their OWN state
+        # vocabularies ("record-verified", "vendor-claim-only",
+        # "study-limited"...). When the judge answers in the rubric's
+        # words, translate — never throw away a verdict that has a score.
+        state = translate_state(state, score)
+        if state is None:
+            return None
+
     # hard rule: null-score states never carry a number; scored states must
     if state in NULL_SCORE_STATES:
         score = None

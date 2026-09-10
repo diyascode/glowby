@@ -1068,6 +1068,24 @@ if not _v or _v["verdict_state"] != "partly_supported" or _v["truth_score"] != 8
 _v = _j73.parse_judge_response('Sure! Here is the verdict:\n```json\n{"truth_score": 9.0, "verdict_state": "supported", "verdict": "ok", "evidence_strength": "strong", "key_sources": []}\n```')
 if not _v or _v["verdict_state"] != "supported": fails.append("m73 fenced-with-preamble parse failed")
 
+# 74. RUBRIC VOCABULARY: category rubrics carry their own verdict_state
+# names (technology: record-verified / vendor-claim-only; society:
+# study-limited; law: allegation-shell). When the judge answers in those
+# words the parser used to discard the whole verdict ("unreadable") —
+# every Apple Watch / iPhone Duo product claim. Now translated by score.
+import app.agents.judge as _j74
+_cases = [("vendor-claim-only", 6.5, "partly_supported"), ("record-verified", 9.1, "supported"),
+          ("independently-tested", 8.6, "supported"), ("study-limited", 6.0, "partly_supported"),
+          ("credibly-reported", 7.0, "provisional"), ("unsupported-contradicted", 1.5, "contradicted"),
+          ("record-contradicted", 4.0, "insufficient"), ("allegation-shell", None, "not_scoreable"),
+          ("unverified", None, "unverifiable")]
+for _st, _sc, _want in _cases:
+    _v = _j74.parse_judge_response('{"truth_score": %s, "verdict_state": "%s", "verdict": "x", "evidence_strength": "moderate", "key_sources": []}' % ("null" if _sc is None else _sc, _st))
+    if not _v or _v["verdict_state"] != _want or _v["truth_score"] != _sc:
+        fails.append(f"m74 {_st}/{_sc} -> {_v and _v['verdict_state']} (want {_want})")
+if _j74.parse_judge_response('{"truth_score": null, "verdict_state": "", "verdict": "x"}') is not None: fails.append("m74 blank-null should be unreadable")
+if "MUST be exactly one of the seven fleet values" not in _j74.PROMPT: fails.append("m74 vocabulary instruction missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 73/73 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry")
+    "FINAL MATRIX PASS: 74/74 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary")
