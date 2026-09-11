@@ -75,6 +75,29 @@ UNSAFE_VERDICT_STATES = {"unverifiable", "insufficient", "contradicted",
 # a low-risk side detail can cap the headline down to this floor, but
 # never below it — "mostly checks out" is the worst a wrong aside can do
 SIDE_DETAIL_FLOOR = 7.5
+# PROVISIONAL IS NOT QUESTIONABLE: a claim that is credibly reported and
+# disputed by nobody — merely not yet independently confirmed — keeps its
+# own card score, but cannot drag the HEADLINE below this floor. "Mixes
+# accurate and questionable claims" was being printed over videos where
+# nothing was questionable (the iPhone 18 Pro aperture, Sept 2026).
+PROVISIONAL_FLOOR = 6.0
+
+
+def _headline_weight(c):
+    """The score a claim contributes to the headline MIN."""
+    v = c["verdict"]
+    score = v["truth_score"]
+    if v.get("verdict_state") == "provisional" and not _has_disputing_source(c):
+        return max(score, PROVISIONAL_FLOOR)
+    return score
+
+
+def _has_disputing_source(c):
+    ev = c.get("evidence") or {}
+    for w in ev.get("web_sources") or []:
+        if (w or {}).get("stance") in ("refutes", "mixed"):
+            return True
+    return bool(ev.get("fact_checks"))
 
 
 def build_report(result: dict) -> dict:
@@ -107,13 +130,13 @@ def build_report(result: dict) -> dict:
         # sides that fully check out (accurate band, >= 8.0) leave the
         # headline alone; a questionable side enters the MIN clamped up
         # to the floor — it caps, never craters
-        effective = [c["verdict"]["truth_score"] for c in counting] + [
+        effective = [_headline_weight(c) for c in counting] + [
             max(c["verdict"]["truth_score"], SIDE_DETAIL_FLOOR)
             for c in scored
             if c not in counting and c["verdict"]["truth_score"] < 8.0
         ]
     else:  # nothing central was scorable — every side claim counts fully
-        effective = [c["verdict"]["truth_score"] for c in scored]
+        effective = [_headline_weight(c) for c in scored]
     headline = round(min(effective), 1) if effective else None
     # disclosure: a side claim scored below the headline (raw), i.e. it
     # was softened by the floor or simply sits under the main claims
@@ -123,8 +146,7 @@ def build_report(result: dict) -> dict:
     )
     side_capped = (
         headline is not None and counting
-        and headline < round(min(
-            c["verdict"]["truth_score"] for c in counting), 1)
+        and headline < round(min(_headline_weight(c) for c in counting), 1)
     )
 
     # safety collapse (spec: named critical protocol)
@@ -170,6 +192,13 @@ def build_report(result: dict) -> dict:
                 label = ("The main claims check out. One claim is genuinely "
                          "disputed by experts — and the lowest claim sets "
                          "the score.")
+        if counting and state in ("mixed", "mostly"):
+            drivers = [c for c in counting if _headline_weight(c) == headline]
+            if drivers and all(c["verdict"].get("verdict_state") == "provisional"
+                               and not _has_disputing_source(c) for c in drivers):
+                label = ("The main claims check out. One claim is credibly "
+                         "reported but not yet independently confirmed — "
+                         "nothing here is disputed.")
         if side_capped:
             label += (" The score is capped because a side detail didn't "
                       "fully check out - see below.")

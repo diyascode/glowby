@@ -1096,6 +1096,31 @@ if "overrides NAME THE NUMBER and every rubric" not in _jp75: fails.append("m75 
 if 'do not write "$1,999, not $2,000"' not in _jp75: fails.append("m75 anti-pattern sentence missing")
 if _jp75.index("NAME THE NUMBER:") > _jp75.index("ROUNDING IS NOT AN ERROR ("): fails.append("m75 rule order wrong")
 
+# 76. iPHONE 18 PRO: an announced spec was scored 4.0 under the rubric's
+# roadmap/prediction cap; a correct "$100 up" comparison was docked against
+# a comparison the claim never made; the headline printed "questionable"
+# over a video where nothing was disputed. Now: ANNOUNCED IS NOT PREDICTED,
+# JUDGE THE CLAIM'S OWN ARITHMETIC, and a 6.0 headline floor for undisputed
+# provisional claims (card score unchanged; honest label).
+_jp76 = open("app/agents/judge.py").read()
+for _n in ("ANNOUNCED IS NOT PREDICTED", "JUDGE THE CLAIM'S OWN ARITHMETIC", "never a cap", "Never substitute a"):
+    if _n not in _jp76: fails.append(f"m76 judge rule missing: {_n}")
+from app.agents.output import build_report as _br76, PROVISIONAL_FLOOR as _pf76
+def _mk76(score, state, stances=()):
+    return {"claim": "x", "gate_label": "factual", "central": True, "risk_level": "low",
+            "verdict": {"truth_score": score, "verdict_state": state, "verdict": "v", "evidence_strength": "moderate", "key_sources": []},
+            "evidence": {"fact_checks": [], "web_sources": [{"url": "https://a", "stance": st} for st in stances]}}
+_r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("supports",)), _mk76(8.6, "supported")]})["report"]
+if _r["headline_score"] != _pf76 or "nothing here is disputed" not in _r["headline_label"]: fails.append(f"m76 provisional floor: {_r['headline_score']} {_r['headline_label']}")
+_r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("refutes",))]})["report"]
+if _r["headline_score"] != 4.0: fails.append("m76 disputed provisional wrongly lifted")
+_r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(2.0, "contradicted")]})["report"]
+if _r["headline_score"] != 2.0: fails.append("m76 contradicted claim no longer drags")
+_r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(3.0, "insufficient")]})["report"]
+if _r["headline_score"] != 3.0: fails.append("m76 insufficient claim wrongly lifted")
+_c = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("supports",))]})["claims"]
+if _c[1]["verdict"]["truth_score"] != 4.0: fails.append("m76 card score was altered")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 75/75 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override")
+    "FINAL MATRIX PASS: 76/76 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor")

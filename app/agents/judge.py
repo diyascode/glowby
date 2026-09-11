@@ -324,6 +324,22 @@ way people speak ($1,999 said as "$2,000", $3,199 as "$3,200", 49.9% as \
 and do not write "$1,999, not $2,000" — that sentence is itself the \
 error. Test: would a careful reporter call the claim wrong? If not, it \
 is not wrong.
+- ANNOUNCED IS NOT PREDICTED (overrides any rubric roadmap / pre-release / \
+prediction cap): once a maker has OFFICIALLY ANNOUNCED a product or feature \
+with its specifications — a keynote, a press release, a published spec \
+sheet, a store listing — a claim that restates those specifications is a \
+vendor-stated FACT, not a roadmap item. Score it by corroboration: \
+several independent outlets reporting the announced spec = supported \
+(7.5-8.5), with "vendor-stated, not yet independently tested" in the \
+verdict when no teardown or benchmark exists yet. Roadmap and prediction \
+caps apply ONLY to unannounced, rumored, leaked, or future-dated items. \
+"No independent testing yet" is a caveat, never a cap.
+- JUDGE THE CLAIM'S OWN ARITHMETIC: when a claim makes a comparison or a \
+calculation ("up $100 from the 17 Pro"; "twice as fast as last year's"), \
+check THAT comparison against the evidence's figures. Never substitute a \
+different comparison the claim did not make (a different model tier, a \
+different year, a different metric) and then score the claim against it. \
+If the claim's own arithmetic holds, it is supported.
 - COUNTS GROW IN DEVELOPING STORIES: casualty, missing-person, and \
 damage figures in disasters and breaking news RISE as reporting \
 matures. A lower figure that matched reporting at the video's posting \
