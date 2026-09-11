@@ -391,6 +391,26 @@ html.light .modeseg button#qChip.on{background:rgba(138,124,255,.12);border-colo
 #qOpen .qx:hover{color:var(--ink)}
 html.light #qOpen{background:#fff;border-color:rgba(0,0,0,.2)}
 html.light #qOpen .qx{background:rgba(0,0,0,.06)}
+/* FEEDBACK: Fair / Harsh / Wrong under the score — a signal, never a vote */
+.fb-row{display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
+.fb-chip{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#c9c6dc;border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .18s}
+.fb-chip.fair{border-color:rgba(74,222,128,.4)} .fb-chip.harsh{border-color:rgba(250,178,25,.4)} .fb-chip.wrong{border-color:rgba(248,113,113,.4)}
+.fb-chip.fair.on{background:rgba(74,222,128,.18);color:#4ade80} .fb-chip.harsh.on{background:rgba(250,178,25,.18);color:#fab219} .fb-chip.wrong.on{background:rgba(248,113,113,.18);color:#f87171}
+.fb-row.done .fb-chip:not(.on){opacity:.35}
+.fb-thanks{font-size:12.5px;color:#4ade80;margin-top:8px} .fb-thanks span{color:var(--muted)}
+.fb-note{display:flex;gap:6px;max-width:480px;margin:8px auto 0}
+.fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
+.fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.hl-meta{font-size:12px;color:var(--muted);margin-top:6px}
+.airow{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12.5px;background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.28);border-radius:999px;padding:7px 14px;max-width:100%}
+.airow b{color:#38bdf8;font-weight:700} .airow .st{color:#38bdf8;opacity:.85} .airow.bad{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35)} .airow.bad b,.airow.bad .st{color:#f87171}
+.airow a{color:var(--brand);text-decoration:none;margin-left:2px;cursor:pointer}
+.cflag{margin-left:8px;font-size:11px;color:var(--muted);border:1px dashed rgba(255,255,255,.22);border-radius:999px;padding:1px 8px;cursor:pointer;white-space:nowrap;font-family:inherit;background:none}
+.cflag.on{border-style:solid;color:#fab219;border-color:rgba(250,178,25,.6)}
+.cflag-row{display:inline-flex;gap:5px;margin-left:6px;vertical-align:middle}
+.cflag-row button{font-size:11px;border-radius:999px;padding:1px 8px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);cursor:pointer;font-family:inherit}
+html.light .fb-chip{background:#fff;border-color:rgba(0,0,0,.14);color:#63636e}
+html.light .fb-note input{background:#fff;border-color:rgba(0,0,0,.2)}
 /* the answer-first card on results */
 .uq-card{background:linear-gradient(155deg,rgba(138,124,255,.14),rgba(196,107,242,.07));
   border:1px solid rgba(138,124,255,.35);border-radius:16px;padding:14px 16px;margin-bottom:12px;text-align:left}
@@ -556,7 +576,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.51.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.52.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -664,12 +684,13 @@ function chips(c){
 }
 const vColor={supported:'var(--good)',partly_supported:'var(--warn)',provisional:'var(--warn)',insufficient:'var(--warn)',contradicted:'var(--bad)',unverifiable:'var(--muted)',not_scoreable:'var(--muted)'};
 function domainOf(u){try{return new URL(u).hostname.replace(/^www\./,'');}catch(e){return String(u).slice(0,30);}}
-function claimCard(c){
+function claimCard(c,idx){
   // GLANCE LAYER: ring + serif claim + verdict as flowing prose + source chips
   let badge='';
   if(c.verdict){
     const col=vColor[c.verdict.verdict_state]||'var(--muted)';
-    badge='<div class="vline"><span class="vw" style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'.</span> '+esc(c.verdict.verdict||'')+'</div>';
+    const flag=(idx===undefined||idx===null)?'':'<button type="button" class="cflag" data-i="'+idx+'" title="Flag this claim\u2019s score">\u2691 flag</button>';
+    badge='<div class="vline"><span class="vw" style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'.</span> '+esc(c.verdict.verdict||'')+flag+'</div>';
     if(c.verdict.why_unverifiable)badge+='<div class="vsum" style="color:var(--muted)">Why: '+(whyLabel[c.verdict.why_unverifiable]||esc(c.verdict.why_unverifiable))+'.</div>';
     const fcs0=(c.evidence&&c.evidence.fact_checks)||[], webs0=(c.evidence&&c.evidence.web_sources)||[];
     let chips='';
@@ -787,22 +808,20 @@ function renderList(d){
       +(au.manipulation_scope==='face'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">signals concentrated on a face \u2014 rest not verified</div>':'')
       +'<div class="dial-state" style="font-weight:400"><a href="/about#aimedia" target="_blank" style="color:#8a86a3">limits of AI detection \u2197</a></div>'
       +'</div></div>'+
+    fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div>'+
-    '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check · can be wrong · sources on every claim · glowby.io</div></div>';
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest sets the score')+'</div>'+
+    aiRow(au,mediaLeads)+'</div>';
   }else{
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
+    fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-sub">'+((cnt.claim_units||0)===0?'No checkable claims found':'Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score')+'</div>'+
-    '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check · can be wrong · sources on every claim · glowby.io</div></div>';
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest sets the score')+'</div>'+
+    aiRow(au,mediaLeads)+'</div>';
   }
   if(au&&au.stage2_status==='failed'){
     html+='<div class="aicard aicard-warn"><div class="aicard-t">\u26a0\ufe0f The AI media check could not complete</div>'
       +'<div class="meta">Use Re-check to try again. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div></div>';
-  }
-  if(au&&au.stage===2&&au.origin_result==='no_synthetic_signal'&&!mediaLeads){
-    html+='<div class="aicard"><div class="aicard-t">\ud83d\udd0d AI media check ran \u2014 no synthetic signal found</div>'
-      +'<div class="meta">The forensic detector examined sampled frames and found no evidence of AI generation. Detection can miss things \u2014 this is not proof the video is real. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div></div>';
   }
   // AI-CHECK DETAILS: the promised evidence panel. Categories lead the
   // headline; the detector's own numbers live here, where a reader who
@@ -836,7 +855,7 @@ function renderList(d){
   const checked=claims.filter(c=>c.verdict);
   const waiting=claims.filter(c=>!c.verdict&&fwd(c));
   const parked=claims.filter(c=>!c.verdict&&!fwd(c));
-  for(const c of checked)html+=claimCard(c);
+  for(const c of checked)html+=claimCard(c,(d.claims||[]).indexOf(c));
   if(waiting.length){
     html+='<details><summary>🔍 Found, not judged ('+waiting.length+') — click to view</summary>';
     for(const c of waiting)html+=claimCard(c);
@@ -888,6 +907,63 @@ function resultText(d){
   lines.push('AI fact-check \u2014 can be wrong \u00b7 glowby.io');
   return lines.join('\n');
 }
+
+// FEEDBACK ROW — Fair / Harsh / Wrong under the score. A signal to the
+// maintainers (every rule this month came from a reader spotting a bad
+// score), never a vote: nothing on the page changes. One tap per device
+// per result, remembered on the phone.
+function fbKey(d){return 'gbFb:'+(d.url_key||d.url||'');}
+function fbRow(d){
+  let prev='';try{prev=localStorage.getItem(fbKey(d))||'';}catch(e){}
+  if(prev)return '<div class="fb-row done" id="fbRow"><button class="fb-chip fair'+(prev==='fair'?' on':'')+'" disabled>Fair</button><button class="fb-chip harsh'+(prev==='harsh'?' on':'')+'" disabled>Harsh</button><button class="fb-chip wrong'+(prev==='wrong'?' on':'')+'" disabled>Wrong</button></div>';
+  return '<div class="fb-row" id="fbRow"><button type="button" class="fb-chip fair" data-k="fair">Fair</button><button type="button" class="fb-chip harsh" data-k="harsh">Harsh</button><button type="button" class="fb-chip wrong" data-k="wrong">Wrong</button></div>';
+}
+async function sendFeedback(d,kind,claimIdx,note){
+  try{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||d.url||'',kind:kind,claim_idx:claimIdx===undefined?null:claimIdx,note:note||''})});}catch(e){}
+}
+function wireFeedback(d,out){
+  const row=out.querySelector('#fbRow');
+  if(row&&!row.classList.contains('done')){
+    row.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
+      const k=b.dataset.k;
+      row.classList.add('done');row.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===b);});
+      try{localStorage.setItem(fbKey(d),k);}catch(e){}
+      sendFeedback(d,k,null,'');
+      const th=document.createElement('div');th.className='fb-thanks';
+      th.innerHTML=k==='fair'?'\u2713 Thanks \u2014 logged.':'\u2713 Logged \u2014 thanks. <span>Which claim, and what\u2019s off?</span>';
+      row.insertAdjacentElement('afterend',th);
+      if(k!=='fair'){
+        const nb=document.createElement('div');nb.className='fb-note';
+        nb.innerHTML='<input type="text" maxlength="300" placeholder="Optional \u2014 one line is plenty"><button type="button">Send</button>';
+        th.insertAdjacentElement('afterend',nb);
+        const inp=nb.querySelector('input'),btn=nb.querySelector('button');
+        const go=()=>{const t=inp.value.trim();if(!t)return;sendFeedback(d,k,null,t);nb.outerHTML='<div class="fb-thanks">\u2713 Sent. Thank you.</div>';};
+        btn.onclick=go;inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go();}});
+      }
+    });
+  }
+  // per-claim flags: which claim was harsh or wrong
+  out.querySelectorAll('.cflag').forEach(f=>f.onclick=()=>{
+    if(f.classList.contains('on'))return;
+    const idx=parseInt(f.dataset.i,10);
+    const r=document.createElement('span');r.className='cflag-row';
+    r.innerHTML='<button type="button" data-k="harsh">Harsh</button><button type="button" data-k="wrong">Wrong</button>';
+    f.insertAdjacentElement('afterend',r);f.style.display='none';
+    r.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      sendFeedback(d,b.dataset.k,idx,'');
+      r.outerHTML='<span class="cflag on">\u2691 '+(b.dataset.k==='harsh'?'too harsh':'wrong')+' \u2014 logged</span>';
+    });
+  });
+}
+// AI PILL — one line inside the score card instead of a two-line card.
+// Blue when the check ran clean, red when it found strong signals; the
+// details panel below carries the explanation.
+function aiRow(au,mediaLeads){
+  if(!au||au.stage!==2||mediaLeads)return '';
+  if(au.origin_result==='no_synthetic_signal')
+    return '<div class="airow">\ud83d\udd0d <b>AI check ran</b> <span class="st">\u00b7 no synthetic signal</span> <a id="aiDet">details \u2193</a></div>';
+  return '';
+}
 function render(){
   const d=currentResult; if(!d)return;
   addMyCheck(d);
@@ -914,6 +990,9 @@ function render(){
     html+='<form id="fuForm" class="fu-form" hidden><input type="text" id="fuIn" maxlength="400" placeholder="Ask a follow-up about this check…" autocomplete="off"><button type="button" id="fuMic" class="fu-mic" aria-label="Speak your follow-up" title="Speak your follow-up"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="submit" id="fuGo" aria-label="ask">→</button></form></div>';
   }
   out.innerHTML=html;
+  wireFeedback(d,out);
+  const ad=$('aiDet');
+  if(ad)ad.onclick=(e)=>{e.preventDefault();const det=out.querySelector('.audet');if(det){det.open=true;det.scrollIntoView({behavior:'smooth',block:'center'});}};
   const tro=$('trOpen');
   if(tro)tro.onclick=(e)=>{e.preventDefault();$('trBody').textContent=d.transcript||'';$('trOverlay').hidden=false;};
   (function(){const ov=$('trOverlay'),cl=$('trClose');if(!ov)return;

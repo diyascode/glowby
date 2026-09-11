@@ -66,9 +66,10 @@ from app.storage import (
     text_key,
     today_usage,
     total_fresh_checks,
+    save_feedback, feedback_summary, list_feedback, resolve_feedback,
 )
 
-VERSION = "0.51.0"
+VERSION = "0.52.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1256,6 +1257,51 @@ def _count_visitor(request) -> None:
         threading.Thread(target=record_visitor_month, args=(mh,), daemon=True).start()
     except Exception:
         pass
+
+
+class ScoreFeedback(BaseModel):
+    url_key: str = ""
+    kind: str
+    claim_idx: int | None = None
+    note: str = ""
+
+
+@app.post("/api/feedback")
+def api_feedback(fb: ScoreFeedback, request: Request):
+    """Fair / Harsh / Wrong under the score. A maintainers' signal, never a
+    vote: it changes nothing on the page. De-duplicated per device per
+    result with a salted, date-free hash (no IP stored)."""
+    kind = (fb.kind or "").strip().lower()
+    if kind not in ("fair", "harsh", "wrong") or not (fb.url_key or "").strip():
+        return JSONResponse(status_code=422, content={"detail": "Bad feedback."})
+    if _rate_limited(_client_ip(request)):
+        return JSONResponse(status_code=429, content={"detail": "Too many requests."})
+    salt = ADMIN_KEY or "glowby"
+    dh = hashlib.sha256(f"{salt}:fb:{_client_ip(request)}".encode()).hexdigest()[:32]
+    idx = fb.claim_idx if isinstance(fb.claim_idx, int) and 0 <= fb.claim_idx < 50 else None
+    ok = save_feedback(fb.url_key.strip()[:300], kind, idx, (fb.note or "").strip()[:300], dh)
+    return {"ok": True, "stored": ok}
+
+
+@app.get("/api/admin/feedback")
+def api_admin_feedback(key: str = "", limit: int = 100, all: int = 0):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"summary": feedback_summary(30),
+            "items": list_feedback(min(max(int(limit), 1), 500), only_flags=not all)}
+
+
+class FeedbackResolve(BaseModel):
+    key: str
+    feedback_id: int
+    status: str
+
+
+@app.post("/api/admin/feedback/resolve")
+def api_admin_feedback_resolve(req: FeedbackResolve):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": resolve_feedback(req.feedback_id, req.status)}
 
 
 class MistakeReport(BaseModel):

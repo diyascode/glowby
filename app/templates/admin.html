@@ -160,6 +160,13 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="card">
+      <h2>Score feedback — Fair / Harsh / Wrong</h2>
+      <div id="fbTiles" class="tiles" style="margin-bottom:10px"></div>
+      <div class="s" style="margin-bottom:6px">Flags (harsh + wrong), newest first · each one either becomes a rule or is marked "score was right"</div>
+      <div id="flags"></div>
+    </div>
+
+    <div class="card">
       <h2>Mistake reports</h2>
       <div id="reports"></div>
     </div>
@@ -223,6 +230,34 @@ function shiftMonth(m, delta){
   const d = new Date(m + "-01T00:00:00"); d.setMonth(d.getMonth() + delta);
   return d.toISOString().slice(0,7);
 }
+async function loadFeedback(){
+  let d = null;
+  try {
+    const r = await fetch("/api/admin/feedback?key=" + encodeURIComponent(KEY) + "&limit=100");
+    if (r.ok) d = await r.json();
+  } catch(e){}
+  if (!d){ $("flags").innerHTML = '<div class="empty">Could not load feedback.</div>'; return; }
+  const sm = d.summary || {};
+  const rate = sm.harsh_rate === null || sm.harsh_rate === undefined ? "—" : Math.round(sm.harsh_rate*100) + "%";
+  $("fbTiles").innerHTML =
+    tile("Harsh rate · 30 days", rate, (sm.harsh||0)+(sm.wrong||0) + " of " + (sm.total||0) + " taps said harsh or wrong", (sm.harsh_rate||0) > 0.3 ? "bad" : "") +
+    tile("Fair · 30 days", sm.fair||0, "") + tile("Harsh · 30 days", sm.harsh||0, "") + tile("Wrong · 30 days", sm.wrong||0, "") +
+    tile("All-time taps", (sm.all_time?.fair||0)+(sm.all_time?.harsh||0)+(sm.all_time?.wrong||0), "fair " + (sm.all_time?.fair||0) + " · harsh " + (sm.all_time?.harsh||0) + " · wrong " + (sm.all_time?.wrong||0));
+  const items = d.items || [];
+  if (!items.length){ $("flags").innerHTML = '<div class="empty">No harsh/wrong flags yet.</div>'; return; }
+  $("flags").innerHTML = "<table>" + items.map(f =>
+    `<tr><td class="t"><a href="/r/${encodeURIComponent(f.url_key)}" target="_blank" style="color:inherit">${esc(f.title||f.url_key)}</a>` +
+    (f.note ? `<div class="s">“${esc(f.note)}”</div>` : "") + `</td>` +
+    `<td><b style="color:${f.kind==='wrong'?'#f87171':'#fab219'}">${esc(f.kind)}</b>${f.claim_idx===null||f.claim_idx===undefined?"":" · claim "+(f.claim_idx+1)}</td>` +
+    `<td>${f.score ?? "—"}</td><td class="s">${esc(String(f.created_at||"").slice(0,10))}</td>` +
+    `<td>${f.status==='new' ? `<button data-id="${f.id}" data-st="rule_added">rule added</button> <button data-id="${f.id}" data-st="score_was_right">score was right</button>` : `<span class="s">${esc(f.status)}</span>`}</td></tr>`).join("") + "</table>";
+  $("flags").querySelectorAll("button[data-id]").forEach(b => b.onclick = async () => {
+    await fetch("/api/admin/feedback/resolve", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({key: KEY, feedback_id: +b.dataset.id, status: b.dataset.st})});
+    loadFeedback();
+  });
+}
+
 async function loadDay(day){
   const dd = $("dayDetail"); dd.innerHTML = '<div class="empty">Loading…</div>';
   let d = null;
@@ -236,6 +271,9 @@ async function loadDay(day){
           `<div><b>${d.checks}</b><br><span>fresh checks</span></div>` +
           `<div><b>$${(d.est_cost||0).toFixed(2)}</b><br><span>est. spend</span></div>` +
           `<div><b>${(ev.copy_result||0)+(ev.copy_link||0)+(ev.share||0)}</b><br><span>results shared/copied</span></div></div>`;
+  const fb = d.feedback || {};
+  if ((fb.fair||0)+(fb.harsh||0)+(fb.wrong||0))
+    h += `<div class="s" style="margin-bottom:6px">Feedback that day: ${fb.fair||0} fair · ${fb.harsh||0} harsh · ${fb.wrong||0} wrong</div>`;
   h += `<div class="s" style="margin-bottom:6px">${esc(day)} · what was checked (${(d.stored||[]).length})</div>`;
   if (!(d.stored||[]).length) h += '<div class="empty">No checks stored that day.</div>';
   else h += "<table>" + d.stored.map(c =>
@@ -326,6 +364,7 @@ function render(d){
   // ---- calendar (click a day for its visitors / checks / spend) ----
   if (!window.__calMonth) window.__calMonth = new Date().toISOString().slice(0,7);
   loadCalendar(window.__calMonth);
+  loadFeedback();
 
   // ---- unique visitors by month ----
   const mo = d.visitors_monthly || [];

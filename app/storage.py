@@ -727,6 +727,13 @@ def day_detail(day: str) -> dict:
                 out["checks"], out["est_cost"] = int(r[0]), float(r[1])
             cur.execute("SELECT kind, count FROM daily_events WHERE day = %s::date", (day,))
             out["events"] = {r[0]: int(r[1]) for r in cur.fetchall()}
+            try:
+                cur.execute("SELECT kind, count(*) FROM score_feedback "
+                            "WHERE created_at::date = %s::date GROUP BY kind", (day,))
+                out["feedback"] = {r[0]: int(r[1]) for r in cur.fetchall()}
+            except Exception:
+                conn.rollback()
+                out["feedback"] = {}
             cur.execute(
                 """
                 SELECT url_key, result->>'title', result->'report'->>'headline_state',
@@ -743,3 +750,137 @@ def day_detail(day: str) -> dict:
         except Exception:
             pass
     return out
+
+# ---- score feedback (Fair / Harsh / Wrong) ----
+# A signal for the maintainers, never a vote on the score. One tap per
+# device per result is enforced client-side; the server keeps a salted
+# device hash only to de-duplicate, never an IP.
+
+FEEDBACK_KINDS = ("fair", "harsh", "wrong")
+
+
+def save_feedback(url_key: str, kind: str, claim_idx, note: str,
+                  device_hash: str) -> bool:
+    if kind not in FEEDBACK_KINDS:
+        return False
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS score_feedback (
+                    id BIGSERIAL PRIMARY KEY,
+                    url_key TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    claim_idx INTEGER,
+                    note TEXT,
+                    device_hash TEXT,
+                    status TEXT NOT NULL DEFAULT 'new',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+            # same device, same result, same claim -> update, not append
+            cur.execute(
+                "SELECT id FROM score_feedback WHERE url_key=%s AND device_hash=%s "
+                "AND claim_idx IS NOT DISTINCT FROM %s ORDER BY id DESC LIMIT 1",
+                (url_key[:300], device_hash[:64], claim_idx))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "UPDATE score_feedback SET kind=%s, note=COALESCE(NULLIF(%s,''), note), "
+                    "created_at=now() WHERE id=%s",
+                    (kind, (note or "")[:300], row[0]))
+            else:
+                cur.execute(
+                    "INSERT INTO score_feedback (url_key, kind, claim_idx, note, device_hash) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (url_key[:300], kind, claim_idx, (note or "")[:300], device_hash[:64]))
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def feedback_summary(days: int = 30) -> dict:
+    """Totals and harsh-rate over the window: (harsh+wrong)/all taps."""
+    conn = _get_conn()
+    out = {"days": days, "fair": 0, "harsh": 0, "wrong": 0, "total": 0,
+           "harsh_rate": None, "all_time": {"fair": 0, "harsh": 0, "wrong": 0}}
+    if conn is None:
+        return out
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT kind, count(*) FROM score_feedback "
+                "WHERE created_at >= now() - (%s || ' days')::interval GROUP BY kind",
+                (str(int(days)),))
+            for k, n in cur.fetchall():
+                if k in out:
+                    out[k] = int(n)
+            cur.execute("SELECT kind, count(*) FROM score_feedback GROUP BY kind")
+            for k, n in cur.fetchall():
+                if k in out["all_time"]:
+                    out["all_time"][k] = int(n)
+        out["total"] = out["fair"] + out["harsh"] + out["wrong"]
+        if out["total"]:
+            out["harsh_rate"] = round((out["harsh"] + out["wrong"]) / out["total"], 3)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return out
+
+
+def list_feedback(limit: int = 100, only_flags: bool = True) -> list:
+    """Newest first; flags = harsh/wrong. Joins the stored check's title."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT f.id, f.url_key, f.kind, f.claim_idx, f.note, f.status,
+                       f.created_at, c.result->>'title',
+                       c.result->'report'->>'headline_score'
+                FROM score_feedback f
+                LEFT JOIN checks c ON c.url_key = f.url_key
+                WHERE (%s = false OR f.kind IN ('harsh','wrong'))
+                ORDER BY f.id DESC LIMIT %s
+                """, (only_flags, int(limit)))
+            return [{"id": r[0], "url_key": r[1], "kind": r[2], "claim_idx": r[3],
+                     "note": r[4] or "", "status": r[5],
+                     "created_at": r[6].isoformat() if r[6] else None,
+                     "title": (r[7] or "")[:100], "score": r[8]}
+                    for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def resolve_feedback(fid: int, status: str) -> bool:
+    if status not in ("new", "rule_added", "score_was_right", "dismissed"):
+        return False
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE score_feedback SET status=%s WHERE id=%s", (status, int(fid)))
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False

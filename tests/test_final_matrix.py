@@ -602,7 +602,7 @@ for needle, tag in [("AI-media detection", "section"),
 # 45. RAN-AND-CLEAN DISCLOSURE: when stage-2 ran and found nothing, the
 # result says so with the can-miss caveat; silent when it never ran
 _h45 = open("app/templates/app.html").read()
-if "au.stage===2&&au.origin_result==='no_synthetic_signal'" not in _h45:
+if "au.origin_result==='no_synthetic_signal'" not in _h45 or "function aiRow" not in _h45:
     fails.append("m45 condition missing")
 if "not proof the video is real" not in _h45:
     fails.append("m45 caveat missing")
@@ -1121,6 +1121,26 @@ if _r["headline_score"] != 3.0: fails.append("m76 insufficient claim wrongly lif
 _c = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("supports",))]})["claims"]
 if _c[1]["verdict"]["truth_score"] != 4.0: fails.append("m76 card score was altered")
 
+# 77. FEEDBACK + LEANER SCORE CARD: Fair / Harsh / Wrong under the score
+# (a maintainers' signal, never a vote), per-claim flags, admin Flags list
+# with a harsh-rate; the score card cut to a third of its words and the
+# clean-AI card folded into one blue pill inside it.
+_h77 = open("app/templates/app.html").read()
+for _n in ('id="fbRow"', 'data-k="harsh"', "function wireFeedback", "'/api/feedback'", 'class="cflag"', "function aiRow", "<b>AI check ran</b>", 'id="aiDet"', "the lowest sets the score"):
+    if _n not in _h77: fails.append(f"m77 page missing {_n}")
+if '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check' in _h77: fails.append("m77 old disclaimer line still in the score card")
+if "AI media check ran \\u2014 no synthetic signal found" in _h77: fails.append("m77 old two-line AI card still present")
+if "Glowby is AI-powered. Scores and verdicts are automated" not in _h77: fails.append("m77 bottom disclaimer must remain")
+_m77 = open("app/main.py").read()
+for _n in ('@app.post("/api/feedback")', '@app.get("/api/admin/feedback")', "/api/admin/feedback/resolve", "_rate_limited(_client_ip(request))"):
+    if _n not in _m77: fails.append(f"m77 route missing {_n}")
+if "save_feedback(" not in _m77 or ':fb:{_client_ip(request)}' not in _m77: fails.append("m77 feedback not stored with a salted device hash")
+import app.storage as _st77
+if _st77.FEEDBACK_KINDS != ("fair", "harsh", "wrong"): fails.append("m77 kinds wrong")
+if _st77.save_feedback("k", "meh", None, "", "d") is not False: fails.append("m77 bad kind accepted")
+_a77 = open("app/templates/admin.html").read()
+if 'id="flags"' not in _a77 or "Harsh rate" not in _a77 or "score_was_right" not in _a77: fails.append("m77 admin flags card missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 76/76 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor")
+    "FINAL MATRIX PASS: 77/77 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback")
