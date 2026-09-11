@@ -64,6 +64,10 @@ a{color:var(--brand);text-decoration:none}
 .bar:hover .tip{display:block}
 .bar .tip b{color:var(--ink)}
 .xlab{display:flex;gap:2px;margin-top:6px}
+.fbf{background:none;border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:3px 10px;font-size:.72rem;cursor:pointer;font-family:inherit}
+.fbf.on{border-color:var(--brand);color:var(--ink)}
+.bar i.f{background:#4ade80} .bar i.h{background:#fab219} .bar i.w{background:#f87171}
+.bar .stack{display:flex;flex-direction:column-reverse;justify-content:flex-start;height:100%}
 .xlab span{flex:1;text-align:center;font-size:.62rem;color:var(--muted);font-family:"IBM Plex Mono",monospace}
 .empty{color:var(--muted);font-size:.85rem;padding:8px 0}
 /* verdict distribution */
@@ -162,7 +166,11 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="card">
       <h2>Score feedback — Fair / Harsh / Wrong</h2>
       <div id="fbTiles" class="tiles" style="margin-bottom:10px"></div>
-      <div class="s" style="margin-bottom:6px">Flags (harsh + wrong), newest first · each one either becomes a rule or is marked "score was right"</div>
+      <div class="s" style="margin-bottom:4px">Last 14 days · <span style="color:#4ade80">■ fair</span> <span style="color:#fab219">■ harsh</span> <span style="color:#f87171">■ wrong</span></div>
+      <div id="fbChart"></div>
+      <div class="s" style="margin:12px 0 6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">Show:
+        <button class="fbf on" data-kind="">flags (harsh + wrong)</button><button class="fbf" data-kind="wrong">wrong only</button><button class="fbf" data-kind="harsh">harsh only</button><button class="fbf" data-kind="fair">fair (likes)</button>
+        <span>· newest first · a flag either becomes a rule or is marked "score was right"</span></div>
       <div id="flags"></div>
     </div>
 
@@ -230,10 +238,11 @@ function shiftMonth(m, delta){
   const d = new Date(m + "-01T00:00:00"); d.setMonth(d.getMonth() + delta);
   return d.toISOString().slice(0,7);
 }
+window.__fbKind = "";
 async function loadFeedback(){
   let d = null;
   try {
-    const r = await fetch("/api/admin/feedback?key=" + encodeURIComponent(KEY) + "&limit=100");
+    const r = await fetch("/api/admin/feedback?key=" + encodeURIComponent(KEY) + "&limit=100&kind=" + encodeURIComponent(window.__fbKind));
     if (r.ok) d = await r.json();
   } catch(e){}
   if (!d){ $("flags").innerHTML = '<div class="empty">Could not load feedback.</div>'; return; }
@@ -243,12 +252,27 @@ async function loadFeedback(){
     tile("Harsh rate · 30 days", rate, (sm.harsh||0)+(sm.wrong||0) + " of " + (sm.total||0) + " taps said harsh or wrong", (sm.harsh_rate||0) > 0.3 ? "bad" : "") +
     tile("Fair · 30 days", sm.fair||0, "") + tile("Harsh · 30 days", sm.harsh||0, "") + tile("Wrong · 30 days", sm.wrong||0, "") +
     tile("All-time taps", (sm.all_time?.fair||0)+(sm.all_time?.harsh||0)+(sm.all_time?.wrong||0), "fair " + (sm.all_time?.fair||0) + " · harsh " + (sm.all_time?.harsh||0) + " · wrong " + (sm.all_time?.wrong||0));
+  // three-series daily chart: fair / harsh / wrong stacked per day
+  const daily = d.daily || [];
+  if (daily.length){
+    const max = Math.max(1, ...daily.map(x => x.fair + x.harsh + x.wrong));
+    let bars = '<div class="chart" style="height:110px">', labs = '<div class="xlab">';
+    daily.forEach(x => {
+      const pct = n => Math.round(n / max * 100);
+      bars += `<div class="bar"><span class="tip"><b>${x.fair}</b> fair · <b>${x.harsh}</b> harsh · <b>${x.wrong}</b> wrong<br>${esc(x.day)}</span>` +
+              `<div class="stack"><i class="f" style="height:${pct(x.fair)}%;min-height:0"></i><i class="h" style="height:${pct(x.harsh)}%;min-height:0;border-radius:0"></i><i class="w" style="height:${pct(x.wrong)}%;min-height:0"></i></div></div>`;
+      labs += `<span>${fmtDay(x.day)}</span>`;
+    });
+    $("fbChart").innerHTML = bars + "</div>" + labs + "</div>";
+  } else $("fbChart").innerHTML = '<div class="empty">No feedback yet.</div>';
+  document.querySelectorAll(".fbf").forEach(b => { b.classList.toggle("on", b.dataset.kind === window.__fbKind);
+    b.onclick = () => { window.__fbKind = b.dataset.kind; loadFeedback(); }; });
   const items = d.items || [];
-  if (!items.length){ $("flags").innerHTML = '<div class="empty">No harsh/wrong flags yet.</div>'; return; }
+  if (!items.length){ $("flags").innerHTML = '<div class="empty">Nothing here yet.</div>'; return; }
   $("flags").innerHTML = "<table>" + items.map(f =>
     `<tr><td class="t"><a href="/r/${encodeURIComponent(f.url_key)}" target="_blank" style="color:inherit">${esc(f.title||f.url_key)}</a>` +
     (f.note ? `<div class="s">“${esc(f.note)}”</div>` : "") + `</td>` +
-    `<td><b style="color:${f.kind==='wrong'?'#f87171':'#fab219'}">${esc(f.kind)}</b>${f.claim_idx===null||f.claim_idx===undefined?"":" · claim "+(f.claim_idx+1)}</td>` +
+    `<td><b style="color:${f.kind==='wrong'?'#f87171':(f.kind==='harsh'?'#fab219':'#4ade80')}">${esc(f.kind)}</b>${f.claim_idx===null||f.claim_idx===undefined?"":" · claim "+(f.claim_idx+1)}</td>` +
     `<td>${f.score ?? "—"}</td><td class="s">${esc(String(f.created_at||"").slice(0,10))}</td>` +
     `<td>${f.status==='new' ? `<button data-id="${f.id}" data-st="rule_added">rule added</button> <button data-id="${f.id}" data-st="score_was_right">score was right</button>` : `<span class="s">${esc(f.status)}</span>`}</td></tr>`).join("") + "</table>";
   $("flags").querySelectorAll("button[data-id]").forEach(b => b.onclick = async () => {

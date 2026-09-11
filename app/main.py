@@ -66,10 +66,10 @@ from app.storage import (
     text_key,
     today_usage,
     total_fresh_checks,
-    save_feedback, feedback_summary, list_feedback, resolve_feedback,
+    save_feedback, feedback_summary, list_feedback, resolve_feedback, feedback_daily,
 )
 
-VERSION = "0.52.0"
+VERSION = "0.52.1"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1284,11 +1284,13 @@ def api_feedback(fb: ScoreFeedback, request: Request):
 
 
 @app.get("/api/admin/feedback")
-def api_admin_feedback(key: str = "", limit: int = 100, all: int = 0):
+def api_admin_feedback(key: str = "", limit: int = 100, all: int = 0, kind: str = ""):
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
-    return {"summary": feedback_summary(30),
-            "items": list_feedback(min(max(int(limit), 1), 500), only_flags=not all)}
+    items = list_feedback(min(max(int(limit), 1), 500), only_flags=(not all and kind not in ("fair",)))
+    if kind in ("fair", "harsh", "wrong"):
+        items = [i for i in items if i.get("kind") == kind]
+    return {"summary": feedback_summary(30), "daily": feedback_daily(14), "items": items}
 
 
 class FeedbackResolve(BaseModel):

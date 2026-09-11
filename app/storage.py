@@ -838,6 +838,34 @@ def feedback_summary(days: int = 30) -> dict:
     return out
 
 
+def feedback_daily(days: int = 14) -> list:
+    """[{day, fair, harsh, wrong}] for the last N days, oldest first,
+    every day present (zeros included) so the chart has a full axis."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT d::date::text,
+                       count(*) FILTER (WHERE f.kind='fair'),
+                       count(*) FILTER (WHERE f.kind='harsh'),
+                       count(*) FILTER (WHERE f.kind='wrong')
+                FROM generate_series(current_date - (%s - 1), current_date, '1 day') AS d
+                LEFT JOIN score_feedback f ON f.created_at::date = d::date
+                GROUP BY d ORDER BY d
+                """, (int(days),))
+            return [{"day": r[0], "fair": int(r[1]), "harsh": int(r[2]), "wrong": int(r[3])}
+                    for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
 def list_feedback(limit: int = 100, only_flags: bool = True) -> list:
     """Newest first; flags = harsh/wrong. Joins the stored check's title."""
     conn = _get_conn()

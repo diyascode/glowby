@@ -1140,6 +1140,9 @@ if _st77.FEEDBACK_KINDS != ("fair", "harsh", "wrong"): fails.append("m77 kinds w
 if _st77.save_feedback("k", "meh", None, "", "d") is not False: fails.append("m77 bad kind accepted")
 _a77 = open("app/templates/admin.html").read()
 if 'id="flags"' not in _a77 or "Harsh rate" not in _a77 or "score_was_right" not in _a77: fails.append("m77 admin flags card missing")
+# the three kinds tracked separately: three-series daily chart + kind filters
+if 'id="fbChart"' not in _a77 or 'data-kind="fair"' not in _a77 or 'data-kind="wrong"' not in _a77 or 'data-kind="harsh"' not in _a77: fails.append("m77 admin per-kind tracking missing")
+if "def feedback_daily" not in open("app/storage.py").read() or '"daily": feedback_daily(14)' not in _m77: fails.append("m77 daily feedback series missing")
 
 print("MATRIX FAILURES:", fails) if fails else print(
     "FINAL MATRIX PASS: 77/77 — captions/thin/whisper/silent/blind/blocked/too-long, "
