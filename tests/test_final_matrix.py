@@ -1144,6 +1144,90 @@ if 'id="flags"' not in _a77 or "Harsh rate" not in _a77 or "score_was_right" not
 if 'id="fbChart"' not in _a77 or 'data-kind="fair"' not in _a77 or 'data-kind="wrong"' not in _a77 or 'data-kind="harsh"' not in _a77: fails.append("m77 admin per-kind tracking missing")
 if "def feedback_daily" not in open("app/storage.py").read() or '"daily": feedback_daily(14)' not in _m77: fails.append("m77 daily feedback series missing")
 
+# 78. WEEKLY FLAG REVIEW — the judge of the judges. Unreviewed harsh/wrong
+# flags are reviewed on Fable (fallback Sonnet) against the evidence the
+# judge actually had; proposals only (never changes a score/rule); Monday
+# schedule + run-now; budget-guarded; admin card with decisions.
+from app.agents import review as _rv
+if _rv.REVIEW_MODEL != "claude-fable-5-1": fails.append("m78 review model default not Fable")
+_pr = _rv.parse_review('{"assessment":"rule-fix","reader_has_a_point":true,"reasoning":"r","misapplied_rule":"silence can speak","proposed_rule_name":"X","proposed_rule":"X: ...","fair_score_estimate":"7.5","confidence":"HIGH"}')
+if not _pr or _pr["assessment"] != "rule_fix" or _pr["fair_score_estimate"] != 7.5 or _pr["confidence"] != "high": fails.append(f"m78 parse: {_pr}")
+if _rv.parse_review("nope") is not None: fails.append("m78 junk parsed")
+if _rv.parse_review('{"assessment":"weird"}')["assessment"] != "cannot_tell": fails.append("m78 unknown assessment not cannot_tell")
+class _FakeMsg:
+    def __init__(self, t): self.content = [type("B", (), {"type": "text", "text": t})()]
+class _FakeMessages:
+    def __init__(self): self.calls = []
+    def create(self, **kw):
+        self.calls.append(kw)
+        if kw["model"] == "claude-fable-5-1":
+            raise RuntimeError("model not found for this key")
+        return _FakeMsg('{"assessment":"score_was_right","reader_has_a_point":false,"reasoning":"ok","confidence":"medium"}')
+class _FakeClient:
+    def __init__(self): self.messages = _FakeMessages()
+_fc = _FakeClient()
+_res = {"title": "T", "report": {"headline_score": 3.5, "headline_label": "L"},
+        "claims": [{"claim": "c1", "bucket": "health", "central": True, "risk_level": "high",
+                    "verdict": {"verdict_state": "insufficient", "truth_score": 3.5, "verdict": "v", "evidence_strength": "moderate"},
+                    "evidence": {"web_sources": [{"source": "NCI", "stance": "refutes", "quote": "q", "url": "https://a"}]}}]}
+_doc = _rv.run_review([{"id": 1, "url_key": "k", "kind": "harsh", "claim_idx": 0, "note": "n"},
+                       {"id": 2, "url_key": "missing", "kind": "wrong", "claim_idx": None, "note": ""}],
+                      lambda k: _res if k == "k" else None, client=_fc)
+if len(_doc["entries"]) != 2: fails.append("m78 entries wrong")
+if _doc["entries"][0]["review"].get("assessment") != "score_was_right" or _doc["entries"][0]["review"].get("model") != _rv.FALLBACK_MODEL: fails.append(f"m78 fallback not used: {_doc['entries'][0]['review']}")
+if _doc["entries"][1]["review"].get("error") != "stored result not found": fails.append("m78 missing result not typed")
+if "1 score was right" not in _doc["summary"]: fails.append(f"m78 summary: {_doc['summary']}")
+if [c["model"] for c in _fc.messages.calls] != ["claude-fable-5-1", _rv.FALLBACK_MODEL]: fails.append("m78 model order wrong")
+_pm = _fc.messages.calls[0]["messages"][0]["content"]
+if "NCI [refutes]" not in _pm or "Reader's note: n" not in _pm or "only propose" not in _pm: fails.append("m78 prompt missing evidence/note/guardrail")
+_m78 = open("app/main.py").read()
+for _n in ('"/api/admin/review/run"', '"/api/admin/review/latest"', "def _review_due", "run_flag_review(reason=\"weekly\")", "spent >= DAILY_BUDGET_USD:\n        return {\"ok\": False, \"detail\": \"daily budget reached; review skipped\"}"):
+    if _n not in _m78: fails.append(f"m78 main missing {_n[:40]}")
+_a78 = open("app/templates/admin.html").read()
+if 'id="runReview"' not in _a78 or "accept → rule to build" not in _a78 or "score was right" not in _a78: fails.append("m78 admin review card missing")
+
+# 79. CONTENT GATE: general / mature (never in Trending) / explicit (AI check
+# only, private path, nothing stored) / possible minor (refused, resources).
+from app.agents import safety as _sf
+_ps = _sf.prescreen("Test dummy #unreel #tesla")
+if _ps["rating"] != "general" or _ps["minor_risk"]: fails.append("m79 clean caption flagged")
+if _sf.prescreen("leaked video of celeb nude")["rating"] != "explicit": fails.append("m79 explicit caption missed")
+if not _sf.prescreen("teen nudes leaked")["minor_risk"]: fails.append("m79 minor risk missed")
+if _sf.prescreen("news: school bans phones")["minor_risk"]: fails.append("m79 school news wrongly minor-flagged")
+if _sf.mask_profanity("what the fuck") != "what the f***": fails.append("m79 profanity mask")
+if _sf.parse_rating('{"rating":"Mature","minor_risk":"no"}') != {"rating": "mature", "minor_risk": False, "reason": ""}: fails.append("m79 parse_rating")
+if _sf.parse_rating('{"rating":"spicy"}') is not None: fails.append("m79 bad rating accepted")
+# minor risk from the pre-screen never consults the model; the model may de-escalate explicit->mature, never ->general
+class _SC:
+    class messages:
+        @staticmethod
+        def create(**kw):
+            return type("M", (), {"content": [type("B", (), {"type": "text", "text": '{"rating":"general","minor_risk":false,"reason":"news"}'})()]})()
+_r = _sf.rate_content("teen nudes leaked", "", client=_SC())
+if not (_r["rating"] == "explicit" and _r["minor_risk"] and _r["source"] == "prescreen"): fails.append(f"m79 minor prescreen: {_r}")
+_r = _sf.rate_content("porn site sued in court", "news report", client=_SC())
+if _r["rating"] != "mature": fails.append(f"m79 de-escalation floor: {_r}")
+class _Broken:
+    class messages:
+        @staticmethod
+        def create(**kw): raise RuntimeError("down")
+_r = _sf.rate_content("onlyfans leak", "", client=_Broken())
+if _r["rating"] != "mature" or _r["source"] != "fallback": fails.append(f"m79 fail-safe: {_r}")
+_m79 = open("app/main.py").read()
+for _n in ('_rating = safety.rate_content(', '"refused": "minor"', '"explicit_offer": True', '"private": True, "media_only": True', 'no reverse image search on the private path', "hide_from_trending(req.url_key)", "delete_result(req.url_key)", 'kind if rep.kind in ("wrong", "inappropriate")'):
+    if _n not in _m79: fails.append(f"m79 main missing {_n[:40]}")
+_gate_at = _m79.index("_rating = safety.rate_content("); _route_at = _m79.index('_set_job(job_id, stage="routing")')
+if _gate_at > _route_at: fails.append("m79 gate must run before routing")
+_priv = _m79[_m79.index("PRIVATE AI-ONLY PATH"):_m79.index("_set_job(job_id, stage=\"routing\")")]
+if "save_result(" in _priv or "reverse_search.analyze" in _priv: fails.append("m79 private path stores or reverse-searches")
+_st79 = open("app/storage.py").read()
+if "coalesce(result->>'content_rating', 'general') = 'general'" not in _st79 or "mask_profanity(" not in _st79: fails.append("m79 Trending not filtered/masked")
+_h79 = open("app/templates/app.html").read()
+for _n in ("d.refused==='minor'", "d.explicit_offer", 'id="privGo"', "const gated=!!(d.private||d.refused||d.explicit_offer)", 'data-k="inappropriate"', "function resourcesHtml"):
+    if _n not in _h79: fails.append(f"m79 page missing {_n}")
+if 'id="content"' not in open("app/templates/trust.html").read(): fails.append("m79 trust page policy missing")
+if "hide from Trending" not in open("app/templates/admin.html").read(): fails.append("m79 admin moderation missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 77/77 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback")
+    "FINAL MATRIX PASS: 79/79 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate")

@@ -411,6 +411,17 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .cflag-row button{font-size:11px;border-radius:999px;padding:1px 8px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);cursor:pointer;font-family:inherit}
 html.light .fb-chip{background:#fff;border-color:rgba(0,0,0,.14);color:#63636e}
 html.light .fb-note input{background:#fff;border-color:rgba(0,0,0,.2)}
+.rep-row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:6px 0 2px;width:100%}
+.rep-row button{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);color:var(--ink);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.rep-row button[data-k="inappropriate"]{border-color:rgba(248,113,113,.45)}
+/* private AI check + refusals (content gate) */
+.privcard{background:linear-gradient(155deg,rgba(138,124,255,.12),rgba(56,189,248,.06));border:1px solid rgba(138,124,255,.35);border-radius:16px;padding:16px;margin:12px 0;text-align:left}
+.privcard b.t{display:block;font-size:15px;margin-bottom:6px}
+.privcard .meta{margin-top:6px}
+.privcard .res{margin-top:10px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+.privcard .res a{color:var(--brand)}
+.privcard button.go{margin-top:10px;width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(100deg,#a78bfa,#f472b6);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+.privnote{font-size:12px;color:var(--muted);text-align:center;margin:6px 0 10px}
 /* the answer-first card on results */
 .uq-card{background:linear-gradient(155deg,rgba(138,124,255,.14),rgba(196,107,242,.07));
   border:1px solid rgba(138,124,255,.35);border-radius:16px;padding:14px 16px;margin-bottom:12px;text-align:left}
@@ -576,7 +587,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.52.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.54.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -718,9 +729,28 @@ function claimCard(c,idx){
     :'<div class="score"'+(c.verifying?' style="animation:pulse 1s infinite alternate"':'')+'>···</div>';
   return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b class="claim-h">'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
 }
+function resourcesHtml(list,intro){
+  if(!list||!list.length)return '';
+  let h='<div class="res"><b>'+esc(intro)+'</b>';
+  for(const r of list){h+='<div class="meta">'+(r.url?('<a href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(r.name)+' \u2197</a>'):('<b>'+esc(r.name)+'</b>'))+' \u2014 '+esc(r.what)+'</div>';}
+  return h+'</div>';
+}
 function renderList(d){
   const rep=d.report||{};
   let html='';
+  // CONTENT GATE outcomes: refused (possible minor) / adult content offer
+  if(d.refused==='minor'){
+    return '<div class="privcard"><b class="t">\u26d4 Not processed</b><div class="meta">'+esc(d.message||'')+'</div>'
+      +resourcesHtml(d.resources,'Help removing it:')+'</div>';
+  }
+  if(d.explicit_offer){
+    return '<div class="privcard"><b class="t">\ud83d\udd12 Adult content \u2014 not fact-checked</b><div class="meta">'+esc(d.message||'')+'</div>'
+      +'<button type="button" class="go" id="privGo">Run the private AI check \u00b7 \u2248 4\u00a2</button>'
+      +'<div class="privnote">Nothing about this video is stored, shared, or listed. Ever.</div></div>';
+  }
+  if(d.private){
+    html+='<div class="privnote">\ud83d\udd12 Private AI check \u00b7 not stored \u00b7 not shareable \u00b7 never in Trending</div>';
+  }
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
   if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
   const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
@@ -728,7 +758,7 @@ function renderList(d){
   const shortTitle=(fullTitle.length>90)?(fullTitle.slice(0,90).trim()+'\u2026'):fullTitle;
   const titleHtml=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(shortTitle)+' \u2197</a>'):esc(shortTitle);
   const moreTitle=(fullTitle.length>90)?(' <a href="#" class="ttlmore" data-full="'+esc(fullTitle)+'" style="color:var(--brand)">full caption</a>'):'';
-  html+='<div class="meta">'+esc(d.platform)+' · '+titleHtml+moreTitle+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
+  if(!d.private)html+='<div class="meta">'+esc(d.platform)+' · '+titleHtml+moreTitle+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
   if(d.answer_mode){
     function splitLead(t){
       const re=/[.!?]\s+/g; let m;
@@ -818,6 +848,13 @@ function renderList(d){
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
     '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest sets the score')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';
+  }
+  if(d.private){
+    const strong=!!(au&&(au.origin_result==='likely_synthetic'||au.origin_result==='verified_ai_provenance'||au.origin_result==='declared_ai'));
+    html+='<div class="privcard">'+(strong
+      ?'<b class="t">If this is you, or someone you know</b><div class="meta">This result can support a takedown request, but it is not legal evidence on its own. These services help:</div>'
+      :'<b class="t">If this is you, or someone you know</b><div class="meta">Whatever the detector found, you can still ask for it to be removed:</div>')
+      +resourcesHtml(d.resources,'')+'</div>';
   }
   if(au&&au.stage2_status==='failed'){
     html+='<div class="aicard aicard-warn"><div class="aicard-t">\u26a0\ufe0f The AI media check could not complete</div>'
@@ -969,14 +1006,17 @@ function render(){
   addMyCheck(d);
   document.querySelector('.wrap').classList.add('active');
   const out=$('out'); out.style.display='block';
-  let html='<div class="toggle" id="vt"><span id="tl" class="'+(currentView==='list'?'on':'')+'">List</span><span id="tr" class="'+(currentView==='reel'?'on':'')+'">Reel view</span></div>';
-  html+=currentView==='list'?renderList(d):renderReel(d);
+  const gated=!!(d.private||d.refused||d.explicit_offer);
+  let html=gated?'':'<div class="toggle" id="vt"><span id="tl" class="'+(currentView==='list'?'on':'')+'">List</span><span id="tr" class="'+(currentView==='reel'?'on':'')+'">Reel view</span></div>';
+  html+=(currentView==='list'||gated)?renderList(d):renderReel(d);
   const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
+  if(!gated){
   html+='<div class="actions">';
   html+='<button id="copyRes">🔗 Copy result link</button>';
   html+='<button id="repBtn">🛠 Report a mistake</button>';
   html+='</div>';
-  const srcUrl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
+  }
+  const srcUrl=(!gated&&d.url&&/^https?:\/\//.test(d.url))?d.url:null;
   if(srcUrl)html+='<div style="text-align:center;margin:2px 0 10px"><a href="'+esc(srcUrl)+'" target="_blank" rel="noopener" class="meta" style="color:var(--brand)">\u25b6 Open the original video \u2197</a></div>';
   html+='<div class="aidisc">Glowby is AI-powered. Scores and verdicts are automated assessments of the evidence found — they can be wrong. Always check the sources. Not medical, legal, or financial advice. <a href="/about#terms">Terms</a></div>';
   if(d.url_key){
@@ -1052,22 +1092,46 @@ function render(){
       resetAiChip();
     }catch(err){$('steps').style.display='none';$('out').style.display='block';$('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';}
   };
-  $('tl').onclick=()=>{currentView='list';render();};
-  $('tr').onclick=()=>{currentView='reel';render();};
+  if($('tl'))$('tl').onclick=()=>{currentView='list';render();};
+  if($('tr'))$('tr').onclick=()=>{currentView='reel';render();};
+  const pg=$('privGo');
+  if(pg)pg.onclick=async()=>{
+    pg.disabled=true;pg.textContent='Running the private AI check\u2026';
+    try{
+      const r=await checkFetch({url:d.url||'',ai_only:true,detect_ai:true,force:true});
+      const j=await r.json();
+      if(!r.ok)throw new Error(j.detail||'Something went wrong.');
+      currentResult=j.job_id?await poll(j.job_id):j;
+      currentView='list';render();
+    }catch(err){pg.disabled=false;pg.textContent='Could not run \u2014 try again';}
+  };
   const cr=$('copyRes');
   if(cr)cr.onclick=async()=>{
     const t=permalink||resultText(d);  // the link IS the result; text only if no permalink exists
     try{await navigator.clipboard.writeText(t);cr.textContent='✓ Link copied';}catch(e){prompt('Copy this:',t);}
     try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_result'})});}catch(e){}};
   const rb=$('repBtn');
-  if(rb)rb.onclick=async()=>{
-    const msg=prompt('What looks wrong with this result? (Glowby reviews every report — add your email if you want a reply)');
-    if(!msg||msg.trim().length<10){if(msg!==null)alert('Please describe the problem in a sentence or two.');return;}
-    try{
-      const r=await fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||'',url:d.url||'',message:msg})});
-      if(r.ok){rb.textContent='✓ Report filed — thank you';rb.disabled=true;}
-      else{const j=await r.json();alert(j.detail||'Could not file the report — try again.');}
-    }catch(e){alert('Could not file the report — try again.');}
+  if(rb)rb.onclick=()=>{
+    // two kinds of report: the score is wrong, or the content itself is
+    // inappropriate (guideline 1.2: readers can flag objectionable material)
+    if(rb.dataset.open)return;rb.dataset.open='1';
+    const row=document.createElement('div');row.className='rep-row';
+    row.innerHTML='<button type="button" data-k="wrong">Score is wrong</button><button type="button" data-k="inappropriate">Inappropriate content</button>';
+    rb.insertAdjacentElement('afterend',row);
+    row.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
+      const kind=b.dataset.k;let msg='';
+      if(kind==='wrong'){
+        msg=prompt('What looks wrong with this result? (Glowby reviews every report \u2014 add your email if you want a reply)');
+        if(!msg||msg.trim().length<10){if(msg!==null)alert('Please describe the problem in a sentence or two.');return;}
+      }else{
+        msg=prompt('Optional: what is inappropriate about this content? (Leave blank to just flag it)')||'';
+      }
+      try{
+        const r=await fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||'',url:d.url||'',message:msg,kind:kind})});
+        if(r.ok){row.remove();rb.textContent=kind==='wrong'?'\u2713 Report filed \u2014 thank you':'\u2713 Flagged \u2014 thank you, we will review it';rb.disabled=true;}
+        else{const j=await r.json();alert(j.detail||'Could not file the report \u2014 try again.');}
+      }catch(e){alert('Could not file the report \u2014 try again.');}
+    });
   };
 }
 function setStage(stage){

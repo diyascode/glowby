@@ -68,6 +68,14 @@ a{color:var(--brand);text-decoration:none}
 .fbf.on{border-color:var(--brand);color:var(--ink)}
 .bar i.f{background:#4ade80} .bar i.h{background:#fab219} .bar i.w{background:#f87171}
 .bar .stack{display:flex;flex-direction:column-reverse;justify-content:flex-start;height:100%}
+.rv{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.rv .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.85rem}
+.rv .tag{border-radius:999px;padding:1px 9px;font-size:.7rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.rv .tag.rule_fix{background:rgba(138,124,255,.18);color:#a99cff} .rv .tag.score_was_right{background:rgba(74,222,128,.15);color:#4ade80}
+.rv .tag.evidence_gap{background:rgba(56,189,248,.15);color:#38bdf8} .rv .tag.product_idea{background:rgba(250,178,25,.15);color:#fab219} .rv .tag.cannot_tell{background:rgba(255,255,255,.08);color:var(--muted)}
+.rv .why{font-size:.84rem;margin:6px 0;line-height:1.45}
+.rv .rule{font-size:.82rem;background:rgba(138,124,255,.08);border-left:3px solid var(--brand);padding:8px 10px;border-radius:6px;margin:6px 0;white-space:pre-wrap}
+.rv .act{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .xlab span{flex:1;text-align:center;font-size:.62rem;color:var(--muted);font-family:"IBM Plex Mono",monospace}
 .empty{color:var(--muted);font-size:.85rem;padding:8px 0}
 /* verdict distribution */
@@ -172,6 +180,15 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
         <button class="fbf on" data-kind="">flags (harsh + wrong)</button><button class="fbf" data-kind="wrong">wrong only</button><button class="fbf" data-kind="harsh">harsh only</button><button class="fbf" data-kind="fair">fair (likes)</button>
         <span>· newest first · a flag either becomes a rule or is marked "score was right"</span></div>
       <div id="flags"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Weekly flag review — the judge of the judges</h2>
+        <button id="runReview" class="fbf" style="font-size:.78rem;padding:6px 12px">Run review now</button>
+      </div>
+      <div class="s" id="reviewMeta" style="margin:6px 0 8px"></div>
+      <div id="review"></div>
     </div>
 
     <div class="card">
@@ -282,6 +299,58 @@ async function loadFeedback(){
   });
 }
 
+async function moderate(urlKey, action, repId){
+  if (action === "delete" && !confirm("Delete this stored result? The share link will stop working.")) return;
+  await fetch("/api/admin/moderate", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key: KEY, url_key: urlKey, action})});
+  if (repId) await fetch("/api/admin/resolve", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key: KEY, report_id: repId, status: "fixed", note: action === "hide" ? "hidden from Trending" : "stored result deleted"})});
+  load();
+}
+
+async function loadReview(){
+  let d = null;
+  try {
+    const r = await fetch("/api/admin/review/latest?key=" + encodeURIComponent(KEY));
+    if (r.ok) d = await r.json();
+  } catch(e){}
+  if (!d){ $("review").innerHTML = '<div class="empty">Could not load the review.</div>'; return; }
+  const rv = d.review;
+  $("reviewMeta").textContent = `Model: ${d.model} · runs Mondays ${d.weekly ? "(on)" : "(off)"} · ${d.pending} flag(s) waiting` +
+    (d.state && d.state.running ? " · review running…" : "") + (d.state && d.state.error ? " · last error: " + d.state.error : "");
+  if (!rv){ $("review").innerHTML = '<div class="empty">No review yet. It runs every Monday morning, or press "Run review now".</div>'; return; }
+  let h = `<div class="s" style="margin-bottom:8px"><b>${esc(rv.summary||"")}</b> · ${esc(String(rv.created_at||"").slice(0,16).replace("T"," "))} UTC · model ${esc((rv.models_used||[]).join(", ")||rv.model||"")} · est. $${(rv.est_cost||0).toFixed(2)}</div>`;
+  for (const e of (rv.entries||[])){
+    const f = e.flag||{}, r = e.review||{};
+    const st = e.status||"new";
+    h += `<div class="rv"><div class="h">` +
+      (r.error ? `<span class="tag cannot_tell">failed</span>` : `<span class="tag ${esc(r.assessment)}">${esc((r.assessment||"").replace(/_/g," "))}</span>`) +
+      `<b style="color:${f.kind==='wrong'?'#f87171':'#fab219'}">${esc(f.kind||"")}</b>` +
+      (f.claim_idx===null||f.claim_idx===undefined ? "" : `<span class="s">claim ${f.claim_idx+1}</span>`) +
+      `<a href="/r/${encodeURIComponent(f.url_key||"")}" target="_blank" style="color:inherit">${esc(f.title||f.url_key||"")}</a>` +
+      `<span class="s">score ${f.score ?? "—"}${r.fair_score_estimate!==null&&r.fair_score_estimate!==undefined ? " → fair ≈ "+r.fair_score_estimate : ""}</span>` +
+      (r.confidence ? `<span class="s">· ${esc(r.confidence)} confidence</span>` : "") + `</div>`;
+    if (f.note) h += `<div class="s">Reader: “${esc(f.note)}”</div>`;
+    if (r.error) h += `<div class="why">${esc(r.error)}</div>`;
+    else {
+      h += `<div class="why">${esc(r.reasoning||"")}${r.misapplied_rule ? ` <span class="s">(misapplied: ${esc(r.misapplied_rule)})</span>` : ""}</div>`;
+      if (r.proposed_rule) h += `<div class="rule"><b>${esc(r.proposed_rule_name||"PROPOSED RULE")}</b>\n${esc(r.proposed_rule)}</div>`;
+    }
+    h += `<div class="act">` + (st==="new"||st==="reviewed"
+      ? `<button class="fbf" data-id="${f.id}" data-st="rule_added">accept → rule to build</button>` +
+        `<button class="fbf" data-id="${f.id}" data-st="score_was_right">score was right</button>` +
+        `<button class="fbf" data-id="${f.id}" data-st="evidence_gap">evidence gap</button>` +
+        `<button class="fbf" data-id="${f.id}" data-st="dismissed">dismiss</button>`
+      : `<span class="s">decided: ${esc(st.replace(/_/g," "))}</span>`) + `</div></div>`;
+  }
+  $("review").innerHTML = h;
+  $("review").querySelectorAll("button[data-id]").forEach(b => b.onclick = async () => {
+    await fetch("/api/admin/feedback/resolve", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({key: KEY, feedback_id: +b.dataset.id, status: b.dataset.st})});
+    loadReview(); loadFeedback();
+  });
+}
+
 async function loadDay(day){
   const dd = $("dayDetail"); dd.innerHTML = '<div class="empty">Loading…</div>';
   let d = null;
@@ -389,6 +458,14 @@ function render(d){
   if (!window.__calMonth) window.__calMonth = new Date().toISOString().slice(0,7);
   loadCalendar(window.__calMonth);
   loadFeedback();
+  loadReview();
+  $("runReview").onclick = async () => {
+    $("runReview").disabled = true; $("runReview").textContent = "Reviewing…";
+    try { const r = await fetch("/api/admin/review/run?key=" + encodeURIComponent(KEY), {method:"POST"}); const j = await r.json();
+      $("reviewMeta").textContent = j.ok ? (j.summary || j.detail || "done") : ("Could not run: " + (j.detail||"")); } catch(e){}
+    $("runReview").disabled = false; $("runReview").textContent = "Run review now";
+    loadReview(); loadFeedback();
+  };
 
   // ---- unique visitors by month ----
   const mo = d.visitors_monthly || [];
@@ -409,14 +486,18 @@ function render(d){
     ? '<div class="empty">No mistake reports yet. When a user hits “report” on a check, it appears here.</div>'
     : reps.map(rp => {
       const link = rp.url_key ? `<a href="/r/${encodeURIComponent(rp.url_key)}" target="_blank">open check ↗</a>` : "";
+      const mod = (rp.kind === "inappropriate" && rp.url_key)
+        ? `<button onclick="moderate('${esc(rp.url_key)}','hide',${rp.id})" style="border-color:#fab219">hide from Trending</button>
+           <button onclick="moderate('${esc(rp.url_key)}','delete',${rp.id})" style="border-color:#f87171">delete stored result</button>` : "";
       const acts = rp.status === "new" || rp.status === "reviewed"
-        ? `<div class="racts">
+        ? `<div class="racts">${mod}
             <button onclick="resolveRep(${rp.id},'reviewed')">mark reviewed</button>
             <button onclick="resolveRep(${rp.id},'fixed')">mark fixed</button>
             <button onclick="resolveRep(${rp.id},'rejected')">reject</button>
           </div>` : "";
       return `<div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
-        <span class="st ${esc(rp.status)}">${esc(rp.status)}</span>
+        <span class="st ${esc(rp.status)}">${esc(rp.status)}</span>` +
+        (rp.kind === "inappropriate" ? ` <span class="st" style="color:#f87171;border-color:#f87171">inappropriate content</span>` : "") + `
         <div class="rmsg">${esc(rp.message)}</div>
         <div class="rmeta">#${rp.id} · ${esc((rp.created_at||"").slice(0,16).replace("T"," "))}` +
         (rp.contact ? ` · ${esc(rp.contact)}` : "") + (link ? " · " + link : "") +

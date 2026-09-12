@@ -262,15 +262,18 @@ def list_recent_checks(limit: int = 12) -> list:
                 "result->'report'->>'headline_score', "
                 "result->'report'->>'headline_state', "
                 "(result->>'answer_mode') = 'true' "
-                "FROM checks ORDER BY created_at DESC LIMIT %s",
+                "FROM checks "
+                "WHERE coalesce(result->>'content_rating', 'general') = 'general' "
+                "ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             )
             rows = cur.fetchall()
+        from app.agents.safety import mask_profanity
         out = []
         for r in rows:
             out.append({
                 "url_key": r[0],
-                "title": (r[1] or "(untitled)")[:80],
+                "title": mask_profanity((r[1] or "(untitled)")[:80]),
                 "score": float(r[2]) if r[2] is not None else None,
                 "state": r[3] or "unverified",
                 "answer": bool(r[4]),
@@ -286,7 +289,7 @@ def list_recent_checks(limit: int = 12) -> list:
 
 
 def save_mistake_report(url_key: str, url: str, message: str,
-                        contact: str = "") -> bool:
+                        contact: str = "", kind: str = "wrong") -> bool:
     """Store a user mistake report. False when storage is unavailable."""
     conn = _get_conn()
     if conn is None:
@@ -308,10 +311,12 @@ def save_mistake_report(url_key: str, url: str, message: str,
                 )
                 """
             )
+            cur.execute("ALTER TABLE mistake_reports ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'wrong'")
             cur.execute(
-                "INSERT INTO mistake_reports (url_key, url, message, contact) "
-                "VALUES (%s, %s, %s, %s)",
-                (url_key[:200], url[:500], message[:2000], contact[:200]),
+                "INSERT INTO mistake_reports (url_key, url, message, contact, kind) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (url_key[:200], url[:500], message[:2000], contact[:200],
+                 kind if kind in ("wrong", "inappropriate") else "wrong"),
             )
         return True
     except Exception:
@@ -325,15 +330,16 @@ def list_mistake_reports(status: str = "") -> list:
         return []
     try:
         with conn.cursor() as cur:
+            cur.execute("ALTER TABLE mistake_reports ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'wrong'")
             if status:
                 cur.execute(
                     "SELECT id, url_key, url, message, contact, status, "
-                    "resolution, created_at, resolved_at FROM mistake_reports "
+                    "resolution, created_at, resolved_at, kind FROM mistake_reports "
                     "WHERE status = %s ORDER BY id DESC LIMIT 200", (status,))
             else:
                 cur.execute(
                     "SELECT id, url_key, url, message, contact, status, "
-                    "resolution, created_at, resolved_at FROM mistake_reports "
+                    "resolution, created_at, resolved_at, kind FROM mistake_reports "
                     "ORDER BY id DESC LIMIT 200")
             rows = cur.fetchall()
         return [{
@@ -341,8 +347,13 @@ def list_mistake_reports(status: str = "") -> list:
             "contact": r[4], "status": r[5], "resolution": r[6],
             "created_at": r[7].isoformat() if r[7] else None,
             "resolved_at": r[8].isoformat() if r[8] else None,
+            "kind": r[9] or "wrong",
         } for r in rows]
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return []
 
 
@@ -897,7 +908,7 @@ def list_feedback(limit: int = 100, only_flags: bool = True) -> list:
 
 
 def resolve_feedback(fid: int, status: str) -> bool:
-    if status not in ("new", "rule_added", "score_was_right", "dismissed"):
+    if status not in ("new", "reviewed", "rule_added", "score_was_right", "dismissed", "evidence_gap", "product_idea"):
         return False
     conn = _get_conn()
     if conn is None:
@@ -905,6 +916,176 @@ def resolve_feedback(fid: int, status: str) -> bool:
     try:
         with conn.cursor() as cur:
             cur.execute("UPDATE score_feedback SET status=%s WHERE id=%s", (status, int(fid)))
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+# ---- weekly flag review (proposals only; never changes a score) ----
+
+def pending_flags(limit: int = 60) -> list:
+    """Harsh/wrong flags not yet reviewed, oldest first."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, url_key, kind, claim_idx, note FROM score_feedback "
+                "WHERE kind IN ('harsh','wrong') AND status = 'new' "
+                "ORDER BY id ASC LIMIT %s", (int(limit),))
+            return [{"id": r[0], "url_key": r[1], "kind": r[2], "claim_idx": r[3], "note": r[4] or ""}
+                    for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def load_result_quiet(url_key: str):
+    """Stored result without counting a view (the review is not a reader)."""
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT result FROM checks WHERE url_key = %s", (url_key,))
+            row = cur.fetchone()
+        if not row:
+            return None
+        return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def save_review(doc: dict) -> int | None:
+    """Store one review document; mark its flags 'reviewed' with the
+    model's suggestion attached (the human still decides)."""
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS flag_reviews (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    model TEXT,
+                    flags INTEGER,
+                    summary TEXT,
+                    doc JSONB NOT NULL
+                )
+                """)
+            cur.execute("ALTER TABLE score_feedback ADD COLUMN IF NOT EXISTS suggestion TEXT")
+            cur.execute("ALTER TABLE score_feedback ADD COLUMN IF NOT EXISTS review_id BIGINT")
+            cur.execute(
+                "INSERT INTO flag_reviews (model, flags, summary, doc) VALUES (%s, %s, %s, %s) RETURNING id",
+                (",".join(doc.get("models_used") or []) or doc.get("model_requested"),
+                 len(doc.get("entries") or []), doc.get("summary"), json.dumps(doc)))
+            rid = cur.fetchone()[0]
+            for e in doc.get("entries") or []:
+                fid = (e.get("flag") or {}).get("id")
+                rv = e.get("review") or {}
+                if fid and not rv.get("error"):
+                    cur.execute(
+                        "UPDATE score_feedback SET status='reviewed', suggestion=%s, review_id=%s WHERE id=%s",
+                        (rv.get("assessment"), rid, int(fid)))
+        return rid
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def latest_review():
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, created_at, model, flags, summary, doc FROM flag_reviews ORDER BY id DESC LIMIT 1")
+            r = cur.fetchone()
+        if not r:
+            return None
+        doc = r[5] if isinstance(r[5], dict) else json.loads(r[5])
+        doc.update({"id": r[0], "stored_at": r[1].isoformat() if r[1] else None,
+                    "model": r[2], "flags": r[3]})
+        # live statuses so decided flags show as decided
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, status FROM score_feedback WHERE review_id = %s", (r[0],))
+            st = {row[0]: row[1] for row in cur.fetchall()}
+        for e in doc.get("entries") or []:
+            fid = (e.get("flag") or {}).get("id")
+            e["status"] = st.get(fid, "new")
+        return doc
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def last_review_at():
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT max(created_at) FROM flag_reviews")
+            r = cur.fetchone()
+        return r[0] if r else None
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+# ---- moderation (admin): keep a result out of Trending, or delete it ----
+
+def hide_from_trending(url_key: str) -> bool:
+    """Stamp a stored result 'mature' so Trending never lists it; the
+    share link keeps working."""
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE checks SET result = jsonb_set(result::jsonb, '{content_rating}', '\"mature\"'::jsonb, true) "
+                "WHERE url_key = %s", (url_key,))
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def delete_result(url_key: str) -> bool:
+    """Remove a stored result entirely (share link stops working)."""
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM checks WHERE url_key = %s", (url_key,))
         return True
     except Exception:
         try:

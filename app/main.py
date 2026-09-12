@@ -29,6 +29,7 @@ from app.agents.authenticity import assess_stage1, merge_stage2
 from app.agents import hive_detect
 from app.agents import reverse_search
 from app.agents.evidence import gather_evidence, search_fact_check_db
+from app.agents import safety
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
 from app.agents.vision import describe_frames
@@ -67,9 +68,11 @@ from app.storage import (
     today_usage,
     total_fresh_checks,
     save_feedback, feedback_summary, list_feedback, resolve_feedback, feedback_daily,
+    pending_flags, load_result_quiet, save_review, latest_review, last_review_at,
+    hide_from_trending, delete_result,
 )
 
-VERSION = "0.52.1"
+VERSION = "0.54.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -466,6 +469,67 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     "don't assert anything checkable."))
                 return
         t_fetch = time.time() - t0
+
+        # CONTENT GATE — before anything is routed, judged, stored or
+        # listed. general: normal; mature: normal but never in Trending;
+        # explicit: not fact-checked, not stored — AI check only, on a
+        # PRIVATE path; possible minor: refused outright. See safety.py.
+        if not url_key.startswith("text:"):
+            _rating = safety.rate_content(
+                result.get("title") or "", result.get("transcript") or "",
+                result.get("uploader") or "")
+            result["content_rating"] = _rating["rating"]
+            if _rating["rating"] == "explicit":
+                # never persist anything about this video
+                result.pop("frames_standby", None)
+                if _rating.get("minor_risk"):
+                    _set_job(job_id, status="done", result={
+                        "refused": "minor", "message": safety.MINOR_REFUSAL,
+                        "resources": safety.RESOURCES_MINOR, "claims": [],
+                        "report": {"headline_score": None, "headline_state": "refused",
+                                   "headline_label": "Not processed", "counts": {}}})
+                    return
+                if not ai_only:
+                    _set_job(job_id, status="done", result={
+                        "explicit_offer": True, "message": safety.EXPLICIT_OFFER,
+                        "url": url, "claims": [],
+                        "report": {"headline_score": None, "headline_state": "unverified",
+                                   "headline_label": "Adult content — not fact-checked",
+                                   "counts": {}}})
+                    return
+                # PRIVATE AI-ONLY PATH: detector only; nothing kept.
+                _set_job(job_id, stage="assembling")
+                _auo = result.get("authenticity") or {}
+                if AUTHENTICITY_ENABLED and hive_detect.available():
+                    try:
+                        if url_key.startswith("img:") and image_b64:
+                            _s2o = hive_detect.detect_image(image_b64)
+                        elif _au_frames:
+                            _s2o = hive_detect.detect_video_frames(_au_frames)
+                        else:
+                            _s2o = None
+                        if _s2o is not None:
+                            _auo = merge_stage2(_auo, _s2o, "private media-only check")
+                        else:
+                            _auo["stage2_status"] = "failed"
+                            _auo["stage2_reason"] = "no media to analyze"
+                    except Exception:
+                        _auo["stage2_status"] = "failed"
+                        _auo["stage2_reason"] = "detector error"
+                else:
+                    _auo["stage2_status"] = "failed"
+                    _auo["stage2_reason"] = "detector not configured"
+                # no reverse image search on the private path — never push a
+                # person's image into a web-matching service
+                priv = {"private": True, "media_only": True, "content_rating": "explicit",
+                        "url": None, "url_key": None, "title": "Private AI check",
+                        "uploader": None, "transcript": "", "platform": result.get("platform"),
+                        "authenticity": _auo, "claims": [],
+                        "resources": safety.RESOURCES_ADULT,
+                        "timings": {"total_s": round(time.time() - t0, 1)}, "cached": False}
+                priv = build_report(priv)
+                _set_job(job_id, status="done", result=priv)
+                return
 
         _set_job(job_id, stage="routing")
         posted = result.get("posted_date")
@@ -1293,6 +1357,76 @@ def api_admin_feedback(key: str = "", limit: int = 100, all: int = 0, kind: str 
     return {"summary": feedback_summary(30), "daily": feedback_daily(14), "items": items}
 
 
+# ---- weekly flag review: the judge of the judges (proposals only) ----
+_REVIEW_STATE = {"running": False, "last": None, "error": None}
+
+
+def run_flag_review(reason: str = "scheduled") -> dict:
+    """Review every unreviewed harsh/wrong flag. Budget-guarded; never
+    changes a score or a rule. Returns the saved document (or a typed
+    reason nothing ran)."""
+    from app.agents.review import run_review
+    if _REVIEW_STATE["running"]:
+        return {"ok": False, "detail": "a review is already running"}
+    _, spent = today_usage()
+    if spent >= DAILY_BUDGET_USD:
+        return {"ok": False, "detail": "daily budget reached; review skipped"}
+    flags = pending_flags()
+    if not flags:
+        return {"ok": True, "detail": "no unreviewed flags", "flags": 0}
+    _REVIEW_STATE["running"] = True
+    try:
+        doc = run_review(flags, load_result_quiet)
+        doc["reason"] = reason
+        rid = save_review(doc)
+        doc["id"] = rid
+        try:
+            add_usage(float(doc.get("est_cost") or 0))
+        except Exception:
+            pass
+        _REVIEW_STATE["last"] = doc.get("created_at")
+        _REVIEW_STATE["error"] = None
+        return {"ok": True, "id": rid, "flags": len(flags), "summary": doc.get("summary"),
+                "models_used": doc.get("models_used"), "est_cost": doc.get("est_cost")}
+    except Exception as e:
+        _REVIEW_STATE["error"] = str(e)[:200]
+        return {"ok": False, "detail": str(e)[:200]}
+    finally:
+        _REVIEW_STATE["running"] = False
+
+
+def _review_due() -> bool:
+    """Monday, after 16:00 UTC (9am Pacific), and no review in the last 6 days."""
+    if os.environ.get("GLOWBY_REVIEW_WEEKLY", "1") != "1":
+        return False
+    now = time.gmtime()
+    if now.tm_wday != 0 or now.tm_hour < 16:
+        return False
+    last = last_review_at()
+    if last is None:
+        return True
+    try:
+        return (time.time() - last.timestamp()) > 6 * 86400
+    except Exception:
+        return True
+
+
+@app.post("/api/admin/review/run")
+def api_admin_review_run(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return run_flag_review(reason="manual")
+
+
+@app.get("/api/admin/review/latest")
+def api_admin_review_latest(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents.review import REVIEW_MODEL
+    return {"review": latest_review(), "state": _REVIEW_STATE, "model": REVIEW_MODEL,
+            "weekly": os.environ.get("GLOWBY_REVIEW_WEEKLY", "1") == "1", "pending": len(pending_flags())}
+
+
 class FeedbackResolve(BaseModel):
     key: str
     feedback_id: int
@@ -1309,20 +1443,45 @@ def api_admin_feedback_resolve(req: FeedbackResolve):
 class MistakeReport(BaseModel):
     url_key: str = ""
     url: str = ""
-    message: str
+    message: str = ""
     contact: str = ""
+    kind: str = "wrong"  # wrong (score) | inappropriate (content)
 
 
 @app.post("/api/report")
 def api_report(rep: MistakeReport, request: Request):
+    kind = rep.kind if rep.kind in ("wrong", "inappropriate") else "wrong"
     msg = (rep.message or "").strip()
-    if len(msg) < 10:
+    if kind == "inappropriate" and not msg:
+        msg = "Reported as inappropriate content."
+    if kind == "wrong" and len(msg) < 10:
         return JSONResponse(status_code=422, content={
             "detail": "Tell us what looks wrong (a sentence or two)."})
     if _rate_limited(_client_ip(request)):
         return JSONResponse(status_code=429, content={"detail": "Too many requests."})
-    saved = save_mistake_report(rep.url_key, rep.url, msg, rep.contact)
+    saved = save_mistake_report(rep.url_key, rep.url, msg, rep.contact, kind=kind)
     return {"ok": True, "stored": saved}
+
+
+class ModerateRequest(BaseModel):
+    key: str
+    url_key: str
+    action: str  # hide | delete
+
+
+@app.post("/api/admin/moderate")
+def api_admin_moderate(req: ModerateRequest):
+    """Keep a stored result out of Trending, or delete it outright."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if req.action == "hide":
+        ok = hide_from_trending(req.url_key)
+    elif req.action == "delete":
+        ok = delete_result(req.url_key)
+    else:
+        return JSONResponse(status_code=422, content={"detail": "Bad action."})
+    _recent_cache["t"] = 0  # Trending refreshes on the next request
+    return {"ok": ok}
 
 
 @app.get("/api/admin/reports")
@@ -1596,6 +1755,11 @@ def _startup_precheck() -> None:
                     _CACHE_WARM["at"] = _t.time()
                 except Exception as e:
                     _CACHE_WARM["last"] = {"error": str(e)[:160]}
+                try:
+                    if _review_due():
+                        run_flag_review(reason="weekly")
+                except Exception:
+                    pass
                 _t.sleep(50 * 60)
         threading.Thread(target=_warm_loop, daemon=True).start()
 
