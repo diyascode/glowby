@@ -95,8 +95,10 @@ def deepfake_available():
 
 
 def audio_available():
-    """AI-voice model lives in its OWN Hive project/key."""
-    return bool(_key("HIVE_AUDIO_KEY"))
+    """AI-voice detection: the combined V3 model answers for audio too
+    (class ai_generated_audio); HIVE_AUDIO_KEY overrides the key if a
+    separate project is used."""
+    return bool(_key("HIVE_AUDIO_KEY") or _key("HIVE_API_KEY"))
 
 
 def _not_assessed(reason):
@@ -246,6 +248,7 @@ def _finding_to_result(origin, top, gen, provider_label, classes_seen=None):
                     "reason": "no class scores parsed"}
     return {"assessment_status": STATUS_COMPLETED,
             "origin": origin or ORIGIN_NO_SIGNAL,
+            "top_score": round(top, 3),
             "evidence": ev, "reason": None}
 
 
@@ -360,18 +363,29 @@ def detect_deepfake_frames(frames_b64):
     return best
 
 
-def detect_audio(audio_bytes):
-    """Adapter 4: AI-voice detection (own key/project)."""
+def detect_audio(audio_b64):
+    """Adapter 4: AI-voice detection on a short audio clip (base64 mp3/wav).
+    Voice cloning is the commonest deepfake in political and scam videos;
+    pictures alone never see it. Strongest audio class stands."""
     if not audio_available():
-        return _not_assessed("no HIVE_AUDIO_KEY configured")
+        return _not_assessed("no HIVE key configured")
+    if not audio_b64:
+        return _not_assessed("no audio supplied")
     try:
-        payload = _post_v3(_key("HIVE_AUDIO_KEY"))
+        base64.b64decode(audio_b64)  # validate only
+        payload = _post_v3(_key("HIVE_AUDIO_KEY") or _key("HIVE_API_KEY"),
+                           image_b64=audio_b64)
         best = (None, 0.0, None)
+        seen = 0
         for classes in _extract_class_lists(payload):
+            seen += len(classes)
             f = classes_to_finding(classes)
             if f[1] >= best[1]:
                 best = f
-        return _finding_to_result(*best, "forensic_audio_voice")
+        res = _finding_to_result(*best, "forensic_audio_voice", classes_seen=seen)
+        if res.get("origin") == ORIGIN_LIKELY:
+            res["manipulation_scope"] = "voice"
+        return res
     except Exception as e:
         return _failed(f"audio call failed: {e}")
 

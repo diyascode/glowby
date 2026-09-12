@@ -284,8 +284,11 @@
   <p>&bull; <b>OpenAI</b> (Whisper) receives the audio track of a video that
   has no captions &mdash; to turn speech into text.</p>
   <p>&bull; <b>Hive</b> receives your photo or a few sampled video frames
-  &mdash; only when the AI-media check runs &mdash; to detect AI-generated
-  or deepfake imagery.</p>
+  (up to twelve when the first look is uncertain) and a short audio clip
+  of about ten seconds &mdash; only when the AI-media check runs &mdash; to
+  detect AI-generated imagery, deepfakes, and cloned voices. Anthropic
+  also receives the same frames for a second, reasoning-based look at
+  visual inconsistencies.</p>
   <p>&bull; <b>Google</b> receives the video link (captions and fact-check
   database) and, only when the AI-media check runs, an image or frame for
   reverse image search.</p>
@@ -309,10 +312,11 @@
   which provide protection equal to Glowby's own commitments above: no
   sale, no advertising use, processing limited to the service requested.</p>
   <p><b>AI-media detection processing.</b> When a check qualifies for the
-  AI-media analysis (or you tap "detect AI"), the image or a few sampled
-  video frames are sent to detection services — Hive (synthetic-media
-  detection) and Google Cloud Vision (reverse image search) — analyzed,
-  and not stored by Glowby. These providers process the media under
+  AI-media analysis (or you tap "detect AI"), the image, a few sampled
+  video frames, and a short audio clip are sent to detection services —
+  Hive (synthetic-media, deepfake and AI-voice detection), Anthropic (a
+  reasoning-based second look at the frames) and Google Cloud Vision
+  (reverse image search) — analyzed, and not stored by Glowby. These providers process the media under
   their own privacy policies, listed below.</p>
   <p><b>What is stored:</b> the links and typed claims you check, the
   transcripts and fact-check results Glowby produces from them, and anonymous

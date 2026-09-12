@@ -61,6 +61,15 @@ footage caps depiction claims at 5.5; same-video evidence counts.
 === THE FLAG ===
 Reader's tap: {kind}{claim_note}
 Reader's note: {note}
+(If the tap is AI_MISSED the reader says the footage IS AI-generated and Glowby \
+did not say so; FALSE_ALARM means the reader says it is real and Glowby \
+flagged it. For these, judge the AI panel below, not the claim scores: was the \
+lane's conclusion defensible on the detector scores, labels and second opinion \
+it had? A missed creator label is a "rule_fix"; a detector miss with no other \
+signal is "evidence_gap"; a reader who is simply asserting is "cannot_tell".)
+
+=== THE AI PANEL ===
+{ai_panel}
 
 === THE VIDEO ===
 Title: {title}
@@ -166,7 +175,12 @@ def review_one(flag: dict, result: dict, client=None, model=None) -> dict:
     model = model or REVIEW_MODEL
     rep = result.get("report") or {}
     idx = flag.get("claim_idx")
+    au = result.get("authenticity") or {}
+    panel = [f"origin: {au.get('origin_result')} · display: {au.get('display')} · top detector score: {au.get('top_score')}"]
+    for e in (au.get("evidence") or [])[:8]:
+        panel.append(f"- {e.get('provider')} · {e.get('signal_type')} · score {e.get('raw_score')} · band {e.get('band')}: {(e.get('explanation') or '')[:200]}")
     prompt = PROMPT.format(
+        ai_panel=("\n".join(panel) if au else "(the AI check did not run)"),
         kind=flag.get("kind", "harsh").upper(),
         claim_note=(f" (on claim {idx + 1})" if isinstance(idx, int) else " (on the whole video)"),
         note=(flag.get("note") or "(none)")[:300],

@@ -192,6 +192,14 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="card">
+      <h2>Detector calibration — measure, don't guess</h2>
+      <div class="s" style="margin-bottom:6px">One per line: <code>ai https://…</code> or <code>real https://…</code> (up to 40). Runs the real lane — labels, Hive frames + second pass, audio, forensic opinion — and reports detection and false-alarm rates at the live thresholds and alternatives. ≈ 4–5¢ per item; nothing is stored as a result.</div>
+      <textarea id="calText" rows="5" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem" placeholder="ai https://www.tiktok.com/@…/video/…&#10;real https://youtube.com/shorts/…"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button id="calRun" class="fbf" style="font-size:.78rem;padding:6px 12px">Run calibration</button><span class="s" id="calMeta"></span></div>
+      <div id="calOut"></div>
+    </div>
+
+    <div class="card">
       <h2>Mistake reports</h2>
       <div id="reports"></div>
     </div>
@@ -306,6 +314,32 @@ async function moderate(urlKey, action, repId){
   if (repId) await fetch("/api/admin/resolve", {method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({key: KEY, report_id: repId, status: "fixed", note: action === "hide" ? "hidden from Trending" : "stored result deleted"})});
   load();
+}
+
+async function loadCalibration(){
+  let d = null;
+  try { const r = await fetch("/api/admin/calibrate/latest?key=" + encodeURIComponent(KEY)); if (r.ok) d = await r.json(); } catch(e){}
+  if (!d) return;
+  const st = d.state || {};
+  $("calMeta").textContent = st.running ? `running… ${st.done}/${st.total}` : (st.error ? "last error: " + st.error : "");
+  if (st.running) setTimeout(loadCalibration, 4000);
+  const run = d.run;
+  if (!run){ $("calOut").innerHTML = '<div class="empty">No calibration run yet.</div>'; return; }
+  const sm = run.summary || {}, ln = sm.lane || {}, at = sm.at || {}, op = sm.opinion || {};
+  const pct = x => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
+  let h = `<div class="s" style="margin-bottom:6px">${esc(String(run.created_at||"").slice(0,16).replace("T"," "))} UTC · ${sm.ai_items||0} AI · ${sm.real_items||0} real · ${sm.failed||0} failed · est. $${(run.est_cost||0).toFixed(2)}</div>`;
+  h += `<div class="tiles" style="margin-bottom:10px">` +
+    tile("Lane: AI caught", `${ln.ai_caught||0} / ${sm.ai_items||0}`, `${ln.ai_unclear||0} unclear · ${ln.ai_missed||0} missed`) +
+    tile("Lane: real false alarms", `${ln.real_false_alarm||0} / ${sm.real_items||0}`, `${ln.real_unclear||0} unclear`, (ln.real_false_alarm||0) > 0 ? "warn" : "good") +
+    tile("Detection @0.90 / 0.70 / 0.50", `${pct(at["0.9"]?.detection_rate)} / ${pct(at["0.7"]?.detection_rate)} / ${pct(at["0.5"]?.detection_rate)}`, "known-AI flagged") +
+    tile("False alarms @0.90 / 0.70 / 0.50", `${pct(at["0.9"]?.false_alarm_rate)} / ${pct(at["0.7"]?.false_alarm_rate)} / ${pct(at["0.5"]?.false_alarm_rate)}`, "known-real flagged") +
+    tile("Forensic opinion", `AI: ${op.ai_high||0}h/${op.ai_medium||0}m/${op.ai_low||0}l`, `real: ${op.real_high||0}h/${op.real_medium||0}m/${op.real_low||0}l`) + `</div>`;
+  h += "<table><tr><th>Label</th><th>Video</th><th>Lane</th><th>Hive top</th><th>Opinion</th><th>Audio</th><th></th></tr>" + (run.rows||[]).map(r =>
+    `<tr><td><b style="color:${r.label==='ai'?'#f87171':'#4ade80'}">${esc(r.label)}</b></td>` +
+    `<td class="t"><a href="${esc(r.url)}" target="_blank" style="color:inherit">${esc(r.title||r.url)}</a>${r.error?`<div class="s">${esc(r.error)}</div>`:""}</td>` +
+    `<td>${esc((r.origin||"—").replace(/_/g," "))}</td><td>${r.top_score ?? "—"}${r.second_pass?" ·2nd":""}</td><td>${esc(r.opinion||"—")}</td><td>${r.audio_score ?? "—"}</td>` +
+    `<td class="s">${r.declared?"declared":""}</td></tr>`).join("") + "</table>";
+  $("calOut").innerHTML = h;
 }
 
 async function loadReview(){
@@ -459,6 +493,14 @@ function render(d){
   loadCalendar(window.__calMonth);
   loadFeedback();
   loadReview();
+  loadCalibration();
+  $("calRun").onclick = async () => {
+    const text = $("calText").value;
+    $("calRun").disabled = true;
+    try { const r = await fetch("/api/admin/calibrate", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, text})});
+      const j = await r.json(); $("calMeta").textContent = j.ok ? `started ${j.started} item(s) · est. $${j.est_cost}` : ("Could not start: " + (j.detail||"")); } catch(e){}
+    $("calRun").disabled = false; setTimeout(loadCalibration, 3000);
+  };
   $("runReview").onclick = async () => {
     $("runReview").disabled = true; $("runReview").textContent = "Reviewing…";
     try { const r = await fetch("/api/admin/review/run?key=" + encodeURIComponent(KEY), {method:"POST"}); const j = await r.json();

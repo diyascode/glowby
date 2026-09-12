@@ -85,3 +85,92 @@ def describe_frames(frames: list, title: str = "", uploader: str = ""):
     if not text or NOTHING in text:
         return None
     return text
+
+
+# ------------------------------------------------------------ forensic second opinion
+# A pixel classifier (Hive) and a reasoning model see different tells. The
+# reasoner is NOT a detector: it looks for the things generators get wrong
+# across frames — text that changes spelling, hands and objects that morph,
+# physics that does not hold, watermarks of known tools — and reports them.
+# It can raise a clean detector result to "unclear"; it can never, on its
+# own, produce "strong synthetic signals".
+FORENSIC_MODEL = os.environ.get("GLOWBY_FORENSIC_MODEL", "claude-haiku-4-5")
+FORENSIC_PROMPT = """You are examining {n} frames sampled from one short video \
+to look for signs it was AI-generated. You are NOT judging the story; only the \
+pixels. Check, frame by frame and across frames:
+- Text and logos: is any visible text garbled, misspelled, or does it CHANGE \
+between frames? Real text stays put.
+- Hands, faces, teeth, ears: extra or fused fingers, asymmetric or drifting \
+features, teeth that merge.
+- Objects and background: do objects morph, appear, vanish, or change shape \
+between frames? Do straight lines wobble? Do reflections and shadows agree \
+with the light?
+- Physics and motion: impossible poses, water/fire/cloth behaving wrongly, \
+limbs passing through things.
+- Watermarks or captions naming a generator (Sora, Veo, Kling, Runway, Pika, \
+Midjourney, "AI").
+- Real-camera tells: sensor noise, motion blur, lens flare, compression that \
+looks like phone footage.
+Respond with ONLY a JSON object (no prose, no code fences):
+{{"likelihood": "low" | "medium" | "high", "tells": ["short concrete observation", ...], \
+"real_tells": ["short concrete observation", ...], "generator_watermark": "name or null", \
+"summary": "one plain sentence"}}
+"high" means at least two clear tells that real footage would not show. "low" \
+means the frames look like ordinary camera footage. Be specific; never guess \
+beyond what is visible."""
+
+
+def parse_forensic(raw: str) -> dict | None:
+    """Pure (unit-tested)."""
+    import json as _json
+    import re as _re
+    if not raw:
+        return None
+    t = raw.strip()
+    t = _re.sub(r"^```(?:json)?\s*", "", t)
+    t = _re.sub(r"\s*```$", "", t)
+    if not t.startswith("{"):
+        a, b = t.find("{"), t.rfind("}")
+        if a == -1 or b == -1 or b < a:
+            return None
+        t = t[a:b + 1]
+    try:
+        d = _json.loads(t)
+    except _json.JSONDecodeError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    lk = str(d.get("likelihood", "")).lower().strip()
+    if lk not in ("low", "medium", "high"):
+        return None
+    tells = [str(x)[:140] for x in (d.get("tells") or []) if x][:6]
+    real = [str(x)[:140] for x in (d.get("real_tells") or []) if x][:6]
+    wm = d.get("generator_watermark")
+    wm = None if (not wm or str(wm).lower() in ("null", "none", "")) else str(wm)[:40]
+    if lk == "high" and len(tells) < 2 and not wm:
+        lk = "medium"  # "high" needs two concrete tells (or a watermark)
+    return {"likelihood": lk, "tells": tells, "real_tells": real,
+            "generator_watermark": wm, "summary": str(d.get("summary") or "")[:240]}
+
+
+def forensic_opinion(frames: list, client=None):
+    """Frames -> parsed opinion dict, or None on any failure."""
+    if not frames:
+        return None
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if client is None and api_key:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+    if client is None:
+        return None
+    use = frames[:6]
+    content = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b}}
+               for b in use]
+    content.append({"type": "text", "text": FORENSIC_PROMPT.format(n=len(use))})
+    try:
+        msg = client.messages.create(model=FORENSIC_MODEL, max_tokens=500, temperature=0,
+                                     messages=[{"role": "user", "content": content}])
+        raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        return parse_forensic(raw)
+    except Exception:
+        return None

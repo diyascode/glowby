@@ -767,7 +767,7 @@ def day_detail(day: str) -> dict:
 # device per result is enforced client-side; the server keeps a salted
 # device hash only to de-duplicate, never an IP.
 
-FEEDBACK_KINDS = ("fair", "harsh", "wrong")
+FEEDBACK_KINDS = ("fair", "harsh", "wrong", "ai_missed", "false_alarm")
 
 
 def save_feedback(url_key: str, kind: str, claim_idx, note: str,
@@ -821,8 +821,8 @@ def save_feedback(url_key: str, kind: str, claim_idx, note: str,
 def feedback_summary(days: int = 30) -> dict:
     """Totals and harsh-rate over the window: (harsh+wrong)/all taps."""
     conn = _get_conn()
-    out = {"days": days, "fair": 0, "harsh": 0, "wrong": 0, "total": 0,
-           "harsh_rate": None, "all_time": {"fair": 0, "harsh": 0, "wrong": 0}}
+    out = {"days": days, "fair": 0, "harsh": 0, "wrong": 0, "ai_missed": 0, "false_alarm": 0, "total": 0,
+           "harsh_rate": None, "all_time": {"fair": 0, "harsh": 0, "wrong": 0, "ai_missed": 0, "false_alarm": 0}}
     if conn is None:
         return out
     try:
@@ -841,6 +841,7 @@ def feedback_summary(days: int = 30) -> dict:
         out["total"] = out["fair"] + out["harsh"] + out["wrong"]
         if out["total"]:
             out["harsh_rate"] = round((out["harsh"] + out["wrong"]) / out["total"], 3)
+        out["ai_flags"] = out["ai_missed"] + out["false_alarm"]
     except Exception:
         try:
             conn.rollback()
@@ -891,7 +892,7 @@ def list_feedback(limit: int = 100, only_flags: bool = True) -> list:
                        c.result->'report'->>'headline_score'
                 FROM score_feedback f
                 LEFT JOIN checks c ON c.url_key = f.url_key
-                WHERE (%s = false OR f.kind IN ('harsh','wrong'))
+                WHERE (%s = false OR f.kind IN ('harsh','wrong','ai_missed','false_alarm'))
                 ORDER BY f.id DESC LIMIT %s
                 """, (only_flags, int(limit)))
             return [{"id": r[0], "url_key": r[1], "kind": r[2], "claim_idx": r[3],
@@ -936,7 +937,7 @@ def pending_flags(limit: int = 60) -> list:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, url_key, kind, claim_idx, note FROM score_feedback "
-                "WHERE kind IN ('harsh','wrong') AND status = 'new' "
+                "WHERE kind IN ('harsh','wrong','ai_missed','false_alarm') AND status = 'new' "
                 "ORDER BY id ASC LIMIT %s", (int(limit),))
             return [{"id": r[0], "url_key": r[1], "kind": r[2], "claim_idx": r[3], "note": r[4] or ""}
                     for r in cur.fetchall()]
@@ -1093,3 +1094,73 @@ def delete_result(url_key: str) -> bool:
         except Exception:
             pass
         return False
+
+
+# ---- detector calibration runs (admin tool) ----
+
+def save_calibration(doc: dict):
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE IF NOT EXISTS calibration_runs (id BIGSERIAL PRIMARY KEY, "
+                        "created_at TIMESTAMPTZ NOT NULL DEFAULT now(), doc JSONB NOT NULL)")
+            cur.execute("INSERT INTO calibration_runs (doc) VALUES (%s) RETURNING id", (json.dumps(doc),))
+            return cur.fetchone()[0]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def latest_calibration():
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, created_at, doc FROM calibration_runs ORDER BY id DESC LIMIT 1")
+            r = cur.fetchone()
+        if not r:
+            return None
+        doc = r[2] if isinstance(r[2], dict) else json.loads(r[2])
+        doc["id"] = r[0]
+        doc["stored_at"] = r[1].isoformat() if r[1] else None
+        return doc
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def reader_labelled_media(limit: int = 200) -> list:
+    """Videos readers said were AI (ai_missed) or real (false_alarm) —
+    candidates for the calibration set. Reader labels are not certain;
+    the admin picks which to trust."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT f.kind, f.url_key, f.note, f.created_at, c.result->>'url', c.result->>'title',
+                       c.result->'authenticity'->>'origin_result'
+                FROM score_feedback f LEFT JOIN checks c ON c.url_key = f.url_key
+                WHERE f.kind IN ('ai_missed','false_alarm')
+                ORDER BY f.id DESC LIMIT %s
+                """, (int(limit),))
+            return [{"label": "ai" if r[0] == "ai_missed" else "real", "url_key": r[1], "note": r[2] or "",
+                     "created_at": r[3].isoformat() if r[3] else None, "url": r[4], "title": (r[5] or "")[:90],
+                     "lane_said": r[6]} for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []

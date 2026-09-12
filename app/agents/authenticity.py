@@ -54,6 +54,13 @@ DISPLAY = {
 # a false "AI-labeled" claim is worse than a miss) ----
 CAPTION_PATTERNS = [
     r"\bmade with ai\b", r"\bai[- ]generated\b", r"\bcreated with ai\b",
+    # TYPOS ARE STILL DECLARATIONS: "Ai Gernated Video", "AI genrated",
+    # "ai generted" — a creator label misspelled is a creator label
+    r"\bai[- ]?g[a-z]{3,6}t[a-z]?d\b",
+    # "AI video" / "AI clip" / "AI film" in a caption is the creator saying so
+    r"\bai[- ](video|clip|film|short|animation|reel)\b",
+    # a generator named as the maker
+    r"\b(sora|veo\s?\d?|kling|runway|pika|midjourney|hailuo|luma)[- ]?(video|clip|film|generated|made)\b",
     r"#aiart\b", r"#aigenerated\b", r"#madewithai\b", r"#aivideo\b",
     r"\bgenerated (?:by|with) (?:ai|sora|veo|midjourney|dall[- ]?e)\b",
     # AI-video studio tags: a creator tagging the TOOL is declaring origin
@@ -157,9 +164,69 @@ def check_speech_declaration(transcript=""):
     return None
 
 
-def check_labels(caption="", ocr_text="", transcript=""):
+# PLATFORM LABELS: TikTok ("AI-generated" — aigc_info.aigc_label_type 1 =
+# creator-labeled, 2 = platform-detected), YouTube ("altered or synthetic
+# content" disclosure), Instagram/Facebook ("Made with AI" / AI info).
+# They arrive in the page/API data the downloader and the rescue service
+# already return; reading them is free and a platform label is a DECLARED
+# origin, outranking the forensic detector.
+_PLATFORM_KEY_RE = re.compile(
+    r"^(aigc_label_type|aigc_label|is_aigc|is_ai_generated|ai_generated|"
+    r"made_with_ai|ai_info|ai_label|synthetic_content|is_synthetic|"
+    r"altered_or_synthetic|has_ai_label)$", re.I)
+_PLATFORM_TEXT_RE = re.compile(
+    r"(altered or synthetic content|made with ai|ai[- ]generated content|"
+    r"ai info|creator labeled as ai[- ]generated|this content may be ai[- ]generated)", re.I)
+
+
+def platform_ai_label(obj, _depth=0):
+    """Pure (unit-tested): deep-walk a platform/API response for an AI
+    label. Returns a short source string ("tiktok:aigc_label_type=1",
+    "text:made with ai") or None. Only truthy values count; 0/false/""
+    never do."""
+    if _depth > 8 or obj is None:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            ks = str(k)
+            if _PLATFORM_KEY_RE.match(ks):
+                if isinstance(v, bool):
+                    if v:
+                        return f"{ks}=true"
+                elif isinstance(v, (int, float)):
+                    if v:
+                        return f"{ks}={int(v)}"
+                elif isinstance(v, str):
+                    if v.strip().lower() not in ("", "0", "false", "none", "null", "no"):
+                        return f"{ks}={v.strip()[:30]}"
+                elif isinstance(v, dict) and v:
+                    inner = platform_ai_label(v, _depth + 1)
+                    if inner:
+                        return inner
+            elif isinstance(v, (dict, list)):
+                inner = platform_ai_label(v, _depth + 1)
+                if inner:
+                    return inner
+            elif isinstance(v, str) and ks.lower() in ("description", "caption", "title", "label", "disclosure", "text") and len(v) < 2000:
+                m = _PLATFORM_TEXT_RE.search(v)
+                if m:
+                    return f"text:{m.group(1).lower()}"
+        return None
+    if isinstance(obj, list):
+        for it in obj[:50]:
+            inner = platform_ai_label(it, _depth + 1)
+            if inner:
+                return inner
+    return None
+
+
+def check_labels(caption="", ocr_text="", transcript="", platform_label=None):
     """Declared/weak evidence: creator or platform said it's AI."""
     found = []
+    if platform_label:
+        found.append(_evidence(
+            "labels", "platform_label",
+            f"The platform labels this as AI-generated ({platform_label})."))
     snippet = check_speech_declaration(transcript)
     if snippet:
         found.append(_evidence(
@@ -197,7 +264,7 @@ def check_metadata(image_bytes):
 
 
 # ------------------------------------------------------------ assemble
-def assess_stage1(caption="", ocr_text="", image_b64=None, transcript=""):
+def assess_stage1(caption="", ocr_text="", image_b64=None, transcript="", platform_label=None):
     """Run every free Day-1 check; resolve by hierarchy, never weights."""
     evidence = []
     origins = []
@@ -223,7 +290,7 @@ def assess_stage1(caption="", ocr_text="", image_b64=None, transcript=""):
             evidence.append(m_ev)
             origins.append(ORIGIN_DECLARED)
 
-    label_ev = check_labels(caption, ocr_text, transcript)
+    label_ev = check_labels(caption, ocr_text, transcript, platform_label)
     if label_ev:
         evidence.extend(label_ev)
         origins.append(ORIGIN_DECLARED)

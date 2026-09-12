@@ -573,7 +573,9 @@ if not _lhp("[WHAT THE VIDEO VISUALLY SHOWS] A man speaking to camera"):
 if _lhp("A wall of water sweeps through an empty border checkpoint"):
     fails.append("m42 empty scene flagged")
 _m42 = open("app/main.py").read()
-if "_face_likely" not in _m42 or "deepfake_available() and _face_likely" not in _m42:
+# (v0.56) the face pass lives in the orchestrator now
+_d42 = open("app/agents/detection.py").read()
+if "deepfake_available() and hive_detect.likely_has_person(" not in _d42:
     fails.append("m42 gate not wired")
 
 
@@ -659,7 +661,7 @@ if _re48.search(r"(?i)\bbeta\b(?![^<]*\})", _t48.split("<style>")[-1].split("</s
 _m49 = open("app/main.py").read()
 if "standby and not _au_frames" not in _m49:
     fails.append("m49 standby frames not fed to detector")
-if "no frames or image were" not in _m49:
+if "no frames or image were" not in open("app/agents/detection.py").read():
     fails.append("m49 no-media failure not reported")
 if '"detector not configured"' not in _m49:
     fails.append("m49 unconfigured failure not reported")
@@ -1138,7 +1140,7 @@ for _n in ('@app.post("/api/feedback")', '@app.get("/api/admin/feedback")', "/ap
     if _n not in _m77: fails.append(f"m77 route missing {_n}")
 if "save_feedback(" not in _m77 or ':fb:{_client_ip(request)}' not in _m77: fails.append("m77 feedback not stored with a salted device hash")
 import app.storage as _st77
-if _st77.FEEDBACK_KINDS != ("fair", "harsh", "wrong"): fails.append("m77 kinds wrong")
+if _st77.FEEDBACK_KINDS[:3] != ("fair", "harsh", "wrong"): fails.append("m77 kinds wrong")
 if _st77.save_feedback("k", "meh", None, "", "d") is not False: fails.append("m77 bad kind accepted")
 _a77 = open("app/templates/admin.html").read()
 if 'id="flags"' not in _a77 or "Harsh rate" not in _a77 or "score_was_right" not in _a77: fails.append("m77 admin flags card missing")
@@ -1255,7 +1257,7 @@ if _r["counts"].get("scored") != 1: fails.append(f"m80 scored count: {_r['counts
 _r = _br80({"claims": [_c80("Residents of Zone B should evacuate immediately", "unverifiable", None, True)]})["report"]
 if _r["headline_state"] != "safety_alert" or _r["headline_score"] is not None: fails.append("m80 real instruction must collapse with a neutral dial")
 _m80 = open("app/main.py").read()
-if "transcript=_tr)" not in _m80: fails.append("m80 transcript not passed to stage 1")
+if "transcript=_tr, platform_label=" not in _m80: fails.append("m80 transcript not passed to stage 1")
 if "ALWAYS — never a world-claim for the evidence search" not in _m80: fails.append("m80 media-origin parking still conditional")
 _pk = _m80[_m80.index("_re_origin = re.compile("):_m80.index('c["media_context"] = _ctx')]
 if "_ai_known" in _pk.split("for c in claims:")[0]: fails.append("m80 parking gated on stage-1 origin")
@@ -1281,6 +1283,61 @@ if "genuinely disputed" in _r["headline_label"] or "only partly confirmed" not i
 _r = _br81({"claims": [_c81("CPI", "supported", 9.2, ("supports",)), _c81("Sanctions", "partly_supported", 5.0, ("supports", "refutes"))]})["report"]
 if "genuinely disputed" not in _r["headline_label"]: fails.append("m81 contested driver lost its label")
 
+# 82. THE AI PLAN: platform labels, audio, scene-aware frames + adaptive
+# second pass, forensic second opinion, calibration tool; one orchestrator.
+from app.agents.authenticity import platform_ai_label as _pal, assess_stage1 as _as82
+if _pal({"aweme_detail": {"aigc_info": {"aigc_label_type": 1}}}) != "aigc_label_type=1": fails.append("m82 tiktok label")
+if _pal({"aweme_detail": {"aigc_info": {"aigc_label_type": 0}}}) is not None: fails.append("m82 zero label counted")
+if not (_pal({"description": "Altered or synthetic content"}) or "").startswith("text:"): fails.append("m82 youtube disclosure text")
+if _pal({"is_ai_generated": False}) is not None: fails.append("m82 false label counted")
+if _as82(caption="x", platform_label="tiktok:aigc_label_type=1")["origin_result"] != "declared_ai": fails.append("m82 platform label not declared")
+from app.agents.ingest import pick_frame_times as _pft
+_t = _pft(30, [2.1, 15.0, 26.5])
+if len(_t) < 8 or _t[:6] != [2.5, 7.5, 12.5, 17.5, 22.5, 27.5] or 15.0 not in _t[6:]: fails.append(f"m82 frame times: {_t}")
+_in82 = open("app/agents/ingest.py").read()
+if "def _audio_clip_b64" not in _in82 or '"audio_clip_b64": _audio_clip_b64(vid, tmpdir)' not in _in82 or "max_frames: int = 12" not in _in82: fails.append("m82 audio clip / 12 frames missing")
+from app.agents.vision import parse_forensic as _pf
+_o = _pf('{"likelihood":"high","tells":["text changes spelling between frames","six fingers"],"real_tells":[],"generator_watermark":null,"summary":"s"}')
+if not _o or _o["likelihood"] != "high": fails.append("m82 forensic parse")
+if _pf('{"likelihood":"high","tells":["one thing"],"summary":"s"}')["likelihood"] != "medium": fails.append("m82 'high' needs two tells")
+from app.agents.detection import combine_opinion as _co, _needs_second_pass as _nsp, run_media_detection as _rmd
+_au = _co({"origin_result": "no_synthetic_signal", "evidence": []}, {"likelihood": "high", "tells": ["a", "b"], "real_tells": [], "generator_watermark": None, "summary": "s"})
+if _au["origin_result"] != "inconclusive" or not _au.get("methods_disagree"): fails.append("m82 high opinion must raise to inconclusive, never likely")
+_au = _co({"origin_result": "likely_synthetic", "evidence": []}, {"likelihood": "high", "tells": ["a", "b"], "real_tells": [], "generator_watermark": None, "summary": "s"})
+if _au["origin_result"] != "likely_synthetic" or not _au.get("methods_agree"): fails.append("m82 agreement not noted")
+_au = _co({"origin_result": "declared_ai", "evidence": []}, {"likelihood": "low", "tells": [], "real_tells": ["noise"], "generator_watermark": None, "summary": "s"})
+if _au["origin_result"] != "declared_ai": fails.append("m82 opinion lowered a declared origin")
+if not _nsp({"assessment_status": "completed", "top_score": 0.223}) or _nsp({"assessment_status": "completed", "top_score": 0.02}) or _nsp({"assessment_status": "completed", "top_score": 0.95}): fails.append("m82 second-pass band")
+_h82 = open("app/agents/hive_detect.py").read()
+if 'def detect_audio(audio_b64)' not in _h82 or '"forensic_audio_voice"' not in _h82 or '"top_score": round(top, 3)' not in _h82: fails.append("m82 audio adapter / top_score")
+_m82 = open("app/main.py").read()
+if _m82.count("run_media_detection(") != 3 + 0: fails.append(f"m82 orchestrator call sites: {_m82.count('run_media_detection(')}")
+if "hive_detect.detect_video_frames(_au_frames)" in _m82: fails.append("m82 old direct detector calls remain")
+if 'allow_reverse=False' not in _m82[_m82.index("PRIVATE AI-ONLY PATH"):_m82.index("PRIVATE AI-ONLY PATH")+2500]: fails.append("m82 private path must not reverse-search")
+from app.agents.calibration import parse_items as _pi, summarize as _sm
+if len(_pi("ai https://a/1\nreal: https://b/2\nnonsense")) != 2: fails.append("m82 calibration parse")
+_s = _sm([{"label": "ai", "ok": True, "origin": "likely_synthetic", "top_score": 0.95}, {"label": "real", "ok": True, "origin": "no_synthetic_signal", "top_score": 0.6}])
+if _s["at"]["0.9"]["detection_rate"] != 1.0 or _s["at"]["0.5"]["false_alarm_rate"] != 1.0 or _s["lane"]["ai_caught"] != 1: fails.append(f"m82 calibration summary: {_s}")
+if 'id="calRun"' not in open("app/templates/admin.html").read(): fails.append("m82 admin calibration card missing")
+
+# 83. AI-CHECK FEEDBACK + TYPO LABELS: "Ai Gernated Video" is a creator label;
+# the AI dial has its own feedback vocabulary (Right / It's AI / It's real)
+# feeding the flag review and the calibration candidates.
+from app.agents.authenticity import assess_stage1 as _as83
+for _cap in ("Ai Gernated Video | Ankit Soni", "AI genrated art", "new sora video dropped", "ai video of my dog"):
+    if _as83(caption=_cap)["origin_result"] != "declared_ai": fails.append(f"m83 label missed: {_cap}")
+for _cap in ("AI guard dog", "AI is coming for jobs", "the AI Act passed"):
+    if _as83(caption=_cap)["origin_result"] == "declared_ai": fails.append(f"m83 false label: {_cap}")
+import app.storage as _st83
+if _st83.FEEDBACK_KINDS != ("fair", "harsh", "wrong", "ai_missed", "false_alarm"): fails.append("m83 kinds")
+_h83 = open("app/templates/app.html").read()
+if _h83.count("fbRowAi(d)") != 3 or 'data-k="ai_missed"' not in _h83 or 'data-k="false_alarm"' not in _h83: fails.append("m83 AI feedback row missing")
+if "(d.private?'':fbRowAi(d))" not in _h83: fails.append("m83 private path must not collect feedback")
+_m83 = open("app/main.py").read()
+if '"ai_missed", "false_alarm") or not (fb.url_key' not in _m83 or '"/api/admin/calibrate/candidates"' not in _m83: fails.append("m83 routes")
+if "AI_MISSED" not in open("app/agents/review.py").read(): fails.append("m83 review prompt lacks AI flags")
+if "def reader_labelled_media" not in open("app/storage.py").read(): fails.append("m83 candidates query missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 81/81 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding")
+    "FINAL MATRIX PASS: 83/83 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback")

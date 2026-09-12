@@ -274,14 +274,26 @@ def parse_sc_tiktok(body) -> dict | None:
     }
 
 
+def _with_platform_label(parsed, body, platform):
+    if parsed and isinstance(body, (dict, list)):
+        try:
+            from app.agents.authenticity import platform_ai_label
+            pl = platform_ai_label(body)
+            if pl:
+                parsed["platform_ai_label"] = f"{platform}:{pl}"
+        except Exception:
+            pass
+    return parsed
+
+
 def _sc_instagram(url: str):
     body = _sc_get("/instagram/post", {"url": url.split("?")[0], "trim": "true"})
-    return parse_sc_instagram(body)
+    return _with_platform_label(parse_sc_instagram(body), body, "instagram")
 
 
 def _sc_tiktok(url: str):
     body = _sc_get("/tiktok/video", {"url": url})
-    return parse_sc_tiktok(body)
+    return _with_platform_label(parse_sc_tiktok(body), body, "tiktok")
 
 
 def rescue_media(url: str, platform: str):

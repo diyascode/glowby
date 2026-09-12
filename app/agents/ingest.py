@@ -288,6 +288,9 @@ def ingest(url: str) -> dict:
     # before the eyes start.
     text, frames, visual_desc, whisper_err = _transcribe_and_see(url, duration_s=duration)
     speech = (text or "").strip()
+    _ex = take_extras()
+    if _ex.get("audio_clip_b64"):
+        result["audio_clip_b64"] = _ex["audio_clip_b64"]
 
     # EARS + EYES TOGETHER: whenever the eyes read something, merge it with
     # the speech so BOTH a spoken claim and an on-screen-text claim reach
@@ -457,6 +460,7 @@ def _ingest_rescued(url: str, platform: str, rescued: dict):
         "uploader": rescued.get("uploader") or "(unknown)",
         "duration_seconds": duration,
         "posted_date": rescued.get("posted_date"),
+        **({"platform_ai_label": rescued["platform_ai_label"]} if rescued.get("platform_ai_label") else {}),
         "transcript": text or "",
         "transcript_source": "whisper" if text else "none",
     }
@@ -554,7 +558,7 @@ def pick_download_format(duration_s) -> str:
     return "worst[height>=240]/worst/bestvideo+bestaudio/best"
 
 
-def _transcribe_and_see(url: str, max_frames: int = 6, duration_s=0):
+def _transcribe_and_see(url: str, max_frames: int = 12, duration_s=0):
     """Download the video ONCE; feed both ears and eyes from it — at
     the same time.
 
@@ -644,13 +648,17 @@ def _download_direct(media_url: str, dest: str) -> bool:
         return False
 
 
-def _process_video_file(vid: str, tmpdir: str, max_frames: int = 6):
+def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
     """Downloaded video file -> (transcript, frames, visual_desc, error).
     The shared back half of every download door (yt-dlp or rescue)."""
     import subprocess
     from concurrent.futures import ThreadPoolExecutor
 
     frames = _sample_frames(vid, tmpdir, max_frames)
+    try:
+        _EXTRAS.data = {"audio_clip_b64": _audio_clip_b64(vid, tmpdir)}
+    except Exception:
+        _EXTRAS.data = {}
 
     # audio track -> mp3
     audio = os.path.join(tmpdir, "audio.mp3")
@@ -725,8 +733,61 @@ def _whisper_file(audio_file: str):
     return (transcription.text or "").strip() or None
 
 
-def _sample_frames(vid: str, tmpdir: str, max_frames: int = 6) -> list:
-    """Sample frames evenly from a downloaded video file -> base64 JPEGs."""
+import threading as _threading
+_EXTRAS = _threading.local()  # per-pipeline-thread side channel (audio clip)
+
+
+def take_extras() -> dict:
+    """Pop anything the download step left for the pipeline (audio clip)."""
+    out = dict(getattr(_EXTRAS, "data", {}) or {})
+    _EXTRAS.data = {}
+    return out
+
+
+def _scene_times(vid: str, duration: float, limit: int = 12) -> list:
+    """Timestamps of scene changes (ffmpeg scdet); [] when none/failed."""
+    import re as _re
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-i", vid, "-vf", "select='gt(scene,0.30)',showinfo",
+             "-an", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=60)
+        ts = [float(x) for x in _re.findall(r"pts_time:([0-9.]+)", r.stderr or "")]
+        ts = [t for t in ts if 0.2 < t < duration - 0.2]
+        return ts[:limit * 4]
+    except Exception:
+        return []
+
+
+def pick_frame_times(duration: float, scene_times: list, primary: int = 6, extra: int = 6) -> list:
+    """Pure (unit-tested): the PRIMARY set is evenly spread (stable,
+    deterministic, same as before); the EXTRA set prefers scene changes
+    not already within 1s of a primary, then fills with midpoints. The
+    extras feed the adaptive second pass only when the first pass is
+    uncertain. Returns primary + extra timestamps."""
+    duration = max(1.0, float(duration or 1.0))
+    prim = [duration * (i + 0.5) / primary for i in range(primary)]
+    chosen = []
+    for t in sorted(scene_times or []):
+        if all(abs(t - p) > 1.0 for p in prim) and all(abs(t - c) > 1.0 for c in chosen):
+            chosen.append(t)
+        if len(chosen) >= extra:
+            break
+    if len(chosen) < extra:
+        mids = [duration * (i + 1) / (primary + 1) for i in range(primary)]
+        for t in mids:
+            if len(chosen) >= extra:
+                break
+            if all(abs(t - p) > 0.5 for p in prim) and all(abs(t - c) > 0.5 for c in chosen):
+                chosen.append(t)
+    return prim + chosen[:extra]
+
+
+def _sample_frames(vid: str, tmpdir: str, max_frames: int = 12) -> list:
+    """Sample frames from a downloaded video file -> base64 JPEGs.
+    First 6 = evenly spread (vision + primary detector pass); next 6 =
+    scene-aware alternates (adaptive second pass)."""
     import base64
     import subprocess
 
@@ -738,9 +799,11 @@ def _sample_frames(vid: str, tmpdir: str, max_frames: int = 6) -> list:
         duration = max(1.0, float(probe.stdout.strip()))
     except Exception:
         duration = 30.0
+    primary = min(6, max_frames)
+    extra = max(0, min(6, max_frames - primary))
+    times = pick_frame_times(duration, _scene_times(vid, duration) if extra else [], primary, extra)
     frames = []
-    for i in range(max_frames):
-        t = duration * (i + 0.5) / max_frames
+    for i, t in enumerate(times):
         fp = os.path.join(tmpdir, f"frame{i}.jpg")
         try:
             subprocess.run(
@@ -755,7 +818,26 @@ def _sample_frames(vid: str, tmpdir: str, max_frames: int = 6) -> list:
     return frames
 
 
-def _frames_from_video(url: str, max_frames: int = 6) -> list:
+def _audio_clip_b64(vid: str, tmpdir: str, seconds: int = 12):
+    """A short mono clip for the AI-voice detector (skips the first second
+    of intros/music beds). None on failure or silence."""
+    import base64
+    import subprocess
+    fp = os.path.join(tmpdir, "clip.mp3")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-ss", "1", "-i", vid, "-t", str(seconds), "-vn", "-ac", "1",
+             "-ar", "16000", "-b:a", "48k", "-y", fp],
+            capture_output=True, timeout=60)
+        if os.path.exists(fp) and os.path.getsize(fp) > 4000:
+            with open(fp, "rb") as fh:
+                return base64.b64encode(fh.read()).decode()
+    except Exception:
+        pass
+    return None
+
+
+def _frames_from_video(url: str, max_frames: int = 12) -> list:
     """Download the video (lowest usable quality) and sample frames.
 
     Returns a list of base64 JPEG strings, [] on any failure — vision is

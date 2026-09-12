@@ -30,6 +30,7 @@ from app.agents import hive_detect
 from app.agents import reverse_search
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents import safety
+from app.agents.detection import run_media_detection
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
 from app.agents.vision import describe_frames
@@ -69,10 +70,10 @@ from app.storage import (
     total_fresh_checks,
     save_feedback, feedback_summary, list_feedback, resolve_feedback, feedback_daily,
     pending_flags, load_result_quiet, save_review, latest_review, last_review_at,
-    hide_from_trending, delete_result,
+    hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.55.1"
+VERSION = "0.56.2"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -347,6 +348,21 @@ def _merge_prior_evidence(claim_text: str, evidence: dict,
     return evidence
 
 
+# ---- last pipeline failures (admin diagnostic; never shown to readers) ----
+_LAST_ERRORS = []
+
+
+def _remember_error(url_key, exc, tb):
+    try:
+        _LAST_ERRORS.append({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                             "url_key": (url_key or "")[:120],
+                             "type": type(exc).__name__, "message": str(exc)[:300],
+                             "traceback": (tb or "")[-3000:]})
+        del _LAST_ERRORS[:-8]
+    except Exception:
+        pass
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str,
                   user_question: str = "", prior_claims=None,
                   image_b64: str = None, detect_ai: bool = False,
@@ -431,7 +447,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     _vis = _tr.split("[WHAT THE VIDEO VISUALLY SHOWS]", 1)[1]
                 result["authenticity"] = assess_stage1(
                     caption=(result.get("title") or ""), ocr_text=_vis,
-                    transcript=_tr)
+                    transcript=_tr, platform_label=result.get("platform_ai_label"))
             except Exception:
                 pass
 
@@ -445,10 +461,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # ingest — without it, videos WITH visual analysis had nothing
         # left for the detector to look at.
         _media_frames = result.pop("frames_media", None)
+        _audio_clip = result.pop("audio_clip_b64", None)
         _au_frames = None
+        _au_extra = None
         if AUTHENTICITY_ENABLED:
             _src = frames or _media_frames
             _au_frames = list(_src)[:6] if _src else None
+            # frames 7-12 (scene-aware sampling) are held back for the
+            # adaptive second pass — spent only on uncertain videos
+            _au_extra = list(_src)[6:12] if _src and len(_src) > 6 else None
         if frames:
             # speculative vision may have already looked during ingest
             desc = result.pop("visual_desc", None) or describe_frames(
@@ -501,22 +522,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 # PRIVATE AI-ONLY PATH: detector only; nothing kept.
                 _set_job(job_id, stage="assembling")
                 _auo = result.get("authenticity") or {}
-                if AUTHENTICITY_ENABLED and hive_detect.available():
-                    try:
-                        if url_key.startswith("img:") and image_b64:
-                            _s2o = hive_detect.detect_image(image_b64)
-                        elif _au_frames:
-                            _s2o = hive_detect.detect_video_frames(_au_frames)
-                        else:
-                            _s2o = None
-                        if _s2o is not None:
-                            _auo = merge_stage2(_auo, _s2o, "private media-only check")
-                        else:
-                            _auo["stage2_status"] = "failed"
-                            _auo["stage2_reason"] = "no media to analyze"
-                    except Exception:
-                        _auo["stage2_status"] = "failed"
-                        _auo["stage2_reason"] = "detector error"
+                if AUTHENTICITY_ENABLED:
+                    _auo = run_media_detection(
+                        _auo,
+                        frames=None if url_key.startswith("img:") else _au_frames,
+                        extra_frames=_au_extra,
+                        image_b64=image_b64 if url_key.startswith("img:") else None,
+                        audio_b64=_audio_clip,
+                        reason="private media-only check", allow_reverse=False,
+                        posted_date=None, person_hint="person face")
                 else:
                     _auo["stage2_status"] = "failed"
                     _auo["stage2_reason"] = "detector not configured"
@@ -558,35 +572,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             _set_job(job_id, stage="assembling")
             if AUTHENTICITY_ENABLED:
                 try:
-                    _auo = result.get("authenticity") or {}
-                    if hive_detect.available():
-                        if url_key.startswith("img:") and image_b64:
-                            _s2o = hive_detect.detect_image(image_b64)
-                        elif _au_frames:
-                            _s2o = hive_detect.detect_video_frames(_au_frames)
-                        else:
-                            _s2o = None
-                        if _s2o is not None:
-                            _auo = merge_stage2(_auo, _s2o, "media-only check")
-                        else:
-                            _auo["stage2_status"] = "failed"
-                            _auo["stage2_reason"] = "no media to analyze"
-                    else:
-                        _auo["stage2_status"] = "failed"
-                        _auo["stage2_reason"] = "detector not configured"
-                    if reverse_search.available():
-                        _f0 = (image_b64 if url_key.startswith("img:")
-                               else (_au_frames[0] if _au_frames else None))
-                        if _f0:
-                            _s3o = reverse_search.analyze(
-                                _f0, posted_date=result.get("posted_date"))
-                            if _s3o.get("assessment_status") == "completed":
-                                _auo.setdefault("evidence", [])
-                                _auo["evidence"] = (list(_auo["evidence"])
-                                                    + list(_s3o["evidence"]))
-                                if _s3o.get("context_note"):
-                                    _auo["context_note"] = _s3o["context_note"]
-                    result["authenticity"] = _auo
+                    result["authenticity"] = run_media_detection(
+                        result.get("authenticity") or {},
+                        frames=None if url_key.startswith("img:") else _au_frames,
+                        extra_frames=_au_extra,
+                        image_b64=image_b64 if url_key.startswith("img:") else None,
+                        audio_b64=_audio_clip,
+                        reason="media-only check", allow_reverse=True,
+                        posted_date=result.get("posted_date"),
+                        person_hint=(result.get("transcript") or "") + " " + (result.get("title") or ""))
                 except Exception:
                     pass
             result["claims"] = []
@@ -604,6 +598,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         standby = result.pop("frames_standby", None)
         if AUTHENTICITY_ENABLED and standby and not _au_frames:
             _au_frames = list(standby)[:6]
+            _au_extra = list(standby)[6:12] or None
         if standby and not any(
                 c.get("gate_label") in ("factual", "prediction")
                 for c in (claims or [])):
@@ -775,8 +770,10 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         for c in claims:
             c.pop("verifying", None)
         result["claims"] = claims
-        # STAGE 2 (Day 2): paid forensic detection — gated, dormant
-        # without a HIVE key, and never allowed to break a check.
+        # STAGE 2+: the media lane — Hive frames, adaptive second pass,
+        # audio, face pass, forensic second opinion, reverse search — one
+        # orchestrator (app/agents/detection.py). Gated; dormant without a
+        # HIVE key; never allowed to break a check.
         if AUTHENTICITY_ENABLED:
             try:
                 _au = result.get("authenticity") or {}
@@ -786,58 +783,18 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     claims=claims,
                     stage1_origin=_au.get("origin_result"),
                     on_demand=detect_ai)
-                if _go and hive_detect.available():
-                    if url_key.startswith("img:") and image_b64:
-                        _s2 = hive_detect.detect_image(image_b64)
-                    elif _au_frames:
-                        _s2 = hive_detect.detect_video_frames(_au_frames)
-                    else:
-                        _s2 = None
-                    if _s2 is not None:
-                        result["authenticity"] = merge_stage2(_au, _s2, _why)
-                    elif detect_ai:
-                        _au["stage2_status"] = "failed"
-                        _au["stage2_reason"] = ("no frames or image were "
-                                                "available to analyze")
-                        result["authenticity"] = _au
-                elif _go and detect_ai and not hive_detect.available():
-                    _au["stage2_status"] = "failed"
-                    _au["stage2_reason"] = "detector not configured"
-                    result["authenticity"] = _au
-                    # per-face deepfake pass (own key/project): the
-                    # face-swap catch — signals concentrated on a face
-                    _face_likely = hive_detect.likely_has_person(
-                        (result.get("transcript") or "")
-                        + " " + (result.get("title") or "")
-                        + " " + (user_question or ""))
-                    if hive_detect.deepfake_available() and _face_likely:
-                        if url_key.startswith("img:") and image_b64:
-                            _sdf = hive_detect.detect_deepfake_faces(image_b64)
-                        elif _au_frames:
-                            _sdf = hive_detect.detect_deepfake_frames(_au_frames)
-                        else:
-                            _sdf = None
-                        if _sdf is not None:
-                            result["authenticity"] = merge_stage2(
-                                result.get("authenticity") or {}, _sdf, _why)
-                # STAGE 3 (Day 3): reverse search — where did this
-                # footage first appear? (context lane, free tier)
-                if _go and reverse_search.available():
-                    _frame0 = (image_b64 if url_key.startswith("img:")
-                               else (_au_frames[0] if _au_frames else None))
-                    if _frame0:
-                        _s3 = reverse_search.analyze(
-                            _frame0, posted_date=result.get("posted_date"))
-                        if _s3.get("assessment_status") == "completed":
-                            _au3 = result.get("authenticity") or {}
-                            _au3.setdefault("evidence", [])
-                            _au3["evidence"] = (list(_au3["evidence"])
-                                                + list(_s3["evidence"]))
-                            if _s3.get("earliest"):
-                                _au3["earliest"] = _s3["earliest"]
-                            if _s3.get("context_note"):
-                                _au3["context_note"] = _s3["context_note"]
-                            result["authenticity"] = _au3
+                if _go:
+                    result["authenticity"] = run_media_detection(
+                        _au,
+                        frames=None if url_key.startswith("img:") else _au_frames,
+                        extra_frames=_au_extra,
+                        image_b64=image_b64 if url_key.startswith("img:") else None,
+                        audio_b64=_audio_clip,
+                        reason=_why, allow_reverse=True,
+                        posted_date=result.get("posted_date"),
+                        person_hint=((result.get("transcript") or "") + " "
+                                     + (result.get("title") or "") + " "
+                                     + (user_question or "")))
             except Exception:
                 pass  # the lane must never break a check
         result = build_report(result)
@@ -864,7 +821,12 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         _set_job(job_id, status="done", result=result)
     except (IngestError, RouterError) as e:
         _set_job(job_id, status="error", error=str(e))
-    except Exception:
+    except Exception as e:
+        # never hide the cause again: full traceback to the server log
+        # (Railway) and the last few kept in memory for the admin
+        import traceback as _tb
+        _tb.print_exc()
+        _remember_error(url_key, e, _tb.format_exc())
         _set_job(job_id, status="error",
                  error="Unexpected error while checking this link.")
 
@@ -1343,7 +1305,7 @@ def api_feedback(fb: ScoreFeedback, request: Request):
     vote: it changes nothing on the page. De-duplicated per device per
     result with a salted, date-free hash (no IP stored)."""
     kind = (fb.kind or "").strip().lower()
-    if kind not in ("fair", "harsh", "wrong") or not (fb.url_key or "").strip():
+    if kind not in ("fair", "harsh", "wrong", "ai_missed", "false_alarm") or not (fb.url_key or "").strip():
         return JSONResponse(status_code=422, content={"detail": "Bad feedback."})
     if _rate_limited(_client_ip(request)):
         return JSONResponse(status_code=429, content={"detail": "Too many requests."})
@@ -1359,8 +1321,10 @@ def api_admin_feedback(key: str = "", limit: int = 100, all: int = 0, kind: str 
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     items = list_feedback(min(max(int(limit), 1), 500), only_flags=(not all and kind not in ("fair",)))
-    if kind in ("fair", "harsh", "wrong"):
+    if kind in ("fair", "harsh", "wrong", "ai_missed", "false_alarm"):
         items = [i for i in items if i.get("kind") == kind]
+    elif kind == "ai":
+        items = [i for i in items if i.get("kind") in ("ai_missed", "false_alarm")]
     return {"summary": feedback_summary(30), "daily": feedback_daily(14), "items": items}
 
 
@@ -1432,6 +1396,73 @@ def api_admin_review_latest(key: str = ""):
     from app.agents.review import REVIEW_MODEL
     return {"review": latest_review(), "state": _REVIEW_STATE, "model": REVIEW_MODEL,
             "weekly": os.environ.get("GLOWBY_REVIEW_WEEKLY", "1") == "1", "pending": len(pending_flags())}
+
+
+# ---- detector calibration (admin): a labelled set through the real lane ----
+_CAL_STATE = {"running": False, "done": 0, "total": 0, "error": None}
+
+
+class CalibrateRequest(BaseModel):
+    key: str
+    text: str  # lines: "ai <url>" / "real <url>"
+
+
+@app.post("/api/admin/calibrate")
+def api_admin_calibrate(req: CalibrateRequest):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents.calibration import parse_items, run_calibration
+    items = parse_items(req.text)
+    if not items:
+        return {"ok": False, "detail": "no items — one per line, e.g. 'ai https://...' or 'real https://...'"}
+    if _CAL_STATE["running"]:
+        return {"ok": False, "detail": "a calibration run is already in progress"}
+    _, spent = today_usage()
+    if spent >= DAILY_BUDGET_USD:
+        return {"ok": False, "detail": "daily budget reached"}
+
+    def _bg():
+        _CAL_STATE.update({"running": True, "done": 0, "total": len(items), "error": None})
+        try:
+            doc = run_calibration(items, progress=lambda d, t: _CAL_STATE.update({"done": d, "total": t}))
+            save_calibration(doc)
+            try:
+                add_usage(float(doc.get("est_cost") or 0))
+            except Exception:
+                pass
+        except Exception as e:
+            _CAL_STATE["error"] = str(e)[:200]
+        finally:
+            _CAL_STATE["running"] = False
+    threading.Thread(target=_bg, daemon=True).start()
+    return {"ok": True, "started": len(items), "est_cost": round(0.045 * len(items), 2)}
+
+
+@app.get("/api/admin/calibrate/candidates")
+def api_admin_calibrate_candidates(key: str = ""):
+    """Reader-labelled videos ("it's AI" / "it's real") as ready-to-paste
+    calibration lines. Reader labels are hints, not truth — the admin
+    keeps only the ones they can vouch for."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    items = reader_labelled_media()
+    lines = [f"{i['label']} {i['url']}" for i in items if i.get("url")]
+    return {"items": items, "lines": "\n".join(lines)}
+
+
+@app.get("/api/admin/lasterror")
+def api_admin_lasterror(key: str = ""):
+    """The last few pipeline failures with their tracebacks (admin only)."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"errors": list(reversed(_LAST_ERRORS)), "version": VERSION}
+
+
+@app.get("/api/admin/calibrate/latest")
+def api_admin_calibrate_latest(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"state": _CAL_STATE, "run": latest_calibration()}
 
 
 class FeedbackResolve(BaseModel):

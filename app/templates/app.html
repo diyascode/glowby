@@ -393,6 +393,7 @@ html.light #qOpen{background:#fff;border-color:rgba(0,0,0,.2)}
 html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 /* FEEDBACK: Fair / Harsh / Wrong under the score — a signal, never a vote */
 .fb-row{display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
+.fb-row .fb-q{font-size:12px;color:var(--muted);flex-basis:100%;text-align:center;margin-bottom:-2px}
 .fb-chip{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#c9c6dc;border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .18s}
 .fb-chip.fair{border-color:rgba(74,222,128,.4)} .fb-chip.harsh{border-color:rgba(250,178,25,.4)} .fb-chip.wrong{border-color:rgba(248,113,113,.4)}
 .fb-chip.fair.on{background:rgba(74,222,128,.18);color:#4ade80} .fb-chip.harsh.on{background:rgba(250,178,25,.18);color:#fab219} .fb-chip.wrong.on{background:rgba(248,113,113,.18);color:#f87171}
@@ -587,7 +588,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.55.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.56.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -821,7 +822,8 @@ function renderList(d){
       +'<div class="hl-sub">'+(auStyle?'Media authenticity check':(auWeak(au)!==null?'The forensic detector saw weak signals below its decision threshold. Not evidence of AI, not evidence of real \u2014 detection can miss things.':'The forensic detector examined sampled frames and found no evidence of AI generation. Detection can miss things \u2014 this is not proof the video is real.'))+'</div>'
       +'<div class="hl-sub" style="margin-top:6px;opacity:.7">'
       +(d.media_only?'Media-only check \u2014 fact-checking was skipped at your request.':'No checkable factual claims in this video \u2014 nothing to fact-check.')
-      +' \u00b7 <a href="/about#aimedia" target="_blank">how this works \u2197</a></div></div>';
+      +' \u00b7 <a href="/about#aimedia" target="_blank">how this works \u2197</a></div>'
+      +(d.private?'':fbRowAi(d))+'</div>';
   }else if(auStyle){
     const CIRC=(2*Math.PI*60);
     html+='<div class="headline"><div class="dial-row">'
@@ -837,7 +839,7 @@ function renderList(d){
       +'<div class="dial-state" style="color:'+auStyle[0]+'">'+esc(auStyle[1])+'</div>'
       +(au.manipulation_scope==='face'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">signals concentrated on a face \u2014 rest not verified</div>':'')
       +'<div class="dial-state" style="font-weight:400"><a href="/about#aimedia" target="_blank" style="color:#8a86a3">limits of AI detection \u2197</a></div>'
-      +'</div></div>'+
+      +'</div></div>'+fbRowAi(d)+
     fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
     '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
@@ -955,10 +957,42 @@ function fbRow(d){
   if(prev)return '<div class="fb-row done" id="fbRow"><button class="fb-chip fair'+(prev==='fair'?' on':'')+'" disabled>Fair</button><button class="fb-chip harsh'+(prev==='harsh'?' on':'')+'" disabled>Harsh</button><button class="fb-chip wrong'+(prev==='wrong'?' on':'')+'" disabled>Wrong</button></div>';
   return '<div class="fb-row" id="fbRow"><button type="button" class="fb-chip fair" data-k="fair">Fair</button><button type="button" class="fb-chip harsh" data-k="harsh">Harsh</button><button type="button" class="fb-chip wrong" data-k="wrong">Wrong</button></div>';
 }
+// AI-CHECK FEEDBACK — its own vocabulary: "Right" / "It's AI" (missed) /
+// "It's real" (false alarm). Every "It's AI" / "It's real" tap is also a
+// reader-labelled example for the calibration set.
+function fbRowAi(d){
+  let prev='';try{prev=localStorage.getItem(fbKey(d)+':ai')||'';}catch(e){}
+  const dis=prev?' disabled':'';
+  return '<div class="fb-row'+(prev?' done':'')+'" id="fbRowAi" data-scope="ai">'
+    +'<span class="fb-q">Was the AI check right?</span>'
+    +'<button type="button" class="fb-chip fair'+(prev==='fair'?' on':'')+'" data-k="fair"'+dis+'>Right</button>'
+    +'<button type="button" class="fb-chip wrong'+(prev==='ai_missed'?' on':'')+'" data-k="ai_missed"'+dis+'>It\u2019s AI</button>'
+    +'<button type="button" class="fb-chip harsh'+(prev==='false_alarm'?' on':'')+'" data-k="false_alarm"'+dis+'>It\u2019s real</button></div>';
+}
 async function sendFeedback(d,kind,claimIdx,note){
   try{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||d.url||'',kind:kind,claim_idx:claimIdx===undefined?null:claimIdx,note:note||''})});}catch(e){}
 }
 function wireFeedback(d,out){
+  const rowAi=out.querySelector('#fbRowAi');
+  if(rowAi&&!rowAi.classList.contains('done')){
+    rowAi.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
+      const k=b.dataset.k;
+      rowAi.classList.add('done');rowAi.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===b);});
+      try{localStorage.setItem(fbKey(d)+':ai',k);}catch(e){}
+      sendFeedback(d,k,null,'');
+      const th=document.createElement('div');th.className='fb-thanks';
+      th.innerHTML=k==='fair'?'\u2713 Thanks \u2014 logged.':'\u2713 Logged \u2014 thanks. <span>How do you know? (optional)</span>';
+      rowAi.insertAdjacentElement('afterend',th);
+      if(k!=='fair'){
+        const nb=document.createElement('div');nb.className='fb-note';
+        nb.innerHTML='<input type="text" maxlength="300" placeholder="e.g. it\u2019s my own video / the creator says so in comments"><button type="button">Send</button>';
+        th.insertAdjacentElement('afterend',nb);
+        const inp=nb.querySelector('input'),btn=nb.querySelector('button');
+        const go=()=>{const t=inp.value.trim();if(!t)return;sendFeedback(d,k,null,t);nb.outerHTML='<div class="fb-thanks">\u2713 Sent. Thank you.</div>';};
+        btn.onclick=go;inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go();}});
+      }
+    });
+  }
   const row=out.querySelector('#fbRow');
   if(row&&!row.classList.contains('done')){
     row.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
