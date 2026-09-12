@@ -1338,6 +1338,20 @@ if '"ai_missed", "false_alarm") or not (fb.url_key' not in _m83 or '"/api/admin/
 if "AI_MISSED" not in open("app/agents/review.py").read(): fails.append("m83 review prompt lacks AI flags")
 if "def reader_labelled_media" not in open("app/storage.py").read(): fails.append("m83 candidates query missing")
 
+# 84. NO UNDEFINED NAMES (the 're' outage, Sept 12): a code path that tests
+# never reached used `re` without importing it and every typed check on the
+# live site failed with "Unexpected error". Static check over the whole app.
+import subprocess as _sp, sys as _sys
+try:
+    _r = _sp.run([_sys.executable, "-m", "pyflakes", "app"], capture_output=True, text=True, timeout=120)
+    _und = [l for l in (_r.stdout + _r.stderr).splitlines() if "undefined name" in l]
+    if "No module named pyflakes" in (_r.stderr or ""):
+        fails.append("m84 pyflakes not installed (pip install pyflakes)")
+    elif _und:
+        fails.append("m84 undefined names: " + " | ".join(_und[:5]))
+except Exception as _e:
+    fails.append(f"m84 static check could not run: {_e}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 83/83 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback")
+    "FINAL MATRIX PASS: 84/84 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names")
