@@ -209,9 +209,18 @@ def build_report(result: dict) -> dict:
                             == "partly_supported" for c in drivers)
                     and all(c["verdict"]["truth_score"] >= 8.0
                             for c in others)):
-                label = ("The main claims check out. One claim is genuinely "
-                         "disputed by experts — and the lowest claim sets "
-                         "the score.")
+                # "disputed by experts" is only true when the driver's
+                # evidence actually holds both sides; a partly-supported
+                # claim with no disputing source is merely partly confirmed
+                # (the oil-at-$100 nitpick, Sept 2026)
+                if all(_has_disputing_source(c) for c in drivers):
+                    label = ("The main claims check out. One claim is genuinely "
+                             "disputed by experts — and the lowest claim sets "
+                             "the score.")
+                else:
+                    label = ("The main claims check out. One claim is only "
+                             "partly confirmed — and the lowest claim sets "
+                             "the score.")
         if counting and state in ("mixed", "mostly"):
             drivers = [c for c in counting if _headline_weight(c) == headline]
             if drivers and all(c["verdict"].get("verdict_state") == "provisional"

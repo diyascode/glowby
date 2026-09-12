@@ -307,16 +307,18 @@ if "https://old.example/o" not in ev_urls or "https://fresh.example/f" not in ev
 # 24. CONTESTED-DRIVER LABEL: green claims + one contested driver ->
 # honest sentence, not "questionable claims" smear
 from app.agents.output import build_report as _br
-def _cl(txt, score, state, central=True):
+def _cl(txt, score, state, central=True, stances=("supports",)):
     return {"claim": txt, "gate_label": "factual", "central": central,
             "risk_level": "low",
             "verdict": {"truth_score": score, "verdict_state": state,
                         "verdict": "v", "evidence_strength": "strong",
-                        "key_sources": []}}
+                        "key_sources": []},
+            "evidence": {"fact_checks": [], "web_sources": [{"url": "https://s", "stance": st} for st in stances]}}
+# (v0.55.1) the "disputed by experts" sentence needs BOTH sides in the driver's evidence
 r = _br({"title": "iran video", "claims": [
     _cl("transfer happened", 8.5, "supported"),
     _cl("hague settlement", 8.7, "supported"),
-    _cl("sanctions made cash necessary", 5.5, "partly_supported")]})
+    _cl("sanctions made cash necessary", 5.5, "partly_supported", stances=("supports", "refutes"))]})
 rep = r["report"]
 if rep["headline_score"] != 5.5: fails.append("m24 headline")
 if "disputed by experts" not in rep["headline_label"]: fails.append("m24 label: " + rep["headline_label"])
@@ -1264,6 +1266,21 @@ if _ftr(None, 0.02, None, "x", classes_seen=10)["evidence"][0]["band"] != "none"
 _h80 = open("app/templates/app.html").read()
 if "weak signals only" not in _h80 or "claims scored · the lowest sets the score" not in _h80: fails.append("m80 UI wording missing")
 
+# 81. OIL AT $100: "rebounded to $100" docked to 6.5 because sources said
+# "near $100" (rounding in prose); and the headline called an undisputed
+# partly-supported claim "genuinely disputed by experts".
+_jp81 = open("app/agents/judge.py").read()
+if "ROUND FIGURES IN PROSE" not in _jp81 or '"oil near $100" is supported' not in _jp81: fails.append("m81 prose-rounding rule missing")
+from app.agents.output import build_report as _br81
+def _c81(text, state, score, stances):
+    return {"claim": text, "gate_label": "factual", "central": True, "risk_level": "low",
+            "verdict": {"truth_score": score, "verdict_state": state, "verdict": "v", "evidence_strength": "moderate", "key_sources": []},
+            "evidence": {"fact_checks": [], "web_sources": [{"url": "https://a", "stance": st} for st in stances]}}
+_r = _br81({"claims": [_c81("CPI", "supported", 9.2, ("supports",)), _c81("Oil to $100", "partly_supported", 6.5, ("supports", "context"))]})["report"]
+if "genuinely disputed" in _r["headline_label"] or "only partly confirmed" not in _r["headline_label"]: fails.append(f"m81 undisputed driver labelled disputed: {_r['headline_label']}")
+_r = _br81({"claims": [_c81("CPI", "supported", 9.2, ("supports",)), _c81("Sanctions", "partly_supported", 5.0, ("supports", "refutes"))]})["report"]
+if "genuinely disputed" not in _r["headline_label"]: fails.append("m81 contested driver lost its label")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 80/80 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six")
+    "FINAL MATRIX PASS: 81/81 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding")

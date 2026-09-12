@@ -322,8 +322,13 @@ way people speak ($1,999 said as "$2,000", $3,199 as "$3,200", 49.9% as \
 "about half", 1,980 as "nearly 2,000") is the SAME figure. Rule \
 "supported" at the full score the evidence earns; do not deduct for it, \
 and do not write "$1,999, not $2,000" — that sentence is itself the \
-error. Test: would a careful reporter call the claim wrong? If not, it \
-is not wrong.
+error. This covers ROUND FIGURES IN PROSE too: a claim that says "to \
+$100", "hit 90%", "reached 2,000" is confirmed by evidence saying "near", \
+"around", "close to", "roughly", "approaching" that figure, or giving a \
+number within about 3% of it. "Oil rebounded to $100" against sources \
+saying "oil near $100" is supported — never "not verified because the \
+sources say near, not to." Test: would a careful reporter call the claim \
+wrong? If not, it is not wrong.
 - ANNOUNCED IS NOT PREDICTED (overrides any rubric roadmap / pre-release / \
 prediction cap): once a maker has OFFICIALLY ANNOUNCED a product or feature \
 with its specifications — a keynote, a press release, a published spec \

@@ -72,7 +72,7 @@ from app.storage import (
     hide_from_trending, delete_result,
 )
 
-VERSION = "0.55.0"
+VERSION = "0.55.1"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
