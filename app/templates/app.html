@@ -587,7 +587,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.54.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.55.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -808,7 +808,7 @@ function renderList(d){
     const CIRC2=(2*Math.PI*60);
     const col=auStyle?auStyle[0]:'#5f6070';
     const frac=auStyle?auStyle[2]:1.0;
-    const word=auStyle?auStyle[1]:'no synthetic signal found';
+    const word=auStyle?auStyle[1]:(auWeak(au)!==null?('weak synthetic signals only ('+auWeak(au)+')'):'no synthetic signal found');
     const dash=auStyle?'':' stroke-dasharray="7 9"';
     html+='<div class="headline"><div style="position:relative;width:170px;height:170px;display:inline-grid;place-items:center">'
       +'<svg width="170" height="170" style="position:absolute;inset:0;transform:rotate(-90deg)">'
@@ -817,8 +817,8 @@ function renderList(d){
                :('<circle cx="85" cy="85" r="60" fill="none" stroke="'+col+'" stroke-width="12" stroke-linecap="round"'+dash+'/>'))
       +'</svg>'
       +'<div style="font-weight:700;font-size:38px;color:'+(auStyle?'inherit':'#8a86a3')+'">AI</div></div>'
-      +'<div class="hl-label" style="color:'+(auStyle?col:'var(--ink)')+'">'+esc(auStyle?word:'No synthetic signal found')+'</div>'
-      +'<div class="hl-sub">'+(auStyle?'Media authenticity check':'The forensic detector examined sampled frames and found no evidence of AI generation. Detection can miss things \u2014 this is not proof the video is real.')+'</div>'
+      +'<div class="hl-label" style="color:'+(auStyle?col:'var(--ink)')+'">'+esc(auStyle?word:(auWeak(au)!==null?'Weak synthetic signals only':'No synthetic signal found'))+'</div>'
+      +'<div class="hl-sub">'+(auStyle?'Media authenticity check':(auWeak(au)!==null?'The forensic detector saw weak signals below its decision threshold. Not evidence of AI, not evidence of real \u2014 detection can miss things.':'The forensic detector examined sampled frames and found no evidence of AI generation. Detection can miss things \u2014 this is not proof the video is real.'))+'</div>'
       +'<div class="hl-sub" style="margin-top:6px;opacity:.7">'
       +(d.media_only?'Media-only check \u2014 fact-checking was skipped at your request.':'No checkable factual claims in this video \u2014 nothing to fact-check.')
       +' \u00b7 <a href="/about#aimedia" target="_blank">how this works \u2197</a></div></div>';
@@ -840,13 +840,13 @@ function renderList(d){
       +'</div></div>'+
     fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest sets the score')+'</div>'+
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';
   }else{
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
     fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest sets the score')+'</div>'+
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';
   }
   if(d.private){
@@ -995,10 +995,20 @@ function wireFeedback(d,out){
 // AI PILL — one line inside the score card instead of a two-line card.
 // Blue when the check ran clean, red when it found strong signals; the
 // details panel below carries the explanation.
+function auWeak(au){
+  // the detector's strongest frame sat in the weak band (0.10-0.50):
+  // say so instead of "no signal" — honest, still no verdict
+  const ev=(au&&au.evidence)||[];
+  const h=ev.find(e=>e&&e.provider==='hive'&&e.band==='weak');
+  return h?(h.raw_score):null;
+}
 function aiRow(au,mediaLeads){
   if(!au||au.stage!==2||mediaLeads)return '';
-  if(au.origin_result==='no_synthetic_signal')
-    return '<div class="airow">\ud83d\udd0d <b>AI check ran</b> <span class="st">\u00b7 no synthetic signal</span> <a id="aiDet">details \u2193</a></div>';
+  if(au.origin_result==='no_synthetic_signal'){
+    const w=auWeak(au);
+    const st=w!==null?('\u00b7 weak signals only ('+w+')'):'\u00b7 no synthetic signal';
+    return '<div class="airow">\ud83d\udd0d <b>AI check ran</b> <span class="st">'+st+'</span> <a id="aiDet">details \u2193</a></div>';
+  }
   return '';
 }
 function render(){

@@ -72,7 +72,7 @@ from app.storage import (
     hide_from_trending, delete_result,
 )
 
-VERSION = "0.54.0"
+VERSION = "0.55.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -430,7 +430,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 if "[WHAT THE VIDEO VISUALLY SHOWS]" in _tr:
                     _vis = _tr.split("[WHAT THE VIDEO VISUALLY SHOWS]", 1)[1]
                 result["authenticity"] = assess_stage1(
-                    caption=(result.get("title") or ""), ocr_text=_vis)
+                    caption=(result.get("title") or ""), ocr_text=_vis,
+                    transcript=_tr)
             except Exception:
                 pass
 
@@ -629,24 +630,30 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         if AUTHENTICITY_ENABLED:
             _au0 = result.get("authenticity") or {}
             _origin0 = _au0.get("origin_result")
-            if _origin0 in ("verified_ai_provenance", "declared_ai",
-                            "likely_synthetic"):
-                _ctx = _au0.get("display") or "AI-generated"
-                _re_origin = re.compile(
-                    r"\b(this|the)\s+(video|clip|footage|image|reel|short)\b"
-                    r".*\b(creat|generat|made|produc)\w*\b"
-                    r".*\b(ai|a\.i\.|sora|veo|midjourney|dall|kling|pika|"
-                    r"artificial intelligence)\b", re.I | re.S)
-                for c in claims:
-                    if _re_origin.search(str(c.get("claim", ""))):
-                        # a statement about the media's own origin is the
-                        # AI dial's job, not a world-claim to judge
-                        c["gate_label"] = "media_origin"
-                        c["reason"] = ("Answered by the media lane: the AI "
-                                       "panel above reports this video's "
-                                       "origin.")
-                    elif c.get("gate_label") in ("factual", "prediction"):
-                        c["media_context"] = _ctx
+            _ai_known = _origin0 in ("verified_ai_provenance", "declared_ai",
+                                     "likely_synthetic")
+            _ctx = _au0.get("display") or "AI-generated"
+            # a statement about the media's OWN origin ("this video is AI
+            # generated", "this footage is real") is the AI panel's job,
+            # ALWAYS — never a world-claim for the evidence search (the
+            # waterfall video: it went hunting for articles about AI
+            # detection and shrugged "not scoreable")
+            _re_origin = re.compile(
+                r"\b(this|the)\s+(video|clip|footage|image|reel|short|content)\b"
+                r"[^.]{0,80}?\b(ai[- ]generated|generated|created|made|produced|"
+                r"synthetic|not real|real footage|genuine|authentic|deepfake|fake)\b",
+                re.I)
+            for c in claims:
+                if _re_origin.search(str(c.get("claim", ""))) and re.search(
+                        r"\b(ai|a\.i\.|sora|veo|midjourney|dall|kling|pika|runway|"
+                        r"artificial intelligence|synthetic|deepfake|real footage|"
+                        r"genuine|authentic|not real|fake)\b", str(c.get("claim", "")), re.I):
+                    c["gate_label"] = "media_origin"
+                    c["reason"] = ("Answered by the AI panel above, which "
+                                   "reports what the creator declared and "
+                                   "what the detector found.")
+                elif _ai_known and c.get("gate_label") in ("factual", "prediction"):
+                    c["media_context"] = _ctx
         try:
             save_route_audit(url_key, url, claims, ROUTER_MODEL, TAXONOMY_VERSION)
         except Exception:

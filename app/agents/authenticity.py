@@ -134,9 +134,37 @@ def check_c2pa(image_bytes):
 
 
 # ------------------------------------------------------------ labels
-def check_labels(caption="", ocr_text=""):
+# spoken or on-screen SELF-declarations ("this video is AI-generated",
+# "everything you're seeing was made with AI") — a creator's own statement
+# about their own content, arriving through the transcript
+SPEECH_PATTERNS = [
+    r"\b(this|the following|everything( you('re| are) (seeing|watching))?|all of this|what you('re| are) (seeing|watching))\b[^.!?\n]{0,60}\b(is|was|are|were)\b[^.!?\n]{0,30}\b(ai[- ]generated|generated (by|with|using) (ai|artificial intelligence|sora|veo|kling|runway|midjourney)|made (with|by|using) (ai|artificial intelligence)|created (with|by|using) (ai|artificial intelligence))\b",
+    r"\b(this|the) (video|clip|footage|reel|short|scene|content)\b[^.!?\n]{0,40}\b(ai[- ]generated|not real|fully ai|100% ai|synthetic)\b",
+    r"\b(this|the) ai[- ]generated (video|clip|footage|content|scene)\b",
+]
+
+
+def check_speech_declaration(transcript=""):
+    """Pure (unit-tested): does the spoken/on-screen transcript contain a
+    self-declaration that THIS content is AI-made? Returns the matching
+    snippet or None. Mentions of AI in general ("AI is changing jobs")
+    do not match — the sentence must point at this content."""
+    t = (transcript or "").lower()
+    for pat in SPEECH_PATTERNS:
+        m = re.search(pat, t)
+        if m:
+            return t[max(0, m.start() - 20):m.end() + 20].strip()
+    return None
+
+
+def check_labels(caption="", ocr_text="", transcript=""):
     """Declared/weak evidence: creator or platform said it's AI."""
     found = []
+    snippet = check_speech_declaration(transcript)
+    if snippet:
+        found.append(_evidence(
+            "labels", "spoken_declaration",
+            f'The creator states in the video that it is AI-generated ("{snippet[:120]}").'))
     cap = (caption or "").lower()
     for pat in CAPTION_PATTERNS:
         if re.search(pat, cap):
@@ -169,7 +197,7 @@ def check_metadata(image_bytes):
 
 
 # ------------------------------------------------------------ assemble
-def assess_stage1(caption="", ocr_text="", image_b64=None):
+def assess_stage1(caption="", ocr_text="", image_b64=None, transcript=""):
     """Run every free Day-1 check; resolve by hierarchy, never weights."""
     evidence = []
     origins = []
@@ -195,7 +223,7 @@ def assess_stage1(caption="", ocr_text="", image_b64=None):
             evidence.append(m_ev)
             origins.append(ORIGIN_DECLARED)
 
-    label_ev = check_labels(caption, ocr_text)
+    label_ev = check_labels(caption, ocr_text, transcript)
     if label_ev:
         evidence.extend(label_ev)
         origins.append(ORIGIN_DECLARED)

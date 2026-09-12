@@ -50,6 +50,7 @@ HIVE_TIMEOUT_S = 45
 #   < 0.50   -> no finding from this detector (absence proves nothing)
 THRESH_LIKELY = 0.90
 THRESH_INCONCLUSIVE = 0.50
+THRESH_WEAK = 0.10  # below this: nothing; 0.10-0.50: "weak signals", still no verdict
 
 # class names that count as "synthetic" in Hive AI-content responses
 _SYNTHETIC_CLASSES = {"ai_generated", "deepfake", "yes_deepfake",
@@ -212,6 +213,16 @@ def _finding_to_result(origin, top, gen, provider_label, classes_seen=None):
                    if origin == ORIGIN_LIKELY else
                    "an uncertain result — treated as inconclusive, "
                    "never as a verdict.") + detail),
+            "source_link": None,
+        })
+    elif top >= THRESH_WEAK:
+        ev.append({
+            "provider": "hive", "signal_type": provider_label,
+            "raw_score": round(top, 3), "band": "weak",
+            "explanation": (f"Forensic detector reports weak synthetic "
+                            f"signals ({top:.2f}) — below its decision "
+                            "threshold. Not evidence of AI, not evidence "
+                            "of real; this never renders as 'genuine'."),
             "source_link": None,
         })
     else:

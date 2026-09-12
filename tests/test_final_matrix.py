@@ -1228,6 +1228,42 @@ for _n in ("d.refused==='minor'", "d.explicit_offer", 'id="privGo"', "const gate
 if 'id="content"' not in open("app/templates/trust.html").read(): fails.append("m79 trust page policy missing")
 if "hide from Trending" not in open("app/templates/admin.html").read(): fails.append("m79 admin moderation missing")
 
+# 80. THE WATERFALL VIDEO (six fixes): the creator SAID it was AI in speech
+# and Glowby missed it; a "not scoreable" claim flagged public-safety
+# collapsed the report into an emergency alert over a green 8.0; the
+# origin claim went web-hunting; 0.22 read as "no signal"; judged count.
+from app.agents.authenticity import check_speech_declaration as _csd, assess_stage1 as _as1
+if not _csd("so yeah this video is AI generated content, dont try it"): fails.append("m80 spoken declaration missed")
+if not _csd("everything you are seeing was made with AI"): fails.append("m80 'everything you are seeing' missed")
+if _csd("AI is changing how we work, this video explains"): fails.append("m80 AI mention wrongly declared")
+if _csd("an AI-generated clip went viral last week"): fails.append("m80 third-party mention wrongly declared")
+_st = _as1(caption="waterfall run", ocr_text="", transcript="this video is ai generated content")
+if _st.get("origin_result") != "declared_ai": fails.append(f"m80 stage1 not declared: {_st.get('origin_result')}")
+from app.agents.output import build_report as _br80, is_safety_instruction as _isi, UNSAFE_VERDICT_STATES as _uvs
+if "not_scoreable" in _uvs: fails.append("m80 not_scoreable still collapses")
+if _isi("A person slid down an active waterfall face as depicted in this video"): fails.append("m80 depiction read as instruction")
+if not _isi("Residents should evacuate immediately") or not _isi("Drinking bleach cures COVID"): fails.append("m80 instruction not recognised")
+def _c80(text, state, score, psr):
+    return {"claim": text, "gate_label": "factual", "central": True, "risk_level": "high", "public_safety_risk": psr,
+            "verdict": {"truth_score": score, "verdict_state": state, "verdict": "v", "evidence_strength": "moderate", "key_sources": []}, "evidence": {}}
+_r = _br80({"claims": [_c80("A person slid down a waterfall as depicted in this video", "supported", 8.0, True),
+                       _c80("This video is AI-generated content", "not_scoreable", None, True)]})["report"]
+if _r["headline_state"] == "safety_alert": fails.append("m80 waterfall still collapses to safety alert")
+if _r["counts"].get("scored") != 1: fails.append(f"m80 scored count: {_r['counts']}")
+_r = _br80({"claims": [_c80("Residents of Zone B should evacuate immediately", "unverifiable", None, True)]})["report"]
+if _r["headline_state"] != "safety_alert" or _r["headline_score"] is not None: fails.append("m80 real instruction must collapse with a neutral dial")
+_m80 = open("app/main.py").read()
+if "transcript=_tr)" not in _m80: fails.append("m80 transcript not passed to stage 1")
+if "ALWAYS — never a world-claim for the evidence search" not in _m80: fails.append("m80 media-origin parking still conditional")
+_pk = _m80[_m80.index("_re_origin = re.compile("):_m80.index('c["media_context"] = _ctx')]
+if "_ai_known" in _pk.split("for c in claims:")[0]: fails.append("m80 parking gated on stage-1 origin")
+from app.agents.hive_detect import _finding_to_result as _ftr, THRESH_WEAK as _tw
+_w = _ftr(None, 0.223, None, "forensic_video_frames", classes_seen=660)
+if _w["evidence"][0]["band"] != "weak" or "weak synthetic" not in _w["evidence"][0]["explanation"]: fails.append("m80 weak band missing")
+if _ftr(None, 0.02, None, "x", classes_seen=10)["evidence"][0]["band"] != "none": fails.append("m80 none band broken")
+_h80 = open("app/templates/app.html").read()
+if "weak signals only" not in _h80 or "claims scored · the lowest sets the score" not in _h80: fails.append("m80 UI wording missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 79/79 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate")
+    "FINAL MATRIX PASS: 80/80 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six")

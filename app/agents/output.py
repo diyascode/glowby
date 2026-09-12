@@ -69,8 +69,27 @@ SAFETY_LABEL = (
     "official sources."
 )
 
+# states in which an UNCONFIRMED safety instruction must collapse the
+# report. "not_scoreable" is deliberately absent: a definitional shrug on
+# some other claim is not an emergency (the waterfall video, Sept 2026).
 UNSAFE_VERDICT_STATES = {"unverifiable", "insufficient", "contradicted",
-                         "not_scoreable", "provisional"}
+                         "provisional"}
+# the collapse is for INSTRUCTIONS people might act on within minutes —
+# evacuate, shelter, boil water, drink/take this, it's safe to go back —
+# never for a depiction ("a person slid down a waterfall") that merely
+# happens to be dangerous
+_INSTRUCTION_RE = re.compile(
+    r"\b(evacuat\w*|shelter|boil[- ]water|all[- ]clear|do not (drink|eat|go|use|enter|return)|"
+    r"don't (drink|eat|go|use|enter|return)|(is|are) safe to|(is|are) not safe|avoid (the|all|any)|"
+    r"stay (indoors|inside|away|home)|leave (the area|immediately|now)|(drink|take|swallow|inject|apply) \w+ (to|for) (cure|treat|prevent)|"
+    r"cures?|treats?|prevents?|antidote|warning:|alert:|emergency|missing (person|child)|amber alert|"
+    r"you (should|must|need to|have to)|everyone (should|must|needs to))\b", re.I)
+
+
+def is_safety_instruction(claim_text: str) -> bool:
+    """Pure (unit-tested): does this claim read as an instruction or
+    warning a person might act on, rather than a description?"""
+    return bool(_INSTRUCTION_RE.search(claim_text or ""))
 
 # a low-risk side detail can cap the headline down to this floor, but
 # never below it — "mostly checks out" is the worst a wrong aside can do
@@ -152,14 +171,15 @@ def build_report(result: dict) -> dict:
     # safety collapse (spec: named critical protocol)
     safety_notice = None
     for c in judged:
-        if c.get("public_safety_risk") and (
-            c["verdict"].get("verdict_state") in UNSAFE_VERDICT_STATES
-        ):
+        if (c.get("public_safety_risk")
+                and c["verdict"].get("verdict_state") in UNSAFE_VERDICT_STATES
+                and is_safety_instruction(c.get("claim", ""))):
             safety_notice = SAFETY_LABEL
             break
 
     if safety_notice:
         state, label = "safety_alert", SAFETY_LABEL
+        headline = None  # a green number over a red warning is a contradiction
     elif headline is None:
         # say the TRUE reason there's no score: no claims at all, only
         # non-factual content, or real claims that couldn't be verified
@@ -223,6 +243,7 @@ def build_report(result: dict) -> dict:
         "counts": {
             "claim_units": len(claims),
             "judged": len(judged),
+            "scored": len(scored),  # verdicts WITH a number (not-scoreable excluded)
             "not_judged": len(not_judged),
             "parked": len(parked),
         },
