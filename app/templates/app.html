@@ -403,6 +403,9 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
 .fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .hl-meta{font-size:12px;color:var(--muted);margin-top:6px}
+/* VERDICT WORD (founder design A, Sep 14): the band name in the ring's colour,
+   directly under the number — the colour finally says its name */
+.vw{display:inline-block;margin-top:10px;padding:5px 14px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;border:1px solid}
 /* NOTHING-TO-CHECK card (founder design B, Sep 2026): a verdict chip in the
    dial's place, one headline, one line. No empty ring, no paragraph. */
 .ncchip{display:inline-block;padding:9px 20px;border-radius:999px;font-size:1.2rem;font-weight:800;background:rgba(124,108,246,.15);border:1px solid rgba(124,108,246,.5);color:#c4bbff;letter-spacing:-.01em}
@@ -625,7 +628,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.64.4 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.64.6 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -738,6 +741,18 @@ function noCheck(d){
   const k=NC_KINDS[kind]||NC_KINDS['no-claim'];
   return {kind:kind,icon:k[0],word:k[1],line:k[2]};
 }
+// band word for the headline — derived from the SCORE so it can never
+// disagree with the ring's colour (the sentence below it comes from the server)
+function verdictWord(rep){
+  if(rep.safety_notice)return null;
+  const s=rep.headline_score;
+  if(s===null||s===undefined)return ['Unverified','#9aa0b0'];
+  if(s>=8.0)return ['Accurate','#4ade80'];
+  if(s>=7.5)return ['Mostly accurate','#4ade80'];
+  if(s>=4.0)return ['Mixed','#fab219'];
+  return ['Misleading','#f87171'];
+}
+function verdictPill(rep){const v=verdictWord(rep);return v?'<div><span class="vw" style="color:'+v[1]+';border-color:'+v[1]+';background:'+v[1]+'22">'+v[0]+'</span></div>':'';}
 function ncChip(nc,small){return '<span class="ncchip'+(small?' sm':'')+'">'+nc.icon+' '+esc(nc.word)+'</span>';}
 function ringSVG(score,size,width){
   const r=(size/2)-width-1, c=2*Math.PI*r;
@@ -752,6 +767,7 @@ function ringSVG(score,size,width){
 function chips(c){
   let h='<span class="cat">'+esc(c.bucket)+'</span>';
   if(c.secondary_bucket)h+=' <span class="cat">+ '+esc(c.secondary_bucket)+'</span>';
+  if(c.rerouted_from)h+=' <span class="cat" title="the first judge said this was not its category">re-routed from '+esc(c.rerouted_from)+'</span>';
   if(riskColor[c.risk_level])h+=' <span class="cat" style="color:'+riskColor[c.risk_level]+';border-color:'+riskColor[c.risk_level]+'">'+esc(c.risk_level)+' risk</span>';
   if(c.developing_story)h+=' <span class="cat">⏳ developing</span>';
   if(c.central===false)h+=' <span class="cat">side detail</span>';
@@ -1007,14 +1023,14 @@ function renderList(d){
       +(au.manipulation_scope==='face'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">signals concentrated on a face \u2014 rest not verified</div>':'')
       +(au.manipulation_scope==='voice'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">the voice itself shows signs of cloning</div>':'')
       +'<div class="dial-state" style="font-weight:400"><a href="/about#aimedia" target="_blank" style="color:#8a86a3">limits of AI detection \u2197</a></div>'
-      +'</div></div>'+fbRowAi(d)+
+      +'</div></div>'+verdictPill(rep)+fbRowAi(d)+
     fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
     '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';
   }else{
   html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
-    fbRow(d)+
+    verdictPill(rep)+fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
     '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';

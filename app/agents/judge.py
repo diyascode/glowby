@@ -370,12 +370,19 @@ Evidence — web sources (stance toward the claim):
 Respond with ONLY a JSON object (no prose, no code fences):
 {{"truth_score": 8.2 or null, "verdict_state": "...", "verdict": "one \
 sentence", "evidence_strength": "strong|moderate|thin|none", \
-"key_sources": ["url1", "url2"], "why_unverifiable": null}}
+"key_sources": ["url1", "url2"], "why_unverifiable": null, "wrong_desk": null}}
 verdict_state MUST be exactly one of the seven fleet values: supported, \
 partly_supported, provisional, insufficient, contradicted, unverifiable, \
 not_scoreable. The rubric's own state names (record-verified, \
 vendor-claim-only, study-limited, and the like) are for your reasoning — \
 translate them to the fleet value; never output them.
+WRONG DESK: if the claim clearly belongs to a DIFFERENT category (a plant-care \
+claim routed to health, a stock-price claim routed to science), do NOT rule \
+not_scoreable for being outside your scope — judge it if the evidence lets \
+you, and ALSO set "wrong_desk" to the category it belongs in (one of: \
+politics, health, science, economy, business, technology, law, conflict, \
+education, society_culture, sports, entertainment, history_geography). \
+Glowby then re-judges it at that desk. Otherwise wrong_desk is null.
 why_unverifiable: null unless verdict_state is unverifiable/not_scoreable — \
 then exactly one of: "no_sources_found" (nothing relevant surfaced), \
 "sources_dont_address_claim" (sources exist but none speak to the core \
@@ -389,7 +396,38 @@ above — never invent one."""
 
 
 def judge_with_rubric(claim: dict, evidence: dict) -> dict:
-    """Judge one routed claim under its category rubric."""
+    """Judge one routed claim under its category rubric. A judge that
+    declines for scope ("not a health claim") sends the claim ONCE to the
+    desk it named — or the secondary bucket, or science for nature/
+    how-things-work claims — instead of shipping the refusal as the
+    verdict (the succulents check, Sep 2026)."""
+    v = _judge_once(claim, evidence)
+    if scope_refused(v) and not claim.get("_rerouted"):
+        here = claim.get("bucket", "other")
+        to = v.get("wrong_desk") or claim.get("secondary_bucket") or "science"
+        if to == here:
+            to = claim.get("secondary_bucket") or ("science" if here != "science" else "other")
+        if to and to != here:
+            c2 = dict(claim)
+            c2["bucket"] = to
+            c2["secondary_bucket"] = None
+            c2["_rerouted"] = True
+            v2 = _judge_once(c2, evidence)
+            if isinstance(v2, dict) and not scope_refused(v2):
+                v2["rerouted_from"] = here
+                v2["rerouted_to"] = to
+                v2.pop("wrong_desk", None)
+                # the card shows the desk that actually ruled
+                claim["bucket"] = to
+                claim["secondary_bucket"] = None
+                claim["rerouted_from"] = here
+                return v2
+    if isinstance(v, dict):
+        v.pop("wrong_desk", None)
+    return v
+
+
+def _judge_once(claim: dict, evidence: dict) -> dict:
     bucket = claim.get("bucket", "other")
 
     # a TECHNICAL search failure still short-circuits — no judge can rule
@@ -665,7 +703,7 @@ def parse_judge_response(raw: str, allowed_urls=None):
     else:
         why = None
 
-    return {
+    out = {
         "truth_score": score,
         "verdict_state": state,
         "verdict": str(data.get("verdict", "")).strip()[:500],
@@ -673,3 +711,33 @@ def parse_judge_response(raw: str, allowed_urls=None):
         "key_sources": sources,
         "why_unverifiable": why,
     }
+    wd = str(data.get("wrong_desk") or "").lower().strip()
+    if wd in BUCKETS_FOR_REROUTE:
+        out["wrong_desk"] = wd
+    return out
+
+
+BUCKETS_FOR_REROUTE = {
+    "politics", "health", "science", "economy", "business", "technology",
+    "law", "conflict", "education", "society_culture", "sports",
+    "entertainment", "history_geography",
+}
+# a judge that refused for scope in prose (older replies, or a model that
+# skipped the field) — caught by wording, not just by the field
+_SCOPE_REFUSAL_RE = re.compile(
+    r"(outside (this|the|my) (category|rubric|desk)|this category.s scope|"
+    r"falls outside|not (a|an) (health|medical|political|legal|economic|"
+    r"business|technology|science|sports|entertainment|historical) claim|"
+    r"wrong (category|desk)|not within (this|my) (category|scope))", re.I)
+
+
+def scope_refused(verdict: dict) -> bool:
+    """Pure (unit-tested): did the judge decline the claim for being
+    someone else's category rather than rule on it?"""
+    if not isinstance(verdict, dict):
+        return False
+    if verdict.get("wrong_desk"):
+        return True
+    if verdict.get("verdict_state") not in NULL_SCORE_STATES:
+        return False
+    return bool(_SCOPE_REFUSAL_RE.search(str(verdict.get("verdict") or "")))

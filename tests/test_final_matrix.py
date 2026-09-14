@@ -1819,6 +1819,43 @@ for _need in ("resolve_short_link(raw)", "legacy_key(raw)", 'fresh_reason', '"ca
     if _need not in _m98: fails.append(f"m98 main wiring missing {_need}")
 if "fresh_reason" not in open("app/storage.py").read() or "Why it ran" not in open("app/templates/admin.html").read(): fails.append("m98 admin 'why it ran' missing")
 
+# 99. WRONG DESK (Sept 14 — the succulents check): a plant-care claim routed
+# to the health judge came back "not scoreable … outside this category's
+# scope" with four good sources on the card. A scope refusal now sends the
+# claim ONCE to the desk the judge named (else secondary, else science);
+# the card shows the desk that ruled. Router: plants/animals → science.
+from app.agents import judge as _J99
+_v99 = _J99.parse_judge_response('{"truth_score": null, "verdict_state": "not_scoreable", "verdict": "This is a horticultural claim about plant care, not a health or medical claim, and falls outside this category\'s scope.", "evidence_strength": "none", "key_sources": [], "why_unverifiable": "depends_on_definition", "wrong_desk": null}')
+if not _J99.scope_refused(_v99): fails.append("m99 prose scope refusal not detected")
+_v99b = _J99.parse_judge_response('{"truth_score": 2.0, "verdict_state": "contradicted", "verdict": "Not a health benefit: the study found no effect.", "evidence_strength": "strong", "key_sources": [], "why_unverifiable": null, "wrong_desk": null}')
+if _J99.scope_refused(_v99b): fails.append("m99 a scored verdict must never count as a refusal")
+_v99c = _J99.parse_judge_response('{"truth_score": 8.0, "verdict_state": "supported", "verdict": "x", "evidence_strength": "strong", "key_sources": [], "why_unverifiable": null, "wrong_desk": "science"}')
+if _v99c.get("wrong_desk") != "science": fails.append("m99 wrong_desk field dropped by parser")
+_orig99 = _J99._judge_once
+_calls99 = []
+def _fake99(claim, ev):
+    _calls99.append(claim["bucket"])
+    if claim["bucket"] == "health":
+        return {"truth_score": None, "verdict_state": "not_scoreable", "verdict": "falls outside this category's scope", "evidence_strength": "none", "key_sources": [], "why_unverifiable": "depends_on_definition"}
+    return {"truth_score": 8.8, "verdict_state": "supported", "verdict": "Succulents need water; submersion rots them.", "evidence_strength": "strong", "key_sources": [], "why_unverifiable": None}
+try:
+    _J99._judge_once = _fake99
+    _c99 = {"claim": "Succulents require water to survive", "bucket": "health", "secondary_bucket": None}
+    _o99 = _J99.judge_with_rubric(_c99, {})
+    if _calls99 != ["health", "science"] or _o99["truth_score"] != 8.8 or _o99.get("rerouted_from") != "health": fails.append(f"m99 reroute: {_calls99} {_o99}")
+    if _c99["bucket"] != "science" or _c99.get("rerouted_from") != "health": fails.append("m99 card must show the desk that ruled")
+    _calls99.clear()
+    def _fake99b(claim, ev):
+        _calls99.append(claim["bucket"]); return {"truth_score": None, "verdict_state": "not_scoreable", "verdict": "outside this category's scope", "evidence_strength": "none", "key_sources": [], "why_unverifiable": "no_sources_found"}
+    _J99._judge_once = _fake99b
+    _c99 = {"claim": "x", "bucket": "health", "secondary_bucket": "science"}
+    _J99.judge_with_rubric(_c99, {})
+    if len(_calls99) != 2 or _c99["bucket"] != "health": fails.append(f"m99 must re-judge exactly once and keep the desk on a second refusal: {_calls99}")
+finally:
+    _J99._judge_once = _orig99
+if "Plant care, animals, gardening" not in open("app/agents/router.py").read(): fails.append("m99 router: plants/animals → science rule missing")
+if "re-routed from" not in open("app/templates/app.html").read(): fails.append("m99 card chip missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 98/98 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key")
+    "FINAL MATRIX PASS: 99/99 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk")

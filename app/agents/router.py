@@ -103,9 +103,12 @@ STEP 3 — ROUTE each forward claim into ONE primary bucket (what the claim \
 is MAINLY about, not which words appear):
 - politics: elections, laws, policies, officials, how governments run. \
 Health-policy/funding fights → politics; the disease/treatment itself → health.
-- health: diseases, treatments, drugs, public health, medical research.
-- science: research, space, climate, environment, energy. Climate POLICY \
-fight → politics; a medical study → health.
+- health: HUMAN health — diseases, treatments, drugs, public health, medical \
+research. Plant care, animals, gardening, nutrition facts about food \
+itself → science.
+- science: research, space, climate, environment, energy, biology, plants \
+and animals, gardening and how-things-work facts about nature. Climate \
+POLICY fight → politics; a medical study → health.
 - economy: the broad economy, markets, rates, inflation, jobs, central banks.
 - business: specific companies, products, deals, executives. Economy-wide \
 trends → economy; what a technology does → technology.
