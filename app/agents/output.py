@@ -52,16 +52,37 @@ UNVERIFIED_LABEL = (
     "evidence was found either way."
 )
 
-NO_CLAIMS_LABEL = (
-    "Glowby found no checkable factual claims in this video — "
-    "nothing to verify."
-)
+NO_CLAIMS_LABEL = "Nothing to fact-check — no claims in this video."
 
 ALL_PARKED_LABEL = (
-    "This video contains only opinion, satire, or other non-factual "
-    "content — nothing here can be true or false, so there is nothing "
-    "to fact-check."
+    "Nothing to fact-check — nothing here can be true or false."
 )
+
+# NOTHING-TO-CHECK KINDS (founder design, Sep 2026): when every unit was
+# parked at the gate, the card shows ONE word for why — a verdict chip,
+# not an empty dial and a paragraph. The dominant parked label picks it.
+NOTHING_KINDS = {
+    "opinion": "Opinion",
+    "satire": "Satire",
+    "fiction-joke": "Joke",
+    "personal-experience": "Personal story",
+    "question": "Question",
+    "advertisement": "Ad",
+    "no-claim": "No claims",
+}
+
+
+def nothing_kind(claims) -> str:
+    """Pure: the dominant parked gate label (ties → first seen), or
+    "no-claim" when the router returned nothing at all."""
+    tally = {}
+    for c in claims or []:
+        g = str(c.get("gate_label") or "no-claim")
+        if g in NOTHING_KINDS:
+            tally[g] = tally.get(g, 0) + 1
+    if not tally:
+        return "no-claim"
+    return max(tally, key=lambda g: tally[g])
 
 SAFETY_LABEL = (
     "⚠ This video contains emergency or safety instructions that could "
@@ -177,6 +198,7 @@ def build_report(result: dict) -> dict:
             safety_notice = SAFETY_LABEL
             break
 
+    nothing = None  # set when there was nothing checkable at all
     if safety_notice:
         state, label = "safety_alert", SAFETY_LABEL
         headline = None  # a green number over a red warning is a contradiction
@@ -185,8 +207,10 @@ def build_report(result: dict) -> dict:
         # non-factual content, or real claims that couldn't be verified
         if not claims:
             state, label = "unverified", NO_CLAIMS_LABEL
+            nothing = "no-claim"
         elif not forward:
             state, label = "unverified", ALL_PARKED_LABEL
+            nothing = nothing_kind(parked)
         else:
             state, label = "unverified", UNVERIFIED_LABEL
     else:
@@ -236,8 +260,8 @@ def build_report(result: dict) -> dict:
 
     title = (result.get("title") or "this video").strip()
     if headline is None:
-        tail = ("no checkable claims found" if not forward
-                else "unverified — no reliable evidence found")
+        tail = (("nothing to fact-check (" + NOTHING_KINDS[nothing].lower() + ")")
+                if nothing else "unverified — no reliable evidence found")
         share_text = f"Glowby checked “{title}”: {tail}."
     else:
         share_text = (
@@ -248,6 +272,7 @@ def build_report(result: dict) -> dict:
         "headline_score": headline,
         "headline_state": state,
         "headline_label": label,
+        "nothing_to_check": nothing,
         "share_text": share_text,
         "counts": {
             "claim_units": len(claims),

@@ -293,7 +293,8 @@ with sync_playwright() as pw:
                                          "explanation": "x",
                                          "source_link": None}]}
     _r3["report"] = {"headline_score": None, "headline_state": "unverified",
-                     "headline_label": "no claims", "share_text": "s",
+                     "headline_label": "Nothing to fact-check \u2014 no claims in this video.",
+                     "nothing_to_check": "no-claim", "share_text": "s",
                      "counts": {"claim_units": 0, "judged": 0,
                                 "not_judged": 0, "parked": 0},
                      "safety_notice": None}
@@ -310,10 +311,14 @@ with sync_playwright() as pw:
     except Exception:
         fails.append("AI check details panel missing")
     _t3 = _p3.inner_text("#out")
-    if "No synthetic signal found" not in _t3:
-        fails.append("media answer does not lead when claims are empty")
-    if _t3.index("No synthetic signal found") > _t3.index("nothing to fact-check"):
-        fails.append("claims line placed above the media answer")
+    # founder design B (Sep 2026): a verdict chip leads, the AI check is a
+    # pill under it — no empty dial, no paragraph
+    if "Nothing to fact-check" not in _t3 or "No claims" not in _t3:
+        fails.append("nothing-to-check chip card missing when claims are empty")
+    if "no synthetic signal" not in _t3:
+        fails.append("AI-check pill missing under the chip card")
+    if "0 of 0" in _t3 or "lowest sets the score" in _t3 or "\u2014\n/ 10" in _t3:
+        fails.append("empty dial or claims-scored line leaked into chip card")
     if "660" not in _t3:
         fails.append("class-scores-read count missing from panel")
     _b3.close()

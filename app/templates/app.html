@@ -403,6 +403,12 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
 .fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .hl-meta{font-size:12px;color:var(--muted);margin-top:6px}
+/* NOTHING-TO-CHECK card (founder design B, Sep 2026): a verdict chip in the
+   dial's place, one headline, one line. No empty ring, no paragraph. */
+.ncchip{display:inline-block;padding:9px 20px;border-radius:999px;font-size:1.2rem;font-weight:800;background:rgba(124,108,246,.15);border:1px solid rgba(124,108,246,.5);color:#c4bbff;letter-spacing:-.01em}
+.ncchip.sm{font-size:.72rem;padding:5px 11px;background:rgba(13,13,13,.85)}
+.nc-big{font-size:1.4rem;font-weight:800;line-height:1.2;margin-top:14px;color:var(--ink)}
+.nc-sub{color:var(--muted);font-size:.85rem;margin-top:6px;line-height:1.4}
 .airow{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12.5px;background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.28);border-radius:999px;padding:7px 14px;max-width:100%}
 .airow b{color:#38bdf8;font-weight:700} .airow .st{color:#38bdf8;opacity:.85} .airow.bad{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35)} .airow.bad b,.airow.bad .st{color:#f87171}
 .airow a{color:var(--brand);text-decoration:none;margin-left:2px;cursor:pointer}
@@ -619,7 +625,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.64.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.64.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -705,6 +711,34 @@ async function checkFetch(body){
   return r;
 }
 
+// NOTHING TO FACT-CHECK: every unit parked at the gate (or none found).
+// One word says why; the card must never look like Glowby skipped the job.
+const NC_KINDS={
+  'opinion':['\ud83d\udcac','Opinion','No claim that can be true or false.'],
+  'satire':['\ud83c\udfad','Satire','Comedy, not a claim.'],
+  'fiction-joke':['\ud83d\ude04','Joke','A joke, not a claim.'],
+  'personal-experience':['\ud83e\uddcd','Personal story','One person\u2019s experience \u2014 not a checkable claim.'],
+  'question':['\u2753','Question','It asks \u2014 it doesn\u2019t claim.'],
+  'advertisement':['\ud83d\udce3','Ad','A pitch, not a fact.'],
+  'no-claim':['\u2014','No claims','Nothing said that can be true or false.']};
+function noCheck(d){
+  const rep=d.report||{};
+  if(d.answer_mode||rep.safety_notice||d.media_only||d.private||d.refused)return null;
+  if(rep.headline_score!==null&&rep.headline_score!==undefined)return null;
+  if(rep.headline_state&&rep.headline_state!=='unverified')return null;
+  let kind=rep.nothing_to_check;
+  if(kind===null)return null;             // a custom message wants the old layout
+  const claims=d.claims||[];
+  if(kind===undefined){                   // older saved results: work it out here
+    if(claims.some(c=>c.verdict||c.gate_label==='factual'||c.gate_label==='prediction'))return null;
+    if(!/nothing to (fact-check|verify)/i.test(rep.headline_label||''))return null;
+    const t={};for(const c of claims){const g=c.gate_label||'no-claim';if(NC_KINDS[g])t[g]=(t[g]||0)+1;}
+    kind='no-claim';let n=0;for(const g in t){if(t[g]>n){kind=g;n=t[g];}}
+  }
+  const k=NC_KINDS[kind]||NC_KINDS['no-claim'];
+  return {kind:kind,icon:k[0],word:k[1],line:k[2]};
+}
+function ncChip(nc,small){return '<span class="ncchip'+(small?' sm':'')+'">'+nc.icon+' '+esc(nc.word)+'</span>';}
 function ringSVG(score,size,width){
   const r=(size/2)-width-1, c=2*Math.PI*r;
   const frac=(score===null||score===undefined)?0:Math.max(.03,score/9.9);
@@ -929,8 +963,16 @@ function renderList(d){
   // claims to judge, "no synthetic signal" is the answer the reader
   // came for — the empty claim ring is not.
   const auRan=!!(au&&(au.stage===2||au.stage2_status==='completed'));
-  const mediaLeads=!!((auStyle||auRan)&&(noClaims||d.media_only));
-  if(mediaLeads){
+  // ...unless there was simply nothing to check and the media lane found
+  // nothing either: then the verdict chip leads and the AI check is a pill.
+  const nc=noCheck(d);
+  const mediaLeads=!!((auStyle||auRan)&&(noClaims||d.media_only)&&!(nc&&!auStyle));
+  if(nc&&!mediaLeads){
+    html+='<div class="headline">'+ncChip(nc)
+      +'<div class="nc-big">Nothing to fact-check</div>'
+      +'<div class="nc-sub">'+esc(nc.line)+'</div>'
+      +aiRow(au,false)+fbRow(d)+'</div>';
+  }else if(mediaLeads){
     const CIRC2=(2*Math.PI*60);
     const col=auStyle?auStyle[0]:'#5f6070';
     const frac=auStyle?auStyle[2]:1.0;
@@ -1049,7 +1091,7 @@ function renderReel(d){
   chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted);font-size:.68rem">AI fact-check · can be wrong · sources on every claim · glowby.io</div>';
   let html='';
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
-  html+='<div class="reel"><div class="reeltitle">'+((d.url&&/^https?:\/\//.test(d.url))?('<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(d.title)+' ↗</a>'):esc(d.title))+'</div><div class="corner">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6)+'</div><div class="chips">'+chipsHtml+'</div></div>'+
+  html+='<div class="reel"><div class="reeltitle">'+((d.url&&/^https?:\/\//.test(d.url))?('<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(d.title)+' ↗</a>'):esc(d.title))+'</div><div class="corner">'+((function(){const nc=noCheck(d);return nc?ncChip(nc,true):ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6);})())+'</div><div class="chips">'+chipsHtml+'</div></div>'+
     '<div class="meta" style="text-align:center;margin-top:10px">Screenshot this view to share · the link below travels with it</div>';
   return html;
 }
@@ -1064,7 +1106,9 @@ function resultText(d){
   }else{
     lines.push('Glowby fact-check: "'+(d.title||'')+'"');
     if(d.scam&&(d.scam.risk==='high'||d.scam.risk==='medium'))lines.push('\u26a0 '+(d.scam.risk==='high'?'Matches scam patterns':'Scam warning signs')+': '+(d.scam.pattern_names||[]).slice(0,3).join('; '));
-    lines.push('Score: '+(rep.headline_score===null||rep.headline_score===undefined?'no score (couldn\u2019t verify)':rep.headline_score.toFixed(1)+'/10')+' \u2014 '+String(rep.headline_state||'').replace(/_/g,' '));
+    const ncT=noCheck(d);
+    if(ncT)lines.push('Nothing to fact-check \u2014 '+ncT.word.toLowerCase()+'. '+ncT.line);
+    else lines.push('Score: '+(rep.headline_score===null||rep.headline_score===undefined?'no score (couldn\u2019t verify)':rep.headline_score.toFixed(1)+'/10')+' \u2014 '+String(rep.headline_state||'').replace(/_/g,' '));
     for(const c of (d.claims||[]).filter(c=>c.verdict)){
       const ts=c.verdict.truth_score;
       const lbl=(vLabel[c.verdict.verdict_state]||c.verdict.verdict_state||'').replace(/^\S+ /,'');

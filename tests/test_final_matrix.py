@@ -116,12 +116,15 @@ def run(jid, text, key, router_out, judge_map=None, evidence=None):
 j = run("s1", "url", "youtube:sat1", [unit("joke about senators", gate="satire")])
 rep = j["result"]["report"]
 if rep["headline_score"] is not None: fails.append("m8 satire got scored")
-if "opinion, satire" not in rep["headline_label"]: fails.append("m8 label")
+if "Nothing to fact-check" not in rep["headline_label"]: fails.append("m8 label")
+if rep.get("nothing_to_check") != "satire": fails.append("m8 chip kind")
 
 # 9. empty router -> no-claims label
 j = run("s2", "url", "youtube:empty1", [])
-if "no checkable factual claims" not in j["result"]["report"]["headline_label"]:
+if "no claims" not in j["result"]["report"]["headline_label"]:
     fails.append("m9 no-claims label")
+if j["result"]["report"].get("nothing_to_check") != "no-claim":
+    fails.append("m9 chip kind")
 
 # 10. safety collapse beats good scores
 j = run("s3", "url", "youtube:safe1",

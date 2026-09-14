@@ -78,7 +78,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.64.0"
+VERSION = "0.64.1"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -527,6 +527,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     "claims": [],
                 }
                 build_report(result)
+                result["report"]["nothing_to_check"] = None  # custom guidance below, not the chip
                 result["report"]["headline_label"] = (
                     "Glowby looked at your image and didn't find a "
                     "checkable claim — no readable text, chart, or factual "
