@@ -625,7 +625,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.64.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.64.4 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -971,7 +971,7 @@ function renderList(d){
     html+='<div class="headline">'+ncChip(nc)
       +'<div class="nc-big">Nothing to fact-check</div>'
       +'<div class="nc-sub">'+esc(nc.line)+'</div>'
-      +aiRow(au,false)+fbRow(d)+'</div>';
+      +aiRow(au,false)+fbRow(d,true)+'</div>';
   }else if(mediaLeads){
     const CIRC2=(2*Math.PI*60);
     const col=auStyle?auStyle[0]:'#5f6070';
@@ -1125,10 +1125,13 @@ function resultText(d){
 // score), never a vote: nothing on the page changes. One tap per device
 // per result, remembered on the phone.
 function fbKey(d){return 'gbFb:'+(d.url_key||d.url||'');}
-function fbRow(d){
+function fbRow(d,two){
+  // two=true: no score on the card, so "Harsh" has nothing to be harsh
+  // about — Fair / Wrong only (founder call, Sep 14)
   let prev='';try{prev=localStorage.getItem(fbKey(d))||'';}catch(e){}
-  if(prev)return '<div class="fb-row done" id="fbRow"><button class="fb-chip fair'+(prev==='fair'?' on':'')+'" disabled>Fair</button><button class="fb-chip harsh'+(prev==='harsh'?' on':'')+'" disabled>Harsh</button><button class="fb-chip wrong'+(prev==='wrong'?' on':'')+'" disabled>Wrong</button></div>';
-  return '<div class="fb-row" id="fbRow"><button type="button" class="fb-chip fair" data-k="fair">Fair</button><button type="button" class="fb-chip harsh" data-k="harsh">Harsh</button><button type="button" class="fb-chip wrong" data-k="wrong">Wrong</button></div>';
+  const harsh=two?'':(prev?'<button class="fb-chip harsh'+(prev==='harsh'?' on':'')+'" disabled>Harsh</button>':'<button type="button" class="fb-chip harsh" data-k="harsh">Harsh</button>');
+  if(prev)return '<div class="fb-row done" id="fbRow"><button class="fb-chip fair'+(prev==='fair'?' on':'')+'" disabled>Fair</button>'+harsh+'<button class="fb-chip wrong'+(prev==='wrong'?' on':'')+'" disabled>Wrong</button></div>';
+  return '<div class="fb-row" id="fbRow"><button type="button" class="fb-chip fair" data-k="fair">Fair</button>'+harsh+'<button type="button" class="fb-chip wrong" data-k="wrong">Wrong</button></div>';
 }
 // AI-CHECK FEEDBACK — its own vocabulary: "Right" / "It's AI" (missed) /
 // "It's real" (false alarm). Every "It's AI" / "It's real" tap is also a
