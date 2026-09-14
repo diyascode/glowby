@@ -625,7 +625,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.64.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.64.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -1134,13 +1134,20 @@ function fbRow(d){
 // "It's real" (false alarm). Every "It's AI" / "It's real" tap is also a
 // reader-labelled example for the calibration set.
 function fbRowAi(d){
+  // TWO BUTTONS (founder call, Sep 14): "Yes" / "No". The direction of a
+  // "No" comes from what the card said — a "no signal" result the reader
+  // rejects means "it's AI" (ai_missed); a "synthetic" result rejected
+  // means "it's real" (false_alarm). Only an unclear result needs to ask
+  // which way, and does so after the tap.
   let prev='';try{prev=localStorage.getItem(fbKey(d)+':ai')||'';}catch(e){}
   const dis=prev?' disabled':'';
-  return '<div class="fb-row'+(prev?' done':'')+'" id="fbRowAi" data-scope="ai">'
+  const o=(d.authenticity||{}).origin_result||'';
+  const noKind=(o==='no_synthetic_signal')?'ai_missed':((o==='likely_synthetic'||o==='verified_ai_provenance'||o==='declared_ai')?'false_alarm':'ask');
+  const noOn=(prev==='ai_missed'||prev==='false_alarm')?' on':'';
+  return '<div class="fb-row'+(prev?' done':'')+'" id="fbRowAi" data-scope="ai" data-no="'+noKind+'">'
     +'<span class="fb-q">Was the AI check right?</span>'
-    +'<button type="button" class="fb-chip fair'+(prev==='fair'?' on':'')+'" data-k="fair"'+dis+'>Right</button>'
-    +'<button type="button" class="fb-chip wrong'+(prev==='ai_missed'?' on':'')+'" data-k="ai_missed"'+dis+'>It\u2019s AI</button>'
-    +'<button type="button" class="fb-chip harsh'+(prev==='false_alarm'?' on':'')+'" data-k="false_alarm"'+dis+'>It\u2019s real</button></div>';
+    +'<button type="button" class="fb-chip fair'+(prev==='fair'?' on':'')+'" data-k="fair"'+dis+'>Yes</button>'
+    +'<button type="button" class="fb-chip wrong'+noOn+'" data-k="no"'+dis+'>No</button></div>';
 }
 async function sendFeedback(d,kind,claimIdx,note){
   try{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||d.url||'',kind:kind,claim_idx:claimIdx===undefined?null:claimIdx,note:note||''})});}catch(e){}
@@ -1149,8 +1156,24 @@ function wireFeedback(d,out){
   const rowAi=out.querySelector('#fbRowAi');
   if(rowAi&&!rowAi.classList.contains('done')){
     rowAi.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
-      const k=b.dataset.k;
+      let k=b.dataset.k;
       rowAi.classList.add('done');rowAi.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===b);});
+      if(k==='no'){
+        k=rowAi.dataset.no;
+        if(k==='ask'){
+          // an unclear result: "No" alone doesn't say which way — ask once
+          const ask=document.createElement('div');ask.className='fb-row';
+          ask.innerHTML='<span class="fb-q">It\u2019s actually\u2026</span><button type="button" class="fb-chip wrong" data-k="ai_missed">AI</button><button type="button" class="fb-chip harsh" data-k="false_alarm">Real</button>';
+          rowAi.insertAdjacentElement('afterend',ask);
+          ask.querySelectorAll('.fb-chip').forEach(c=>c.onclick=()=>{
+            const kk=c.dataset.k;ask.classList.add('done');ask.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===c);});
+            try{localStorage.setItem(fbKey(d)+':ai',kk);}catch(e){}
+            sendFeedback(d,kk,-1,'');
+            ask.insertAdjacentHTML('afterend','<div class="fb-thanks">\u2713 Logged \u2014 thanks.</div>');
+          });
+          return;
+        }
+      }
       try{localStorage.setItem(fbKey(d)+':ai',k);}catch(e){}
       sendFeedback(d,k,-1,'');
       const th=document.createElement('div');th.className='fb-thanks';

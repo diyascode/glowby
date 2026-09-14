@@ -23,7 +23,16 @@ import urllib.parse
 TRACKING_PARAMS = {
     "si", "feature", "utm_source", "utm_medium", "utm_campaign", "utm_term",
     "utm_content", "fbclid", "gclid", "igsh", "igshid", "ref", "ref_src", "s", "t",
+    # Facebook share-sheet tails (the same reel came in as
+    # facebook.com/reel/ID?fs=e AND fb.watch/CODE?mibextid=… — two keys,
+    # two runs, two scores; Sep 2026)
+    "fs", "mibextid", "rdid", "share_url", "sfnsn", "vh", "extid", "paipv",
+    "eav", "_rdr", "wtsid", "refsrc", "app", "locale", "mibextid",
 }
+
+# short links that only a redirect can name: resolved BEFORE keying
+SHORT_LINK_HOSTS = ("fb.watch", "vm.tiktok.com", "vt.tiktok.com")
+_SHORT_PATH_RE = re.compile(r"^/(share/[rvp]|s|l\.php|watch)/?", re.I)
 
 
 # ------------------------------------------------------------ canonical keys
@@ -62,6 +71,30 @@ def canonical_key(url: str) -> str:
         if segs:
             return f"tiktok:{segs[0]}"
 
+    # --- Facebook: /reel/ID, /videos/ID, /USER/videos/ID, /watch?v=ID,
+    # /watch/?v=ID, /video.php?v=ID, /photo?fbid=ID, fb.watch/CODE
+    if host == "fb.watch":
+        code = path.strip("/").split("/")[0]
+        if code:
+            return f"facebook:short:{code}"
+    if host.endswith("facebook.com") or host.endswith("fb.com"):
+        m = re.search(r"/(?:reel|reels|videos|video)/(\d{6,})", path)
+        if m:
+            return f"facebook:{m.group(1)}"
+        if query.get("v") and re.fullmatch(r"\d{6,}", query["v"][0]):
+            return f"facebook:{query['v'][0]}"
+        if query.get("fbid") and re.fullmatch(r"\d{6,}", query["fbid"][0]):
+            return f"facebook:{query['fbid'][0]}"
+        m = re.match(r"^/share/([rvp])/([A-Za-z0-9_-]+)", path)
+        if m:
+            return f"facebook:short:{m.group(2)}"
+
+    # --- Instagram: /reel/CODE, /reels/CODE, /p/CODE, /tv/CODE
+    if host.endswith("instagram.com"):
+        m = re.match(r"^/(?:[A-Za-z0-9_.]+/)?(?:reel|reels|p|tv)/([A-Za-z0-9_-]{5,})", path)
+        if m:
+            return f"instagram:{m.group(1)}"
+
     # --- X / Twitter: /user/status/1234567890
     if host in ("x.com", "twitter.com") or host.endswith(".twitter.com"):
         m = re.search(r"/status/(\d+)", path)
@@ -70,6 +103,84 @@ def canonical_key(url: str) -> str:
 
     # --- everything else: normalized URL minus tracking params
     kept = {k: v for k, v in query.items() if k.lower() not in TRACKING_PARAMS}
+    clean_query = urllib.parse.urlencode(sorted(kept.items()), doseq=True)
+    return f"url:{host}{path.rstrip('/')}" + (f"?{clean_query}" if clean_query else "")
+
+
+def is_short_link(url: str) -> bool:
+    """A link whose real video only a redirect reveals (fb.watch,
+    facebook.com/share/r/…, vm.tiktok.com). These get resolved first so
+    the share-sheet copy and the address-bar copy share ONE cache key."""
+    parsed = urllib.parse.urlparse((url or "").strip())
+    host = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    if host in SHORT_LINK_HOSTS:
+        return True
+    if (host.endswith("facebook.com") or host.endswith("fb.com")) and \
+            re.match(r"^/share/[rvp]/", parsed.path or ""):
+        return True
+    return False
+
+
+def resolve_short_link(url: str, fetch=None, timeout: float = 6.0) -> str:
+    """Follow the redirect of a share link to the address it stands for.
+    Returns the original URL on any failure — a miss costs one extra
+    run, never a broken check. `fetch(url) -> final_url` is injectable
+    (the workspace can't reach Facebook; Railway can)."""
+    url = (url or "").strip()
+    if not is_short_link(url):
+        return url
+    hit = _RESOLVED.get(url)
+    if hit:
+        return hit
+    try:
+        if fetch is None:
+            import urllib.request
+
+            req = urllib.request.Request(
+                url, method="HEAD",
+                headers={"User-Agent": "Mozilla/5.0 (compatible; Glowby/1.0)"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                final = r.geturl()
+        else:
+            final = fetch(url)
+    except Exception:
+        return url
+    final = _unwrap_login(final or "")
+    if not final or is_short_link(final):
+        return url
+    if len(_RESOLVED) > 5000:
+        _RESOLVED.clear()
+    _RESOLVED[url] = final
+    return final
+
+
+def _unwrap_login(final: str) -> str:
+    """Facebook bounces logged-out visitors to /login/?next=<the reel>;
+    the reel address is what we want."""
+    p = urllib.parse.urlparse(final)
+    if "/login" in (p.path or ""):
+        nxt = urllib.parse.parse_qs(p.query or "").get("next")
+        if nxt:
+            return nxt[0]
+    return final
+
+
+_RESOLVED: dict = {}
+
+
+def legacy_key(url: str) -> str:
+    """The pre-v0.64.2 generic key ("url:host/path?query-minus-tracking")
+    for hosts that now get an ID key — so results stored last week are
+    still found instead of re-run."""
+    url = (url or "").strip()
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    path = parsed.path or ""
+    query = urllib.parse.parse_qs(parsed.query or "")
+    old_tracking = {"si", "feature", "utm_source", "utm_medium", "utm_campaign",
+                    "utm_term", "utm_content", "fbclid", "gclid", "igsh", "igshid",
+                    "ref", "ref_src", "s", "t"}
+    kept = {k: v for k, v in query.items() if k.lower() not in old_tracking}
     clean_query = urllib.parse.urlencode(sorted(kept.items()), doseq=True)
     return f"url:{host}{path.rstrip('/')}" + (f"?{clean_query}" if clean_query else "")
 
@@ -134,6 +245,12 @@ def _get_conn():
     except Exception:
         _conn = None
         return None
+
+
+def cache_available() -> bool:
+    """Is the results database reachable right now? A miss while it is
+    down looks exactly like a first check — this tells them apart."""
+    return _get_conn() is not None
 
 
 def get_cached(url_key: str, max_age_days: int = 0):
@@ -262,7 +379,8 @@ def list_recent_checks(limit: int = 12) -> list:
                 "result->'report'->>'headline_score', "
                 "result->'report'->>'headline_state', "
                 "(result->>'answer_mode') = 'true', "
-                "result->'scam'->>'risk' "
+                "result->'scam'->>'risk', "
+                "result->>'fresh_reason', hits "
                 "FROM checks "
                 "WHERE coalesce(result->>'content_rating', 'general') = 'general' "
                 "ORDER BY created_at DESC LIMIT %s",
@@ -279,6 +397,8 @@ def list_recent_checks(limit: int = 12) -> list:
                 "state": r[3] or "unverified",
                 "answer": bool(r[4]),
                 "scam": r[5] if r[5] in ("medium", "high") else None,
+                "fresh_reason": r[6],
+                "hits": int(r[7] or 0),
             })
         return out
     except Exception:
@@ -486,7 +606,8 @@ def admin_recent_checks(limit: int = 25) -> list:
                 "result->'report'->>'headline_score', "
                 "result->'report'->>'headline_state', "
                 "(result->>'answer_mode') = 'true', hits, "
-                "result->'timings'->>'total_s', created_at "
+                "result->'timings'->>'total_s', created_at, "
+                "result->>'fresh_reason' "
                 "FROM checks ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             )
@@ -500,6 +621,7 @@ def admin_recent_checks(limit: int = 25) -> list:
             "hits": r[6],
             "seconds": float(r[7]) if r[7] else None,
             "created_at": r[8].isoformat() if r[8] else None,
+            "fresh_reason": r[9],
         } for r in rows]
     except Exception:
         return []

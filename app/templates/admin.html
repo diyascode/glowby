@@ -760,7 +760,7 @@ function render(d){
   $("recent").innerHTML = !rec.length
     ? '<tr><td class="empty">No checks stored yet.</td></tr>'
     : "<tr><th>Score</th><th>Title</th><th class='hidesm'>Views</th>" +
-      "<th class='hidesm'>Time</th><th class='hidesm'>When</th></tr>" +
+      "<th class='hidesm'>Time</th><th class='hidesm'>When</th><th class='hidesm'>Why it ran</th></tr>" +
       rec.map(c => {
         const badge = c.answer
           ? '<span class="score-b sn">A</span>'
@@ -769,7 +769,8 @@ function render(d){
           `<td><a href="/r/${encodeURIComponent(c.url_key)}" target="_blank">${esc(c.title)}</a></td>` +
           `<td class="num hidesm">${c.hits ?? ""}</td>` +
           `<td class="num hidesm">${c.seconds != null ? Math.round(c.seconds) + "s" : ""}</td>` +
-          `<td class="num hidesm">${esc((c.created_at||"").slice(5,16).replace("T"," "))}</td></tr>`;
+          `<td class="num hidesm">${esc((c.created_at||"").slice(5,16).replace("T"," "))}</td>` +
+          `<td class="s hidesm" style="color:${c.fresh_reason==='cache unreachable'?'var(--bad)':'var(--muted)'}">${esc(c.fresh_reason||"")}</td></tr>`;
       }).join("");
 }
 

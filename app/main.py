@@ -47,7 +47,11 @@ from app.agents.router import (
 from app.storage import (
     add_usage,
     admin_recent_checks,
+    cache_available,
     canonical_key,
+    is_short_link,
+    legacy_key,
+    resolve_short_link,
     daily_usage_series,
     event_stats,
     get_cached,
@@ -78,7 +82,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.64.1"
+VERSION = "0.64.3"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -454,6 +458,10 @@ def _scam_lens_finish(result: dict, started) -> None:
             result["scam"] = {"risk": "none", "patterns": [], "ran": True, "mode": "shadow"}
     except Exception:
         result["scam"] = {"risk": "none", "patterns": [], "ran": False}
+
+
+_fresh_reasons: dict = {}
+_fresh_lock = threading.Lock()
 
 
 def _run_pipeline(job_id: str, url: str, url_key: str,
@@ -962,6 +970,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             "total_s": round(time.time() - t0, 1),
         }
         result["cached"] = False
+        with _fresh_lock:
+            result["fresh_reason"] = _fresh_reasons.pop(job_id, None) or "first check"
         save_result(url_key, url, result)
         # "+ask": the check is DONE — now answer the user's question FROM
         # the completed analysis (attached after save, so the shared cache
@@ -1165,9 +1175,26 @@ def api_check(req: CheckRequest, request: Request):
             )
         url_key = text_key(raw)
     else:
+        # SHARE LINKS: fb.watch/CODE and facebook.com/share/r/CODE are the
+        # same reel as facebook.com/reel/ID — resolve first so both
+        # spellings land on one key (one run, one score; Sep 2026)
+        if is_short_link(raw):
+            try:
+                raw = resolve_short_link(raw) or raw
+            except Exception:
+                pass
         url_key = canonical_key(raw)
     question = (req.question or "").strip()[:400]
     cached = None if req.force else get_cached(url_key, CACHE_TTL_DAYS)
+    if cached is None and not req.force and url_key.startswith(("facebook:", "instagram:")):
+        # results stored under the old spelling-sensitive key still count
+        try:
+            _old = get_cached(legacy_key(raw), CACHE_TTL_DAYS)
+        except Exception:
+            _old = None
+        if _old is not None:
+            cached = _old
+            url_key = _old.get("url_key") or url_key
     # "+detect AI" on a cached result that never ran the detector:
     # serve nothing stale — run fresh so the media check actually happens
     if cached is not None and cached.get("media_only") and not req.ai_only:
@@ -1254,10 +1281,22 @@ def api_check(req: CheckRequest, request: Request):
             prior_claims = None
 
     job_id = uuid.uuid4().hex[:12]
+    # WHY A FRESH RUN: never a mystery again (the twice-checked reel,
+    # Sep 2026). Read back in admin > recent checks.
+    if req.force:
+        _why_fresh = "re-check"
+    elif not cache_available():
+        _why_fresh = "cache unreachable"
+    elif req.detect_ai or req.ai_only:
+        _why_fresh = "AI check requested"
+    else:
+        _why_fresh = "first check"
+    with _fresh_lock:
+        _fresh_reasons[job_id] = _why_fresh
     _set_job(job_id, status="queued", stage="fetching", started=time.time())
     threading.Thread(
         target=_run_pipeline,
-        args=(job_id, req.url, url_key, question, prior_claims, image_b64,
+        args=(job_id, (raw if looks_like_url(raw) else req.url), url_key, question, prior_claims, image_b64,
               bool(req.detect_ai) or bool(req.ai_only) or bool(audio_b64), bool(req.ai_only),
               audio_b64),
         daemon=True,

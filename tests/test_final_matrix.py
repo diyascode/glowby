@@ -1326,7 +1326,7 @@ if _s["at"]["0.9"]["detection_rate"] != 1.0 or _s["at"]["0.5"]["false_alarm_rate
 if 'id="calRun"' not in open("app/templates/admin.html").read(): fails.append("m82 admin calibration card missing")
 
 # 83. AI-CHECK FEEDBACK + TYPO LABELS: "Ai Gernated Video" is a creator label;
-# the AI dial has its own feedback vocabulary (Right / It's AI / It's real)
+# the AI dial has its own two-button feedback (Yes / No; No is mapped by what the card said)
 # feeding the flag review and the calibration candidates.
 from app.agents.authenticity import assess_stage1 as _as83
 for _cap in ("Ai Gernated Video | Ankit Soni", "AI genrated art", "new sora video dropped", "ai video of my dog"):
@@ -1336,7 +1336,8 @@ for _cap in ("AI guard dog", "AI is coming for jobs", "the AI Act passed"):
 import app.storage as _st83
 if _st83.FEEDBACK_KINDS[:5] != ("fair", "harsh", "wrong", "ai_missed", "false_alarm"): fails.append("m83 kinds")
 _h83 = open("app/templates/app.html").read()
-if _h83.count("fbRowAi(d)") != 3 or 'data-k="ai_missed"' not in _h83 or 'data-k="false_alarm"' not in _h83: fails.append("m83 AI feedback row missing")
+# v0.64.2: two buttons — Yes / No; "No" maps to ai_missed or false_alarm from what the card said
+if _h83.count("fbRowAi(d)") != 3 or 'data-k="no"' not in _h83 or "noKind=(o==='no_synthetic_signal')?'ai_missed'" not in _h83 or 'data-k="ai_missed"' not in _h83: fails.append("m83 AI feedback row (Yes/No) missing")
 if "(d.private?'':fbRowAi(d))" not in _h83: fails.append("m83 private path must not collect feedback")
 _m83 = open("app/main.py").read()
 if 'kind not in FEEDBACK_KINDS or not (fb.url_key' not in _m83 or '"/api/admin/calibrate/candidates"' not in _m83: fails.append("m83 routes")
@@ -1792,6 +1793,32 @@ _m97 = open("app/main.py").read()
 if '@app.get("/api/admin/scam/shadow")' not in _m97 or 'and scam_mode() == "on"' not in _m97: fails.append("m97 shadow route / photo gate missing")
 if "def list_shadow_scams" not in open("app/storage.py").read() or "loadShadow" not in open("app/templates/admin.html").read(): fails.append("m97 shadow list missing")
 
+# 98. ONE REEL, ONE KEY (Sept 14 — the twice-checked Facebook reel, 2.5 vs
+# 6.5): facebook.com/reel/ID?fs=e and fb.watch/CODE?mibextid=… must land
+# on the SAME cache key; share links resolve first; a stored result under
+# the old spelling-sensitive key is still found; every fresh run says why.
+from app.storage import canonical_key as _ck98, legacy_key as _lk98, resolve_short_link as _rs98, is_short_link as _is98, _RESOLVED as _R98
+_R98.clear()
+_same98 = {_ck98(u) for u in ("https://www.facebook.com/reel/1579689730501414?fs=e",
+                             "https://www.facebook.com/reel/1579689730501414/?mibextid=wwXIfr&rdid=x",
+                             "https://m.facebook.com/watch/?v=1579689730501414",
+                             "https://www.facebook.com/page/videos/1579689730501414/")}
+if _same98 != {"facebook:1579689730501414"}: fails.append(f"m98 facebook keys differ: {_same98}")
+_ig98 = {_ck98(u) for u in ("https://www.instagram.com/reel/DAbc_12-x/?igsh=abc", "https://instagram.com/reels/DAbc_12-x", "https://www.instagram.com/user.name/reel/DAbc_12-x/")}
+if _ig98 != {"instagram:DAbc_12-x"}: fails.append(f"m98 instagram keys differ: {_ig98}")
+if not _is98("https://fb.watch/JDRBMuUQqZ?mibextid=wwXIfr") or not _is98("https://www.facebook.com/share/r/1AbC/") or _is98("https://www.facebook.com/reel/1"): fails.append("m98 short-link detection")
+_fin98 = _rs98("https://fb.watch/JDRBMuUQqZ?mibextid=wwXIfr", fetch=lambda u: "https://www.facebook.com/login/?next=https%3A%2F%2Fwww.facebook.com%2Freel%2F1579689730501414%2F%3Fmibextid%3DwwXIfr")
+if _ck98(_fin98) != "facebook:1579689730501414": fails.append(f"m98 share link did not resolve to the reel: {_fin98}")
+_R98.clear()
+_bad98 = _rs98("https://fb.watch/ZZZ?mibextid=q", fetch=lambda u: (_ for _ in ()).throw(OSError("down")))
+if _ck98(_bad98) != "facebook:short:ZZZ": fails.append(f"m98 failed resolve must keep a deterministic key: {_ck98(_bad98)}")
+if _lk98("https://www.facebook.com/reel/1579689730501414?fs=e") != "url:facebook.com/reel/1579689730501414?fs=e": fails.append("m98 legacy key changed")
+if _ck98("https://youtu.be/abc12345?si=x") != "youtube:abc12345" or _ck98("https://x.com/a/status/123") != "x:123": fails.append("m98 regression on youtube/x keys")
+_m98 = open("app/main.py").read()
+for _need in ("resolve_short_link(raw)", "legacy_key(raw)", 'fresh_reason', '"cache unreachable"', '"re-check"'):
+    if _need not in _m98: fails.append(f"m98 main wiring missing {_need}")
+if "fresh_reason" not in open("app/storage.py").read() or "Why it ran" not in open("app/templates/admin.html").read(): fails.append("m98 admin 'why it ran' missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 97/97 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode")
+    "FINAL MATRIX PASS: 98/98 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key")
