@@ -40,7 +40,16 @@ translunar free-return around the Moon, splashdown").
 Rules: report ONLY what is visible — never invent details, labels, or \
 numbers not shown. Don't judge truth; just state what is asserted. Write \
 2-6 plain sentences. If the frames genuinely assert nothing checkable \
-(pure scenery, vibes, abstract visuals), respond with exactly: {nothing}"""
+(pure scenery, vibes, abstract visuals), respond with exactly: {nothing}
+
+SCREENSHOTS OF MESSAGES: if the image is a screenshot of a text message, \
+iMessage/WhatsApp/Telegram chat, email, voicemail transcript, DM, pop-up, \
+notification or social-media comment, it is ALWAYS reportable (never \
+{nothing}). Start your answer with a line "[MESSAGE TEXT]" followed by an \
+EXACT transcription: the sender's name, phone number or email address as \
+shown; every line of the message; every link, domain, code, amount and \
+phone number character for character; the app it appears in if visible. \
+Then a blank line and the plain description. Never paraphrase a link."""
 
 
 def describe_frames(frames: list, title: str = "", uploader: str = ""):

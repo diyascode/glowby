@@ -177,7 +177,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div class="s" style="margin-bottom:4px">Last 14 days · <span style="color:#4ade80">■ fair</span> <span style="color:#fab219">■ harsh</span> <span style="color:#f87171">■ wrong</span></div>
       <div id="fbChart"></div>
       <div class="s" style="margin:12px 0 6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">Show:
-        <button class="fbf on" data-kind="">flags (harsh + wrong)</button><button class="fbf" data-kind="wrong">wrong only</button><button class="fbf" data-kind="harsh">harsh only</button><button class="fbf" data-kind="fair">fair (likes)</button>
+        <button class="fbf on" data-kind="">flags (harsh + wrong)</button><button class="fbf" data-kind="wrong">wrong only</button><button class="fbf" data-kind="harsh">harsh only</button><button class="fbf" data-kind="fair">fair (likes)</button><button class="fbf" data-kind="ai">AI check</button><button class="fbf" data-kind="scam">scam lens</button>
         <span>· newest first · a flag either becomes a rule or is marked "score was right"</span></div>
       <div id="flags"></div>
     </div>
@@ -189,6 +189,50 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       </div>
       <div class="s" id="reviewMeta" style="margin:6px 0 8px"></div>
       <div id="review"></div>
+    </div>
+
+    <div class="card">
+      <h2>Scam lens — verdicts and audit traces</h2>
+      <div id="scamTiles" class="tiles" style="margin-bottom:10px"></div>
+      <div id="scamMode" class="s" style="margin-bottom:8px"></div>
+      <div id="scamShadow" style="margin-bottom:10px"></div>
+      <div class="s" style="margin-bottom:6px">Every engine run keeps a trace (score, verdict, dimensions, floors, lookups — never the text). A reader or partner disputing a verdict quotes the <code>audit_trace_id</code>; paste it here.</div>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><input id="traceId" placeholder="audit_trace_id (16 hex)" style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem"><button id="traceGo" class="fbf" style="font-size:.78rem;padding:6px 12px">Look up</button></div>
+      <pre id="traceOut" class="s" style="white-space:pre-wrap;margin:0"></pre>
+    </div>
+
+    <div class="card">
+      <h2>The scam-engine exam — dev, validation, hidden</h2>
+      <div class="s" style="margin-bottom:6px">Testing, not training. Every case has an answer key (verdict bands, required red flags). <b>Dev</b> ships with the code and lists every failure. <b>Validation</b> and <b>hidden</b> are uploaded here and live only in the database; the hidden split reports rates only — its texts are never shown, so nobody can tune to it. Launch goals: ≥97% of dangerous cases high/critical · &lt;5% of legitimate flagged · 0 actions that point at the sender's own number or link · ≥99% valid output. Robustness re-runs the scams with typos, leet, slang and injected instructions.</div>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><button class="fbf exr" data-split="dev">Run dev</button><button class="fbf exr" data-split="validation">Run validation</button><button class="fbf exr" data-split="hidden">Run hidden</button><span class="s" id="exMeta"></span></div>
+      <div id="exTiles" class="tiles" style="margin-bottom:8px"></div>
+      <div id="exOut"></div>
+      <details style="margin-top:8px"><summary class="s" style="cursor:pointer">Upload validation / hidden cases ↓</summary>
+        <div class="s" style="margin:6px 0">One case per line: JSONL <code>{"message": "...", "correct_verdict": "critical_scam_risk", "correct_categories": ["government_bank_impersonation"], "required_red_flags": ["official_untraceable_payment"]}</code> or simple <code>scam: …</code> / <code>ok: …</code> / <code>ambiguous: …</code> / <code>insufficient: …</code>. A message already in any split is skipped. Have someone who is not tuning the rules write the hidden set.</div>
+        <textarea id="exText" rows="4" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><select id="exSplit" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:5px"><option value="validation">validation</option><option value="hidden">hidden</option></select><label class="s"><input type="checkbox" id="exReplace"> replace that split</label><button id="exUp" class="fbf" style="font-size:.78rem;padding:6px 12px">Upload</button><span class="s" id="exUpMeta"></span></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Scam engine calibration — run the corpus, learn from the misses</h2>
+      <div class="s" style="margin-bottom:6px">Runs the labelled corpus through the same rules readers get (no model, no lookups: free and instant). The shipped seed corpus has 70 scam shapes and 70 legitimate messages (25 of them hard negatives — real alerts that look like scams); add your own below — one per line, <code>scam: &lt;text&gt;</code> / <code>ok: &lt;text&gt;</code>, or paste the UCI SMS Spam Collection as-is (<code>spam&lt;TAB&gt;text</code> / <code>ham&lt;TAB&gt;text</code>). "Learn" sends the misses and false alarms to the review model, which proposes new pattern shapes — proposals only, you decide (≈10¢).</div>
+      <textarea id="scText" rows="4" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem" placeholder="scam: Your account is locked, verify at chase-secure-alerts.com&#10;ok: Your Chase statement is ready, sign in at chase.com"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><label class="s"><input type="checkbox" id="scSeed" checked> include seed corpus</label><label class="s"><input type="checkbox" id="scVer" checked> include Glowby's verified samples</label><button id="scRun" class="fbf" style="font-size:.78rem;padding:6px 12px">Run</button><button id="scLearn" class="fbf" style="font-size:.78rem;padding:6px 12px">Run + learn</button><span class="s" id="scMeta"></span></div>
+      <div id="scTiles" class="tiles" style="margin-bottom:8px"></div>
+      <div id="scOut"></div>
+    </div>
+
+    <div class="card">
+      <h2>Glowby's scam dataset — redacted, consented, human-reviewed</h2>
+      <div class="s" style="margin-bottom:6px">Reader flags on pasted messages ("It's a scam" / "Not a scam") land here as <b>pending</b> samples — already redacted (codes, cards, SSNs, emails, addresses, phones → placeholders), with source and consent recorded. Nothing counts as truth until you verify it. Verified samples join the calibration corpus (checkbox above) and can be exported. Add hand-written or licensed examples with <code>scam: …</code> / <code>ok: …</code> lines; they go in as verified.</div>
+      <div id="smTiles" class="tiles" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap">Show:
+        <button class="fbf smf on" data-st="pending">pending</button><button class="fbf smf" data-st="verified">verified</button><button class="fbf smf" data-st="rejected">rejected</button>
+        <a class="fbf" id="smExport" href="#" style="text-decoration:none">export verified ↓</a></div>
+      <div id="smList"></div>
+      <textarea id="smText" rows="3" style="width:100%;margin-top:8px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem" placeholder="scam: Your account will close. Send the code immediately.&#10;ok: Your statement is ready. Sign in at chase.com."></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button id="smAdd" class="fbf" style="font-size:.78rem;padding:6px 12px">Add as verified</button><span class="s" id="smMeta"></span></div>
     </div>
 
     <div class="card">
@@ -276,7 +320,9 @@ async function loadFeedback(){
   $("fbTiles").innerHTML =
     tile("Harsh rate · 30 days", rate, (sm.harsh||0)+(sm.wrong||0) + " of " + (sm.total||0) + " taps said harsh or wrong", (sm.harsh_rate||0) > 0.3 ? "bad" : "") +
     tile("Fair · 30 days", sm.fair||0, "") + tile("Harsh · 30 days", sm.harsh||0, "") + tile("Wrong · 30 days", sm.wrong||0, "") +
-    tile("All-time taps", (sm.all_time?.fair||0)+(sm.all_time?.harsh||0)+(sm.all_time?.wrong||0), "fair " + (sm.all_time?.fair||0) + " · harsh " + (sm.all_time?.harsh||0) + " · wrong " + (sm.all_time?.wrong||0));
+    tile("All-time taps", (sm.all_time?.fair||0)+(sm.all_time?.harsh||0)+(sm.all_time?.wrong||0), "fair " + (sm.all_time?.fair||0) + " · harsh " + (sm.all_time?.harsh||0) + " · wrong " + (sm.all_time?.wrong||0)) +
+    tile("AI check flags · 30 days", (sm.ai_missed||0)+(sm.false_alarm||0), "it’s AI " + (sm.ai_missed||0) + " · it’s real " + (sm.false_alarm||0)) +
+    tile("Scam lens flags · 30 days", (sm.scam_missed||0)+(sm.scam_false_alarm||0), "missed " + (sm.scam_missed||0) + " · not a scam " + (sm.scam_false_alarm||0), (sm.scam_false_alarm||0) > 0 ? "warn" : "");
   // three-series daily chart: fair / harsh / wrong stacked per day
   const daily = d.daily || [];
   if (daily.length){
@@ -297,7 +343,7 @@ async function loadFeedback(){
   $("flags").innerHTML = "<table>" + items.map(f =>
     `<tr><td class="t"><a href="/r/${encodeURIComponent(f.url_key)}" target="_blank" style="color:inherit">${esc(f.title||f.url_key)}</a>` +
     (f.note ? `<div class="s">“${esc(f.note)}”</div>` : "") + `</td>` +
-    `<td><b style="color:${f.kind==='wrong'?'#f87171':(f.kind==='harsh'?'#fab219':'#4ade80')}">${esc(f.kind)}</b>${f.claim_idx===null||f.claim_idx===undefined?"":" · claim "+(f.claim_idx+1)}</td>` +
+    `<td><b style="color:${(f.kind==='wrong'||f.kind==='ai_missed'||f.kind==='scam_missed')?'#f87171':((f.kind==='harsh'||f.kind==='false_alarm'||f.kind==='scam_false_alarm')?'#fab219':'#4ade80')}">${esc(f.kind)}</b>${f.claim_idx===null||f.claim_idx===undefined||f.claim_idx<0?(f.claim_idx===-1?" · AI check":(f.claim_idx===-2?" · scam lens":"")):" · claim "+(f.claim_idx+1)}</td>` +
     `<td>${f.score ?? "—"}</td><td class="s">${esc(String(f.created_at||"").slice(0,10))}</td>` +
     `<td>${f.status==='new' ? `<button data-id="${f.id}" data-st="rule_added">rule added</button> <button data-id="${f.id}" data-st="score_was_right">score was right</button>` : `<span class="s">${esc(f.status)}</span>`}</td></tr>`).join("") + "</table>";
   $("flags").querySelectorAll("button[data-id]").forEach(b => b.onclick = async () => {
@@ -342,6 +388,126 @@ async function loadCalibration(){
   $("calOut").innerHTML = h;
 }
 
+async function loadSamples(){
+  const st = window.__smSt || "pending";
+  document.querySelectorAll(".smf").forEach(b => b.classList.toggle("on", b.dataset.st === st));
+  let d = null;
+  try { const r = await fetch("/api/admin/scam/samples?key=" + encodeURIComponent(KEY) + "&status=" + st + "&limit=100"); if (r.ok) d = await r.json(); } catch(e){}
+  if (!d){ $("smList").innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const t = d.stats || {};
+  $("smTiles").innerHTML = tile("Pending review", t.pending||0, "reader flags waiting for a person", (t.pending||0) > 0 ? "warn" : "") +
+    tile("Verified", t.verified||0, `${t.verified_scam||0} scam · ${t.verified_ok||0} legitimate`) + tile("Rejected", t.rejected||0, "");
+  const items = d.items || [];
+  if (!items.length){ $("smList").innerHTML = `<div class="empty">No ${esc(st)} samples.</div>`; return; }
+  $("smList").innerHTML = "<table>" + items.map(x =>
+    `<tr><td style="white-space:nowrap"><b style="color:${x.label==='scam'?'#f87171':'#4ade80'}">${esc(x.label)}</b><br><span class="s">${esc(x.source_type||"")} · ${esc(x.channel||"")}<br>${esc(x.observed_date||"")}</span></td>` +
+    `<td class="s">${esc(x.redacted_text||"")}${x.note?`<br><i>reader: ${esc(x.note)}</i>`:""}<br>${(x.risk_signals||[]).map(c=>`<code>${esc(c)}</code>`).join(" ")}</td>` +
+    `<td style="white-space:nowrap">${st==='pending'
+      ? `<button class="fbf smr" data-id="${x.id}" data-st="verified" data-lb="scam">✓ scam</button> <button class="fbf smr" data-id="${x.id}" data-st="verified" data-lb="ok">✓ legitimate</button> <button class="fbf smr" data-id="${x.id}" data-st="rejected" data-lb="">reject</button>`
+      : `<button class="fbf smr" data-id="${x.id}" data-st="pending" data-lb="">back to pending</button>`}</td></tr>`).join("") + "</table>";
+  document.querySelectorAll(".smr").forEach(b => b.onclick = async () => {
+    try { await fetch("/api/admin/scam/samples/review", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({key: KEY, sample_id: +b.dataset.id, status: b.dataset.st, label: b.dataset.lb})}); } catch(e){}
+    loadSamples();
+  });
+}
+function renderExam(res, counts){
+  const pct = x => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
+  if (!res){ $("exTiles").innerHTML = ""; $("exOut").innerHTML = `<div class="empty">No exam run yet. Cases on file: validation ${counts?.validation||0} · hidden ${counts?.hidden||0}.</div>`; return; }
+  const g = res.goals || {};
+  const ok = b => b ? '<span style="color:#4ade80">✓</span>' : '<span style="color:#f87171">✗</span>';
+  $("exTiles").innerHTML =
+    tile(`${res.split} · ${res.pass ? "PASS" : "FAIL"}`, res.n, `${res.counts.scam} scam · ${res.counts.ok} ok · ${res.counts.ambiguous} ambiguous · ${res.counts.insufficient} insufficient`, res.pass ? "good" : "bad") +
+    tile("Dangerous caught", pct(res.critical_detection), `${ok(g.critical_detection)} goal ≥97% · ${res.critical_cases} cases`, g.critical_detection ? "good" : "bad") +
+    tile("False alarms", pct(res.false_alarm_rate), `${ok(g.false_alarms)} goal <5%`, g.false_alarms ? "good" : "bad") +
+    tile("Unsafe actions", res.unsafe_actions, `${ok(g.unsafe_actions)} goal 0`, g.unsafe_actions ? "good" : "bad") +
+    tile("Valid output", pct(res.valid_output), `${ok(g.valid_output)} goal ≥99%`, g.valid_output ? "good" : "bad") +
+    tile("Red flags named", pct(res.red_flags_named), `${res.red_flags_declared} cases declare required flags`) +
+    tile("Ambiguous in band", pct(res.ambiguous_in_band), "caution / suspicious / high") +
+    tile("Not-enough-info said", pct(res.insufficient_said), "on fragments");
+  let h = "";
+  if (res.robustness){
+    const r = res.robustness;
+    h += `<div class="s" style="margin:6px 0">Robustness (${res.robustness_n} scams re-run): ` + Object.keys(r).map(k => `${k} ${pct(r[k])}`).join(" · ") + `</div>`;
+  }
+  if (res.note) h += `<div class="s">${esc(res.note)}</div>`;
+  if ((res.failures||[]).length){
+    h += `<h3 class="s" style="margin:10px 0 4px">Failures (${res.failures.length})</h3><table><tr><th>label</th><th>score</th><th>band</th><th>codes</th><th>missing</th><th>text</th></tr>` +
+      res.failures.map(f => `<tr><td>${esc(f.label)}</td><td>${f.score===null?"—":f.score}</td><td class="s">${esc(f.band)}</td><td>${(f.codes||[]).map(c=>`<code>${esc(c)}</code>`).join(" ")}</td><td class="s" style="color:#f87171">${(f.missing_codes||[]).join(", ")}${(f.unsafe||[]).length?" UNSAFE ACTION":""}</td><td class="s">${esc(f.text)}</td></tr>`).join("") + "</table>";
+  } else if (res.split !== "hidden") h += `<div class="s" style="margin-top:6px">No failures.</div>`;
+  $("exOut").innerHTML = h;
+}
+async function loadExam(){
+  let d = null;
+  try { const r = await fetch("/api/admin/scam/exam/latest?key=" + encodeURIComponent(KEY)); if (r.ok) d = await r.json(); } catch(e){}
+  const last = d && d.last || {};
+  const res = last.dev || last.validation || last.hidden || null;
+  renderExam(res, d && d.counts);
+}
+function renderScamCal(d){
+  const pct = x => (x === null || x === undefined) ? "—" : Math.round(x * 100) + "%";
+  const run = d && d.run;
+  if (!run){ $("scTiles").innerHTML = ""; $("scOut").innerHTML = '<div class="empty">No calibration run yet.</div>'; return; }
+  const a40 = run.at["40"] || {}, a65 = run.at["65"] || {};
+  $("scTiles").innerHTML =
+    tile("Caught @40 (card)", pct(a40.detection_rate), `${a40.caught} of ${run.scams} scams`, (a40.detection_rate||0) < 0.9 ? "warn" : "good") +
+    tile("Caught @65 (red)", pct(a65.detection_rate), `${a65.caught} of ${run.scams}`) +
+    tile("False alarms @40", pct(a40.false_alarm_rate), `${a40.false_alarms} of ${run.oks} legitimate`, (a40.false_alarms||0) > 0 ? "bad" : "good") +
+    tile("Corpus", run.n, `${run.scams} scam · ${run.oks} ok · ${run.extra_items||0} pasted · ${run.seconds}s`);
+  const row = (x, cls) => `<tr><td><b style="color:${cls==='bad'?'#f87171':'#fab219'}">${x.score===null?"—":x.score}</b></td><td>${esc(x.shape||"")}</td><td>${(x.codes||[]).map(c=>`<code>${esc(c)}</code>`).join(" ")}</td><td class="s">${esc(x.text)}</td></tr>`;
+  let h = "";
+  if ((run.misses||[]).length) h += `<h3 class="s" style="margin:10px 0 4px">Misses — scams under 40 (${run.misses.length})</h3><table class="tbl"><tr><th>score</th><th>shape</th><th>codes</th><th>text</th></tr>${run.misses.map(x=>row(x,"bad")).join("")}</table>`;
+  if ((run.false_alarms||[]).length) h += `<h3 class="s" style="margin:10px 0 4px">False alarms — legitimate at 40+ (${run.false_alarms.length})</h3><table class="tbl"><tr><th>score</th><th>kind</th><th>codes</th><th>text</th></tr>${run.false_alarms.map(x=>row(x,"bad")).join("")}</table>`;
+  if ((run.weak||[]).length) h += `<h3 class="s" style="margin:10px 0 4px">Caught but weak — 40–64 (${run.weak.length})</h3><table class="tbl"><tr><th>score</th><th>shape</th><th>codes</th><th>text</th></tr>${run.weak.map(x=>row(x,"warn")).join("")}</table>`;
+  const bs = run.by_shape || {};
+  h += `<h3 class="s" style="margin:10px 0 4px">By shape</h3><div class="s">${Object.keys(bs).map(k=>`${esc(k)} ${bs[k].caught}/${bs[k].n}`).join(" · ")}</div>`;
+  const L = d.learn;
+  if (d.state && d.state.running) h += `<div class="s" style="margin-top:10px">Learning… the review model is reading the misses.</div>`;
+  else if (L && L.error) h += `<div class="s" style="margin-top:10px;color:#f87171">Learn: ${esc(L.error)}</div>`;
+  else if (L && L.proposals){
+    h += `<h3 class="s" style="margin:12px 0 4px">Proposed shapes (${L.proposals.length}) — from ${esc(L.model||"")}; each checked against the corpus. Nothing is applied automatically.</h3>`;
+    for (const q of L.proposals){
+      h += `<div style="border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin:6px 0">
+        <b>${esc(q.name)}</b> <span class="s">· ${esc(q.kind)} · ${esc(q.dimension)} +${q.points}${q.floor?` · floor ${q.floor}`:""} · hits ${q.hits_misses} miss${q.hits_misses===1?"":"es"}, ${q.hits_false_alarms} false alarm${q.hits_false_alarms===1?"":"s"} ${q.safe?'<span style="color:#4ade80">✓ safe</span>':'<span style="color:#fab219">⚠ check</span>'}</span>
+        <div class="s" style="margin-top:4px">${esc(q.why)}</div><pre class="s" style="white-space:pre-wrap;margin:4px 0 0">${esc(q.regex)}</pre></div>`;
+    }
+  }
+  $("scOut").innerHTML = h;
+}
+async function loadScamCal(){
+  let d = null;
+  try { const r = await fetch("/api/admin/scamcal/latest?key=" + encodeURIComponent(KEY)); if (r.ok) d = await r.json(); } catch(e){}
+  renderScamCal(d);
+  if (d && d.state && d.state.running) setTimeout(loadScamCal, 4000);
+}
+async function loadShadow(){
+  let d = null;
+  try { const r = await fetch("/api/admin/scam/shadow?key=" + encodeURIComponent(KEY) + "&limit=50&min_score=40"); if (r.ok) d = await r.json(); } catch(e){}
+  const items = (d && d.items) || [];
+  if (!items.length){ $("scamShadow").innerHTML = '<div class="empty">No shadow verdicts at 40+ yet — the list fills as people check things.</div>'; return; }
+  $("scamShadow").innerHTML = `<div class="s" style="margin-bottom:4px">What readers <b>would</b> have seen (${items.length}, newest first). Open the result and ask: would this card have been right?</div><table>` +
+    items.map(x => `<tr><td><b style="color:${x.score>=65?'#f87171':'#fab219'}">${x.score}</b><br><span class="s">${esc(x.verdict||"")}</span></td>` +
+      `<td class="s"><a href="/r/${encodeURIComponent(x.url_key)}" target="_blank">${esc(x.title||x.url_key)}</a><br>${esc(x.platform||"")} · ${esc((x.created_at||"").slice(0,16))} · ${esc(x.confidence||"")} confidence</td>` +
+      `<td>${(x.pattern_names||[]).slice(0,3).map(n=>`<span class="st">${esc(n)}</span>`).join(" ")}</td></tr>`).join("") + "</table>";
+}
+async function loadScam(){
+  let d = null;
+  try { const r = await fetch("/api/admin/scam/stats?key=" + encodeURIComponent(KEY) + "&days=30"); if (r.ok) d = await r.json(); } catch(e){}
+  if (!d){ $("scamTiles").innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const bv = d.by_verdict || {}, bs = d.by_source || {};
+  const crit = (bv.critical_scam_risk||0) + (bv.high_scam_risk||0);
+  const mode = d.mode || "shadow";
+  $("scamMode").innerHTML = `Mode: <b style="color:${mode==='on'?'#4ade80':(mode==='shadow'?'#fab219':'#8a86a3')}">${esc(mode)}</b> — ` +
+    (mode === 'shadow' ? 'the engine runs on every check and records what it would have said; readers see no card. Review the list below, then set <code>GLOWBY_SCAM_MODE=on</code> in Railway when the verdicts look right.'
+     : mode === 'on' ? 'the card shows to readers. Set <code>GLOWBY_SCAM_MODE=shadow</code> to hide it again without losing the traces.'
+     : 'the engine is not running. Set <code>GLOWBY_SCAM_MODE=shadow</code> to start watching.');
+  if (mode === 'shadow') loadShadow();
+  else $("scamShadow").innerHTML = "";
+  $("scamTiles").innerHTML =
+    tile("Engine runs · 30 days", d.total||0, "app " + (bs.app||0) + " · shadow " + (bs["app-shadow"]||0) + " · API " + (bs.api||0)) +
+    tile("High or critical", crit, "suspicious " + (bv.suspicious||0) + " · caution " + (bv.use_caution||0), crit ? "warn" : "") +
+    tile("Low / not enough info", (bv.low_detected_risk||0) + " / " + (bv.not_enough_information||0), "");
+}
 async function loadReview(){
   let d = null;
   try {
@@ -494,6 +660,49 @@ function render(d){
   loadFeedback();
   loadReview();
   loadCalibration();
+  loadScam();
+  loadScamCal();
+  loadSamples();
+  loadExam();
+  document.querySelectorAll(".exr").forEach(b => b.onclick = async () => {
+    $("exMeta").textContent = "running " + b.dataset.split + "…";
+    try { const r = await fetch("/api/admin/scam/exam/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, split: b.dataset.split, robustness: true})});
+      const j = await r.json(); if (j.ok) { $("exMeta").textContent = "done"; renderExam(j.result); } else $("exMeta").textContent = j.detail || "failed"; } catch(e){ $("exMeta").textContent = "failed"; }
+  });
+  $("exUp").onclick = async () => {
+    $("exUpMeta").textContent = "uploading…";
+    try { const r = await fetch("/api/admin/scam/exam/upload", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, split: $("exSplit").value, text: $("exText").value, replace: $("exReplace").checked})});
+      const j = await r.json(); $("exUpMeta").textContent = j.ok ? `added ${j.added} of ${j.parsed} parsed · on file: validation ${j.counts.validation} · hidden ${j.counts.hidden}` : (j.detail || "failed"); if (j.ok) $("exText").value = ""; } catch(e){ $("exUpMeta").textContent = "failed"; }
+  };
+  document.querySelectorAll(".smf").forEach(b => b.onclick = () => { window.__smSt = b.dataset.st; loadSamples(); });
+  $("smExport").onclick = (e) => { e.preventDefault(); window.open("/api/admin/scam/samples/export?key=" + encodeURIComponent(KEY), "_blank"); };
+  $("smAdd").onclick = async () => {
+    $("smMeta").textContent = "adding…";
+    try { const r = await fetch("/api/admin/scam/samples/paste", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, text: $("smText").value})});
+      const j = await r.json(); $("smMeta").textContent = j.ok ? `added ${j.added}` : (j.detail || "failed"); if (j.ok) $("smText").value = ""; } catch(e){ $("smMeta").textContent = "failed"; }
+    loadSamples();
+  };
+  const scGo = async (learn) => {
+    $("scMeta").textContent = "running…"; $("scRun").disabled = true; $("scLearn").disabled = true;
+    try {
+      const r = await fetch("/api/admin/scamcal", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({key: KEY, text: $("scText").value, seed: $("scSeed").checked, verified: $("scVer").checked, learn: learn})});
+      const j = await r.json();
+      $("scMeta").textContent = j.ok ? (learn ? "done — learning in the background" : "done") : (j.detail || "failed");
+    } catch(e){ $("scMeta").textContent = "failed"; }
+    $("scRun").disabled = false; $("scLearn").disabled = false; setTimeout(loadScamCal, 800);
+  };
+  $("scRun").onclick = () => scGo(false);
+  $("scLearn").onclick = () => scGo(true);
+  $("traceGo").onclick = async () => {
+    const id = $("traceId").value.trim(); if (!id) return;
+    $("traceOut").textContent = "…";
+    try {
+      const r = await fetch("/api/admin/scam/trace?key=" + encodeURIComponent(KEY) + "&id=" + encodeURIComponent(id));
+      const j = await r.json();
+      $("traceOut").textContent = r.ok ? JSON.stringify(j, null, 1) : (j.detail || "not found");
+    } catch(e){ $("traceOut").textContent = "could not load"; }
+  };
   $("calRun").onclick = async () => {
     const text = $("calText").value;
     $("calRun").disabled = true;

@@ -108,12 +108,18 @@ def run_media_detection(au: dict, *, frames=None, extra_frames=None, image_b64=N
     except Exception as e:
         s2 = {"assessment_status": "failed", "origin": None, "evidence": [],
               "reason": f"detector error: {e}"}
-    if s2 is None:
+    if s2 is None and not audio_b64:
         au["stage2_status"] = "failed"
         au["stage2_reason"] = "no frames or image were available to analyze"
         return au
-    au = merge_stage2(au, s2, reason)
-    au["top_score"] = s2.get("top_score")
+    if s2 is not None:
+        au = merge_stage2(au, s2, reason)
+        au["top_score"] = s2.get("top_score")
+    else:
+        # AUDIO-ONLY (a voicemail or call recording): the voice detector is
+        # the whole lane — voice cloning is the scam that pictures never see
+        s2 = {"assessment_status": "completed", "top_score": None, "evidence": []}
+        au["audio_only"] = True
 
     # 2. adaptive second pass on uncertain videos
     if extra_frames and _needs_second_pass(s2):
@@ -137,8 +143,21 @@ def run_media_detection(au: dict, *, frames=None, extra_frames=None, image_b64=N
                 au = merge_stage2(au, sa, reason)
                 if sa.get("origin") == ORIGIN_LIKELY:
                     au["manipulation_scope"] = "voice"
+                if au.get("audio_only"):
+                    au["top_score"] = sa.get("top_score")
+            elif au.get("audio_only"):
+                au["stage2_status"] = "failed"
+                au["stage2_reason"] = sa.get("reason") or "voice detector could not complete"
+                return au
         except Exception:
-            pass
+            if au.get("audio_only"):
+                au["stage2_status"] = "failed"
+                au["stage2_reason"] = "voice detector error"
+                return au
+    elif au.get("audio_only"):
+        au["stage2_status"] = "failed"
+        au["stage2_reason"] = "voice detector not configured"
+        return au
 
     # 4. face-specific pass
     try:

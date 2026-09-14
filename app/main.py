@@ -31,6 +31,7 @@ from app.agents import hive_detect
 from app.agents import reverse_search
 from app.agents.evidence import gather_evidence, search_fact_check_db
 from app.agents import safety
+from app.agents import scam
 from app.agents.detection import run_media_detection
 from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
@@ -69,12 +70,15 @@ from app.storage import (
     text_key,
     today_usage,
     total_fresh_checks,
-    save_feedback, feedback_summary, list_feedback, resolve_feedback, feedback_daily,
+    save_feedback, feedback_summary, list_feedback, resolve_feedback, feedback_daily, FEEDBACK_KINDS,
+    save_scam_audit, load_scam_audit, scam_audit_stats,
+    save_scam_sample, review_scam_sample, list_scam_samples, scam_sample_stats,
+    save_exam_cases, load_exam_cases, exam_case_counts, list_shadow_scams,
     pending_flags, load_result_quiet, save_review, latest_review, last_review_at,
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.56.3"
+VERSION = "0.64.0"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -364,13 +368,140 @@ def _remember_error(url_key, exc, tb):
         pass
 
 
+# SCAM MODE — the switch that makes "add it and see what happens" safe:
+#   off     the engine does not run at all
+#   shadow  the engine runs on every check and records what it WOULD have
+#           said (admin traces, stats, a review list) — readers see nothing
+#   on      the card shows
+# Default shadow: watch the verdicts for a week or two on real checks, then
+# flip one Railway variable. Flip it back and nobody ever saw a card.
+def scam_mode() -> str:
+    m = (os.environ.get("GLOWBY_SCAM_MODE") or "shadow").strip().lower()
+    return m if m in ("off", "shadow", "on") else "shadow"
+
+
+def _scam_lens_start(result: dict):
+    """SCAM LENS — the fourth thing Glowby looks for (app/agents/scam.py on
+    app/agents/scamengine.py). A scam is a pattern (promise + pressure +
+    ask), not a claim, so the truth score cannot catch it. The engine is
+    text-only, so it starts in a thread as soon as the transcript exists
+    and runs alongside routing and judging; the media lane's finding is
+    folded in at the end (apply_media). Never allowed to break a check."""
+    box = {}
+    if scam_mode() == "off":
+        return None, box
+
+    def _go():
+        try:
+            box["scam"] = scam.assess(
+                title=result.get("title") or "",
+                transcript=result.get("transcript") or "",
+                uploader=result.get("uploader") or "",
+                authenticity=None)
+        except Exception as e:
+            box["scam"] = {"risk": "none", "patterns": [], "ran": False, "error": str(e)[:120]}
+    th = threading.Thread(target=_go, daemon=True)
+    th.start()
+    return th, box
+
+
+def _scam_lens_finish(result: dict, started) -> None:
+    th, box = started if started else (None, {})
+    if scam_mode() == "off":
+        result["scam"] = {"risk": "none", "patterns": [], "ran": False, "mode": "off"}
+        return
+    try:
+        if th is not None:
+            th.join(timeout=25)
+        sc = box.get("scam") or {"risk": "none", "patterns": [], "ran": False}
+        sc = scam.apply_media(sc, result.get("authenticity") or {},
+                              (result.get("title") or "") + "\n" + (result.get("transcript") or ""))
+        result["scam"] = sc
+        rep = sc.get("report") or {}
+        aud = rep.get("audit") or {}
+        # PRIVACY: a pasted, screenshotted or recorded message is someone's
+        # private text — often with a victim's name, number or code in it.
+        # What is STORED of it is redacted (codes, cards, SSNs, emails,
+        # addresses, phones -> typed placeholders); the scammer's own
+        # contact details survive in the engine's extracted evidence. Such a
+        # result is never listed in Trending.
+        try:
+            from app.agents.scamengine import redact_pii, contains_pii
+            uk = result.get("url_key") or ""
+            if (uk.startswith("text:") or uk.startswith("img:") or uk.startswith("aud:")) and (
+                    sc.get("risk") in ("low", "medium", "high") or contains_pii(result.get("transcript") or "")):
+                result["transcript"] = redact_pii(result.get("transcript") or "")
+                result["title"] = redact_pii(result.get("title") or "")
+                result["content_rating"] = "private"
+                result["redacted"] = True
+        except Exception:
+            pass
+        if aud.get("model_extracted"):
+            add_usage(0.003)
+        if aud.get("queries"):
+            add_usage(0.005 * aud["queries"])
+        mode = scam_mode()
+        if rep.get("audit_trace_id"):
+            try:
+                save_scam_audit(rep["audit_trace_id"], "app" if mode == "on" else "app-shadow", rep,
+                                hashlib.sha256(((result.get("title") or "") + (result.get("transcript") or "")).encode()).hexdigest()[:32])
+            except Exception:
+                pass
+        if mode == "shadow":
+            # readers see nothing; the full finding is kept on the result for
+            # the admin review list, and the card renders as if it had not run
+            result["scam_shadow"] = sc
+            result["scam"] = {"risk": "none", "patterns": [], "ran": True, "mode": "shadow"}
+    except Exception:
+        result["scam"] = {"risk": "none", "patterns": [], "ran": False}
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str,
                   user_question: str = "", prior_claims=None,
                   image_b64: str = None, detect_ai: bool = False,
-                  ai_only: bool = False) -> None:
+                  ai_only: bool = False, audio_upload: str = None) -> None:
     try:
         t0 = time.time()
-        if image_b64:
+        _rec_clip = None
+        if audio_upload:
+            # UPLOADED RECORDING (a voicemail, a call, a voice note): Whisper
+            # hears it, the scam lens reads it, and the voice detector
+            # listens for a cloned voice — the "grandma, it's me" scam.
+            # PRIVACY: the recording is never stored; only its transcript.
+            _set_job(job_id, status="running", stage="fetching")
+            import base64 as _b64
+            import tempfile as _tmp
+            from app.agents.ingest import _whisper_file, _audio_clip_b64
+            _data, _, _ext = audio_upload.rpartition("|")
+            with _tmp.TemporaryDirectory() as _td:
+                _fp = os.path.join(_td, "rec" + (_ext or ".m4a"))
+                with open(_fp, "wb") as _fh:
+                    _fh.write(_b64.b64decode(_data))
+                try:
+                    _text = _whisper_file(_fp)
+                except IngestError as e:
+                    _set_job(job_id, status="error", error=str(e))
+                    return
+                try:
+                    _rec_clip = _audio_clip_b64(_fp, _td)
+                except Exception:
+                    _rec_clip = None
+            if not _text:
+                _set_job(job_id, status="done", result={
+                    "url": None, "platform": "voice recording", "title": "Voice recording",
+                    "uploader": "recording you uploaded", "duration_seconds": 0, "posted_date": None,
+                    "transcript": None, "transcript_source": "whisper (recording)", "url_key": url_key,
+                    "claims": [], "report": {"headline_score": None, "headline_state": "unverified",
+                                             "headline_label": "Glowby couldn't hear any speech in that recording — try a clearer one, or type what was said.",
+                                             "counts": {}}})
+                return
+            result = {
+                "url": None, "platform": "voice recording",
+                "title": ("Recording: " + _text[:80] + ("…" if len(_text) > 80 else "")),
+                "uploader": "recording you uploaded", "duration_seconds": 0, "posted_date": None,
+                "transcript": _text, "transcript_source": "whisper (recording)",
+            }
+        elif image_b64:
             # UPLOADED IMAGE (screenshot or camera photo): the EYES read
             # it, then it enters the normal pipeline like any transcript.
             # PRIVACY: the image itself is never stored — only the text
@@ -407,10 +538,17 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     pass
                 _set_job(job_id, status="done", result=result)
                 return
+            _ttl = desc
+            if desc.lstrip().startswith("[MESSAGE TEXT]"):
+                # a screenshot of a text / email / chat: the title is the
+                # message's first line, the exact transcription is the body
+                _body = desc.lstrip()[len("[MESSAGE TEXT]"):].strip()
+                _first = next((ln.strip() for ln in _body.splitlines() if ln.strip()), _body)
+                _ttl = "Screenshot: " + _first
             result = {
                 "url": None,
                 "platform": "image",
-                "title": (desc[:90] + "…") if len(desc) > 90 else desc,
+                "title": (_ttl[:90] + "…") if len(_ttl) > 90 else _ttl,
                 "uploader": "uploaded image",
                 "duration_seconds": 0,
                 "posted_date": None,
@@ -440,7 +578,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             _set_job(job_id, status="running", stage="fetching")
             result = ingest(url)
         result["url_key"] = url_key
-        if AUTHENTICITY_ENABLED and not url_key.startswith("text:"):
+        if AUTHENTICITY_ENABLED and not url_key.startswith("text:") and not url_key.startswith("aud:"):
             try:
                 _vis = ""
                 _tr = result.get("transcript") or ""
@@ -462,7 +600,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # ingest — without it, videos WITH visual analysis had nothing
         # left for the detector to look at.
         _media_frames = result.pop("frames_media", None)
-        _audio_clip = result.pop("audio_clip_b64", None)
+        _audio_clip = result.pop("audio_clip_b64", None) or _rec_clip
         _au_frames = None
         _au_extra = None
         if AUTHENTICITY_ENABLED:
@@ -548,6 +686,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 return
 
         _set_job(job_id, stage="routing")
+        _scam_started = _scam_lens_start(result)
         posted = result.get("posted_date")
         # re-check consistency: anchor claim-splitting to the prior run's
         # units so the same video carves into the same claims every time
@@ -586,6 +725,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     pass
             result["claims"] = []
             result["media_only"] = True
+            _scam_lens_finish(result, _scam_started)
             result = build_report(result)
             result["timings"] = {"total_s": round(time.time() - t0, 1)}
             result["cached"] = False
@@ -688,6 +828,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                            "not_judged": 0, "parked": len(claims)},
                 "safety_notice": None,
             }
+            _scam_lens_finish(result, _scam_started)  # a pasted "is this a scam?" message is the lens's best case
             result["timings"] = {"total_s": round(time.time() - t0, 1)}
             result["cached"] = False
             save_result(url_key, url, result)
@@ -798,6 +939,20 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                                      + (user_question or "")))
             except Exception:
                 pass  # the lane must never break a check
+        _scam_lens_finish(result, _scam_started)
+        # PROFILE-PHOTO CHECK: an uploaded photo of a person gets "where
+        # else does this photo appear?" — what the WSJ sisters did by hand
+        # to unmask their mother's online suitor. The photo is never stored.
+        if url_key.startswith("img:") and image_b64 and reverse_search.available() and scam_mode() == "on":
+            try:
+                _sc0 = result.get("scam") or {}
+                _desc0 = result.get("transcript") or ""
+                if scam.wants_photo_check(_desc0.replace("[WHAT THE IMAGE SHOWS] ", ""), _sc0):
+                    _rs = reverse_search.analyze(image_b64)
+                    _sc1 = scam.apply_photo(_sc0 if _sc0.get("ran") else {"risk": "none", "patterns": [], "pattern_names": [], "ran": True, "score": None}, _rs)
+                    result["scam"] = _sc1
+            except Exception:
+                pass
         result = build_report(result)
         result["timings"] = {
             "fetch_s": round(t_fetch, 1),
@@ -907,6 +1062,7 @@ class CheckRequest(BaseModel):
     captcha_token: str = ""  # Turnstile token (required when captcha is on)
     question: str = ""  # optional "+ask": what the user wants to know
     image_b64: str = ""  # uploaded screenshot/photo (JPEG, base64)
+    audio_b64: str = ""  # uploaded recording (voicemail / call; m4a, mp3, wav, webm, ogg; base64)
     detect_ai: bool = False  # "+detect AI": user asked for the media check
     ai_only: bool = False  # "AI only": skip claim routing/judging entirely
 
@@ -935,6 +1091,41 @@ def _clean_image_b64(data: str):
     return d
 
 
+MAX_AUDIO_B64 = 14_000_000  # ~10 MB decoded: a few minutes of voicemail
+_AUDIO_MAGIC = ((b"ftyp", 4, ".m4a"), (b"ID3", 0, ".mp3"), (b"\xff\xfb", 0, ".mp3"), (b"\xff\xf3", 0, ".mp3"),
+                (b"RIFF", 0, ".wav"), (b"OggS", 0, ".ogg"), (b"\x1aE\xdf\xa3", 0, ".webm"), (b"fLaC", 0, ".flac"))
+
+
+def _clean_audio_b64(data: str):
+    """Strip a data-URL prefix, size-check, sniff the container. Returns
+    (clean_b64, extension) or (None, None)."""
+    d = (data or "").strip()
+    if d.startswith("data:"):
+        comma = d.find(",")
+        if comma == -1:
+            return None, None
+        d = d[comma + 1:]
+    if not d or len(d) > MAX_AUDIO_B64:
+        return None, None
+    import base64 as _b64
+    try:
+        raw = _b64.b64decode(d, validate=True)
+    except Exception:
+        return None, None
+    if len(raw) < 2000:
+        return None, None
+    ext = None
+    for magic, off, e in _AUDIO_MAGIC:
+        if raw[off:off + len(magic)] == magic:
+            ext = e
+            break
+    return d, (ext or ".m4a")
+
+
+def _audio_key(clean_b64: str) -> str:
+    return "aud:" + hashlib.sha256(clean_b64.encode()).hexdigest()[:32]
+
+
 def _image_key(clean_b64: str) -> str:
     """Cache key for an uploaded image: same image -> same result."""
     return "img:" + hashlib.sha256(clean_b64.encode()).hexdigest()[:32]
@@ -945,7 +1136,17 @@ def api_check(req: CheckRequest, request: Request):
     """Start a check of a video URL, a typed claim, OR an uploaded image."""
     raw = (req.url or "").strip()
     image_b64 = None
-    if req.image_b64:
+    audio_b64 = None
+    if req.audio_b64:
+        audio_b64, _aext = _clean_audio_b64(req.audio_b64)
+        if audio_b64 is None:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "That recording couldn't be read — try an "
+                                   "m4a, mp3 or wav under ~10 MB."})
+        url_key = _audio_key(audio_b64)
+        audio_b64 = audio_b64 + "|" + _aext  # extension travels with the data
+    elif req.image_b64:
         image_b64 = _clean_image_b64(req.image_b64)
         if image_b64 is None:
             return JSONResponse(
@@ -1056,7 +1257,8 @@ def api_check(req: CheckRequest, request: Request):
     threading.Thread(
         target=_run_pipeline,
         args=(job_id, req.url, url_key, question, prior_claims, image_b64,
-              bool(req.detect_ai) or bool(req.ai_only), bool(req.ai_only)),
+              bool(req.detect_ai) or bool(req.ai_only) or bool(audio_b64), bool(req.ai_only),
+              audio_b64),
         daemon=True,
     ).start()
     return {"job_id": job_id}
@@ -1120,6 +1322,8 @@ def _followup_context(result: dict) -> str:
         "headline_label": report.get("headline_label"),
         "claims": claims,
         "answer": result.get("answer"),
+        "scam_lens": ({k: (result.get("scam") or {}).get(k) for k in ("risk", "pattern_names", "promise", "ask", "impersonates", "reason")}
+                      if (result.get("scam") or {}).get("risk") not in (None, "none") else None),
         "transcript_excerpt": (result.get("transcript") or "")[:2500],
     }
     return _json.dumps(bundle, indent=1)[:14000]
@@ -1306,15 +1510,241 @@ def api_feedback(fb: ScoreFeedback, request: Request):
     vote: it changes nothing on the page. De-duplicated per device per
     result with a salted, date-free hash (no IP stored)."""
     kind = (fb.kind or "").strip().lower()
-    if kind not in ("fair", "harsh", "wrong", "ai_missed", "false_alarm") or not (fb.url_key or "").strip():
+    if kind not in FEEDBACK_KINDS or not (fb.url_key or "").strip():
         return JSONResponse(status_code=422, content={"detail": "Bad feedback."})
     if _rate_limited(_client_ip(request)):
         return JSONResponse(status_code=429, content={"detail": "Too many requests."})
     salt = ADMIN_KEY or "glowby"
     dh = hashlib.sha256(f"{salt}:fb:{_client_ip(request)}".encode()).hexdigest()[:32]
-    idx = fb.claim_idx if isinstance(fb.claim_idx, int) and 0 <= fb.claim_idx < 50 else None
+    # claim_idx >= 0: a claim card; -1: the AI-check row; -2: the scam-lens
+    # row. Scopes are part of the de-dup key, so a "Right" on the AI check
+    # never overwrites a "Harsh" on the score from the same phone.
+    idx = fb.claim_idx if isinstance(fb.claim_idx, int) and -2 <= fb.claim_idx < 50 else None
     ok = save_feedback(fb.url_key.strip()[:300], kind, idx, (fb.note or "").strip()[:300], dh)
+    # the third data layer: a scam-lens flag on a pasted message becomes a
+    # PENDING sample — redacted, source and consent recorded, and counted
+    # as truth only after a person verifies it on the admin page
+    if kind in ("scam_missed", "scam_false_alarm"):
+        try:
+            _res = get_cached(fb.url_key.strip()[:300], 0)
+            _uk = fb.url_key.strip()
+            if _res and (_uk.startswith("text:") or _uk.startswith("img:") or _uk.startswith("aud:")):
+                from app.agents.scamengine import redact_pii
+                _sc = _res.get("scam") or {}
+                _rep = _sc.get("report") or {}
+                _ex = _rep.get("extracted") or {}
+                save_scam_sample(
+                    redact_pii(_res.get("transcript") or ""), "scam" if kind == "scam_missed" else "ok",
+                    "sms" if _uk.startswith("text:") else ("screenshot" if _uk.startswith("img:") else "voice"),
+                    _rep.get("scam_types") or [], _rep.get("requested_actions") or [],
+                    [f.get("code") for f in (_rep.get("risk_factors") or [])], _ex.get("payment_method"),
+                    "user_flag", "reader tapped the flag; consent notice shown at submission",
+                    trace_id=_rep.get("audit_trace_id") or "", url_key=_uk, note=(fb.note or "")[:300], label_confidence=0.5)
+        except Exception:
+            pass
     return {"ok": True, "stored": ok}
+
+
+class ScamRequest(BaseModel):
+    text: str = ""
+    context: dict | None = None
+
+
+@app.post("/api/scam")
+def api_scam(req: ScamRequest, request: Request):
+    """The scam-risk engine as an API (the B2B path): pasted text -> the
+    required JSON. Keyed: x-api-key must be one of GLOWBY_PARTNER_KEYS
+    (comma-separated, Railway Variables only) or the admin key. Same
+    rate limiter and daily budget as everything else. The text is data;
+    nothing in it is executed, fetched, or contacted."""
+    key = (request.headers.get("x-api-key") or "").strip()
+    partners = [k.strip() for k in (os.environ.get("GLOWBY_PARTNER_KEYS") or "").split(",") if k.strip()]
+    if not key or not (key in partners or _admin_ok(key)):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if _rate_limited(_client_ip(request)):
+        return JSONResponse(status_code=429, content={"detail": "Too many requests."})
+    text = (req.text or "").strip()
+    if len(text) > 12000:
+        return JSONResponse(status_code=422, content={"detail": "Text too long (12,000 characters max)."})
+    _, spent = today_usage()
+    if spent >= DAILY_BUDGET_USD:
+        return JSONResponse(status_code=503, content={"detail": "Daily budget reached; try again tomorrow."})
+    from app.agents import scamengine
+    rep = scamengine.analyze(text, context=None)
+    aud = rep.get("audit") or {}
+    add_usage(0.003 * bool(aud.get("model_extracted")) + 0.005 * (aud.get("queries") or 0))
+    try:
+        save_scam_audit(rep.get("audit_trace_id") or "", "api", rep, hashlib.sha256(text.encode()).hexdigest()[:32])
+    except Exception:
+        pass
+    rep.pop("audit", None)  # weights and query counts stay internal
+    return rep
+
+
+@app.get("/api/admin/scam/trace")
+def api_admin_scam_trace(key: str = "", id: str = ""):
+    """Look up one engine run by its audit_trace_id (disputes, partner
+    questions). Returns the internal dimensions and floors — admin only."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    doc = load_scam_audit((id or "").strip())
+    if not doc:
+        return JSONResponse(status_code=404, content={"detail": "No such trace."})
+    return doc
+
+
+class ExamRun(BaseModel):
+    key: str
+    split: str = "dev"  # dev | validation | hidden
+    robustness: bool = True
+
+
+_EXAM_STATE = {"last": {}}
+
+
+@app.post("/api/admin/scam/exam/run")
+def api_admin_scam_exam_run(req: ExamRun):
+    """Run one split of the exam. dev = the shipped corpus (failures
+    listed); validation = uploaded (failures listed); hidden = uploaded
+    (rates only — the texts never leave the server)."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents import scamexam, scamcal
+    import json as _json
+    split = req.split if req.split in scamexam.SPLITS else "dev"
+    if split == "dev":
+        try:
+            with open(scamcal.CORPUS_PATH, encoding="utf-8") as f:
+                cases = [dict(c, split="dev") for c in (_json.load(f).get("items") or [])]
+        except Exception:
+            cases = []
+    else:
+        cases = load_exam_cases(split)
+    if not cases:
+        return {"ok": False, "detail": f"no {split} cases — upload some first"}
+    res = scamexam.run_exam(cases, split, robustness=bool(req.robustness))
+    _EXAM_STATE["last"][split] = res
+    return {"ok": True, "result": res}
+
+
+class ExamUpload(BaseModel):
+    key: str
+    split: str  # validation | hidden
+    text: str   # JSONL cases, 'label: text' lines, or a pasted dataset (UCI TSV / Mendeley CSV)
+    replace: bool = False
+    source: str = ""  # e.g. "uci-sms-spam" / "mendeley-smishing" — recorded with each case
+
+
+@app.post("/api/admin/scam/exam/upload")
+def api_admin_scam_exam_upload(req: ExamUpload):
+    """Upload validation or hidden cases. A message already present in any
+    split is skipped, so a case can never sit in two splits. Nothing is
+    echoed back for the hidden split."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if req.split not in ("validation", "hidden"):
+        return JSONResponse(status_code=422, content={"detail": "split must be validation or hidden"})
+    from app.agents import scamexam, scamcal
+    import json as _json
+    body = req.text or ""
+    cases = scamexam.parse_cases(body, default_split=req.split)
+    if not cases:  # a pasted dataset (UCI tab-separated, Mendeley CSV with a header)
+        cases = scamexam.parse_dataset_csv(body, default_split=req.split, source=req.source or "dataset")
+    cases = [c for c in cases if c["label"] in scamexam.LABELS]
+    cases, dropped = scamexam.dedupe(cases)
+    # never let a dev case (or a rewrite of one) into validation or hidden
+    try:
+        with open(scamcal.CORPUS_PATH, encoding="utf-8") as f:
+            dev_fps = {scamexam.fingerprint(c.get("text", "")) for c in (_json.load(f).get("items") or [])}
+        before = len(cases)
+        cases = [c for c in cases if scamexam.fingerprint(c["text"]) not in dev_fps]
+        dropped += before - len(cases)
+    except Exception:
+        pass
+    n = save_exam_cases(cases, req.split, replace=bool(req.replace))
+    return {"ok": True, "added": n, "parsed": len(cases) + dropped, "duplicates_dropped": dropped, "counts": exam_case_counts()}
+
+
+@app.get("/api/admin/scam/exam/latest")
+def api_admin_scam_exam_latest(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"counts": exam_case_counts(), "last": _EXAM_STATE["last"]}
+
+
+class SampleReview(BaseModel):
+    key: str
+    sample_id: int
+    status: str  # verified | rejected | pending
+    label: str = ""  # scam | ok (optional relabel)
+
+
+@app.get("/api/admin/scam/samples")
+def api_admin_scam_samples(key: str = "", status: str = "pending", limit: int = 100):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"stats": scam_sample_stats(), "items": list_scam_samples(status if status in ("pending", "verified", "rejected", "") else "pending", min(max(int(limit), 1), 500))}
+
+
+@app.post("/api/admin/scam/samples/review")
+def api_admin_scam_samples_review(req: SampleReview):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": review_scam_sample(req.sample_id, req.status, req.label)}
+
+
+class SamplePaste(BaseModel):
+    key: str
+    text: str  # "scam: ..." / "ok: ..." lines — already-verified examples an admin adds by hand
+
+
+@app.post("/api/admin/scam/samples/paste")
+def api_admin_scam_samples_paste(req: SamplePaste):
+    """Hand-written or licensed examples go in as VERIFIED (a person wrote
+    or reviewed them); redacted anyway."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents import scamcal
+    from app.agents.scamengine import redact_pii
+    n = 0
+    for it in scamcal.parse_items(req.text or "")[:500]:
+        if it["label"] not in ("scam", "ok"):
+            continue
+        sid = save_scam_sample(redact_pii(it["text"]), it["label"], "paste", [], [], [], None, "admin_paste",
+                               "admin-supplied; licence recorded by the admin", label_confidence=0.9)
+        if sid and review_scam_sample(sid, "verified", it["label"]):
+            n += 1
+    return {"ok": True, "added": n}
+
+
+@app.get("/api/admin/scam/samples/export")
+def api_admin_scam_samples_export(key: str = ""):
+    """The verified set as corpus lines — what the calibration tool reads."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    rows = list_scam_samples("verified", 2000)
+    body = "\n".join(f"{r['label']}: {(r['redacted_text'] or '').replace(chr(10), ' ')}" for r in rows)
+    return PlainTextResponse(body)
+
+
+@app.get("/api/admin/scam/stats")
+def api_admin_scam_stats(key: str = "", days: int = 30):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    out = scam_audit_stats(min(max(int(days), 1), 365))
+    out["mode"] = scam_mode()
+    return out
+
+
+@app.get("/api/admin/scam/shadow")
+def api_admin_scam_shadow(key: str = "", limit: int = 50, min_score: int = 40):
+    """What the engine WOULD have shown readers while in shadow mode: the
+    recent checks whose hidden verdict reached the card threshold, with
+    the redacted title, score, verdict and codes — so a person can judge
+    the false alarms before anyone sees a card."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"mode": scam_mode(), "items": list_shadow_scams(min(max(int(limit), 1), 200), int(min_score))}
 
 
 @app.get("/api/admin/feedback")
@@ -1322,10 +1752,12 @@ def api_admin_feedback(key: str = "", limit: int = 100, all: int = 0, kind: str 
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     items = list_feedback(min(max(int(limit), 1), 500), only_flags=(not all and kind not in ("fair",)))
-    if kind in ("fair", "harsh", "wrong", "ai_missed", "false_alarm"):
+    if kind in FEEDBACK_KINDS:
         items = [i for i in items if i.get("kind") == kind]
     elif kind == "ai":
         items = [i for i in items if i.get("kind") in ("ai_missed", "false_alarm")]
+    elif kind == "scam":
+        items = [i for i in items if i.get("kind") in ("scam_missed", "scam_false_alarm")]
     return {"summary": feedback_summary(30), "daily": feedback_daily(14), "items": items}
 
 
@@ -1464,6 +1896,61 @@ def api_admin_calibrate_latest(key: str = ""):
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     return {"state": _CAL_STATE, "run": latest_calibration()}
+
+
+class ScamCalRequest(BaseModel):
+    key: str
+    text: str = ""     # optional extra lines: "scam: ..." / "ok: ..." or UCI "spam<TAB>..." / "ham<TAB>..."
+    seed: bool = True  # include the shipped corpus
+    verified: bool = True  # include Glowby's own human-verified samples
+    learn: bool = False  # send misses + false alarms to the review model for proposals
+
+
+_SCAMCAL_STATE = {"running": False, "last": None, "learn": None, "error": None}
+
+
+@app.post("/api/admin/scamcal")
+def api_admin_scamcal(req: ScamCalRequest):
+    """Run the scam engine over a labelled corpus (rules only: free,
+    instant) and report detection / false-alarm rates with every miss and
+    false alarm listed. With learn=true the misses go to the review model,
+    which proposes pattern shapes — proposals only; humans decide."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents import scamcal
+    items = (scamcal.load_seed() if req.seed else []) + scamcal.parse_any(req.text or "")
+    if req.verified:
+        items += scamcal.load_verified()
+    if not items:
+        return {"ok": False, "detail": "no items — paste lines like 'scam: <text>' / 'ok: <text>' or keep the seed corpus on"}
+    doc = scamcal.run(items)
+    doc["extra_items"] = len(scamcal.parse_any(req.text or ""))
+    _SCAMCAL_STATE["last"] = doc
+    _SCAMCAL_STATE["learn"] = None
+    if req.learn and (doc.get("misses") or doc.get("false_alarms")):
+        _, spent = today_usage()
+        if spent >= DAILY_BUDGET_USD:
+            _SCAMCAL_STATE["learn"] = {"error": "daily budget reached", "proposals": []}
+        else:
+            _SCAMCAL_STATE["running"] = True
+
+            def _go():
+                try:
+                    _SCAMCAL_STATE["learn"] = scamcal.learn(doc)
+                    add_usage(0.10)
+                except Exception as e:
+                    _SCAMCAL_STATE["learn"] = {"error": str(e)[:200], "proposals": []}
+                finally:
+                    _SCAMCAL_STATE["running"] = False
+            threading.Thread(target=_go, daemon=True).start()
+    return {"ok": True, "run": doc, "learning": bool(req.learn)}
+
+
+@app.get("/api/admin/scamcal/latest")
+def api_admin_scamcal_latest(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"state": {"running": _SCAMCAL_STATE["running"]}, "run": _SCAMCAL_STATE["last"], "learn": _SCAMCAL_STATE["learn"]}
 
 
 class FeedbackResolve(BaseModel):

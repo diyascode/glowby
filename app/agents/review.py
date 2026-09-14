@@ -67,9 +67,20 @@ flagged it. For these, judge the AI panel below, not the claim scores: was the \
 lane's conclusion defensible on the detector scores, labels and second opinion \
 it had? A missed creator label is a "rule_fix"; a detector miss with no other \
 signal is "evidence_gap"; a reader who is simply asserting is "cannot_tell".)
+(If the tap is SCAM_MISSED the reader says the video is a scam and Glowby's scam \
+lens did not warn; SCAM_FALSE_ALARM means the reader says it is legitimate and \
+Glowby warned. For these, judge the SCAM LENS below, not the claim scores: was \
+the risk band defensible on the patterns, the ask, the media finding and the \
+warnings on record? A pattern family the lens should have but lacks is a \
+"rule_fix"; a real regulator warning the search did not find is an \
+"evidence_gap". Never propose that Glowby call a named business "a scam" — the \
+lens describes patterns, never verdicts on people.)
 
 === THE AI PANEL ===
 {ai_panel}
+
+=== THE SCAM LENS ===
+{scam_panel}
 
 === THE VIDEO ===
 Title: {title}
@@ -105,7 +116,7 @@ def _client():
 
 def _claims_block(result: dict, claim_idx) -> str:
     claims = result.get("claims") or []
-    if claim_idx is not None and 0 <= claim_idx < len(claims):
+    if isinstance(claim_idx, int) and 0 <= claim_idx < len(claims):
         picked = [(claim_idx, claims[claim_idx])]
     else:
         picked = [(i, c) for i, c in enumerate(claims) if c.get("verdict")][:6]
@@ -179,10 +190,20 @@ def review_one(flag: dict, result: dict, client=None, model=None) -> dict:
     panel = [f"origin: {au.get('origin_result')} · display: {au.get('display')} · top detector score: {au.get('top_score')}"]
     for e in (au.get("evidence") or [])[:8]:
         panel.append(f"- {e.get('provider')} · {e.get('signal_type')} · score {e.get('raw_score')} · band {e.get('band')}: {(e.get('explanation') or '')[:200]}")
+    sc = result.get("scam") or {}
+    if sc.get("ran"):
+        scam_panel = (f"risk: {sc.get('risk')} · patterns: {', '.join(sc.get('pattern_names') or []) or 'none'}\n"
+                      f"promise: {sc.get('promise')} · ask: {sc.get('ask')} · impersonates: {sc.get('impersonates')}\n"
+                      f"reason: {(sc.get('reason') or '')[:400]}\n"
+                      f"warnings on record: {len(sc.get('warnings') or [])} · media note: {sc.get('media_note') or 'none'}")
+    else:
+        scam_panel = "(the scam lens did not run)"
     prompt = PROMPT.format(
+        scam_panel=scam_panel,
         ai_panel=("\n".join(panel) if au else "(the AI check did not run)"),
         kind=flag.get("kind", "harsh").upper(),
-        claim_note=(f" (on claim {idx + 1})" if isinstance(idx, int) else " (on the whole video)"),
+        claim_note=(f" (on claim {idx + 1})" if isinstance(idx, int) and idx >= 0
+                    else (" (on the AI check)" if idx == -1 else (" (on the scam lens)" if idx == -2 else " (on the whole video)"))),
         note=(flag.get("note") or "(none)")[:300],
         title=(result.get("title") or "")[:160],
         headline_score=rep.get("headline_score"),

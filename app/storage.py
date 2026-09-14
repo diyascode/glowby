@@ -261,7 +261,8 @@ def list_recent_checks(limit: int = 12) -> list:
                 "SELECT url_key, result->>'title', "
                 "result->'report'->>'headline_score', "
                 "result->'report'->>'headline_state', "
-                "(result->>'answer_mode') = 'true' "
+                "(result->>'answer_mode') = 'true', "
+                "result->'scam'->>'risk' "
                 "FROM checks "
                 "WHERE coalesce(result->>'content_rating', 'general') = 'general' "
                 "ORDER BY created_at DESC LIMIT %s",
@@ -277,6 +278,7 @@ def list_recent_checks(limit: int = 12) -> list:
                 "score": float(r[2]) if r[2] is not None else None,
                 "state": r[3] or "unverified",
                 "answer": bool(r[4]),
+                "scam": r[5] if r[5] in ("medium", "high") else None,
             })
         return out
     except Exception:
@@ -767,7 +769,9 @@ def day_detail(day: str) -> dict:
 # device per result is enforced client-side; the server keeps a salted
 # device hash only to de-duplicate, never an IP.
 
-FEEDBACK_KINDS = ("fair", "harsh", "wrong", "ai_missed", "false_alarm")
+FEEDBACK_KINDS = ("fair", "harsh", "wrong", "ai_missed", "false_alarm",
+                  "scam_missed", "scam_false_alarm")
+FLAG_KINDS_SQL = "('harsh','wrong','ai_missed','false_alarm','scam_missed','scam_false_alarm')"
 
 
 def save_feedback(url_key: str, kind: str, claim_idx, note: str,
@@ -821,8 +825,10 @@ def save_feedback(url_key: str, kind: str, claim_idx, note: str,
 def feedback_summary(days: int = 30) -> dict:
     """Totals and harsh-rate over the window: (harsh+wrong)/all taps."""
     conn = _get_conn()
-    out = {"days": days, "fair": 0, "harsh": 0, "wrong": 0, "ai_missed": 0, "false_alarm": 0, "total": 0,
-           "harsh_rate": None, "all_time": {"fair": 0, "harsh": 0, "wrong": 0, "ai_missed": 0, "false_alarm": 0}}
+    out = {"days": days, "total": 0, "harsh_rate": None, "all_time": {}}
+    for k in FEEDBACK_KINDS:
+        out[k] = 0
+        out["all_time"][k] = 0
     if conn is None:
         return out
     try:
@@ -842,6 +848,7 @@ def feedback_summary(days: int = 30) -> dict:
         if out["total"]:
             out["harsh_rate"] = round((out["harsh"] + out["wrong"]) / out["total"], 3)
         out["ai_flags"] = out["ai_missed"] + out["false_alarm"]
+        out["scam_flags"] = out["scam_missed"] + out["scam_false_alarm"]
     except Exception:
         try:
             conn.rollback()
@@ -892,7 +899,7 @@ def list_feedback(limit: int = 100, only_flags: bool = True) -> list:
                        c.result->'report'->>'headline_score'
                 FROM score_feedback f
                 LEFT JOIN checks c ON c.url_key = f.url_key
-                WHERE (%s = false OR f.kind IN ('harsh','wrong','ai_missed','false_alarm'))
+                WHERE (%s = false OR f.kind IN """ + FLAG_KINDS_SQL + """)
                 ORDER BY f.id DESC LIMIT %s
                 """, (only_flags, int(limit)))
             return [{"id": r[0], "url_key": r[1], "kind": r[2], "claim_idx": r[3],
@@ -937,7 +944,7 @@ def pending_flags(limit: int = 60) -> list:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, url_key, kind, claim_idx, note FROM score_feedback "
-                "WHERE kind IN ('harsh','wrong','ai_missed','false_alarm') AND status = 'new' "
+                "WHERE kind IN " + FLAG_KINDS_SQL + " AND status = 'new' "
                 "ORDER BY id ASC LIMIT %s", (int(limit),))
             return [{"id": r[0], "url_key": r[1], "kind": r[2], "claim_idx": r[3], "note": r[4] or ""}
                     for r in cur.fetchall()]
@@ -967,6 +974,355 @@ def load_result_quiet(url_key: str):
         except Exception:
             pass
         return None
+
+
+# ---- scam-engine audit trail ----
+# Every engine run keeps its trace: the score, verdict, the capped
+# dimensions and floors, how many lookups ran, where it came from (app or
+# partner API) — and a hash of the text, never the text itself. A partner
+# or a reader disputing a verdict quotes the audit_trace_id; the admin
+# page looks it up. This is the audit-trace module the design note asked
+# to reuse, in the shape the fact-check side already uses (a JSONB doc).
+
+def save_scam_audit(trace_id: str, source: str, rep: dict, text_sha: str = "") -> bool:
+    conn = _get_conn()
+    if conn is None or not trace_id:
+        return False
+    try:
+        aud = rep.get("audit") or {}
+        doc = {"score": rep.get("scam_risk_score"), "verdict": rep.get("verdict"), "confidence": rep.get("confidence"),
+               "scam_types": rep.get("scam_types"), "dims": aud.get("dims"), "floors": aud.get("floors"),
+               "queries": aud.get("queries"), "model_extracted": aud.get("model_extracted"),
+               "injection_attempt": aud.get("injection_attempt"), "status": rep.get("analysis_status"),
+               "codes": [f.get("code") for f in (rep.get("risk_factors") or [])],
+               "verification": {k: v for k, v in (rep.get("verification") or {}).items() if k != "sources"},
+               "seconds": rep.get("seconds")}
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scam_audits (
+                    trace_id TEXT PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    source TEXT,
+                    score INTEGER,
+                    verdict TEXT,
+                    text_sha TEXT,
+                    doc JSONB NOT NULL
+                )
+                """)
+            cur.execute(
+                "INSERT INTO scam_audits (trace_id, source, score, verdict, text_sha, doc) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (trace_id) DO NOTHING",
+                (trace_id[:32], (source or "")[:20], doc["score"], (doc["verdict"] or "")[:40], (text_sha or "")[:64], json.dumps(doc)))
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def load_scam_audit(trace_id: str) -> dict | None:
+    conn = _get_conn()
+    if conn is None or not trace_id:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT trace_id, created_at, source, score, verdict, doc FROM scam_audits WHERE trace_id = %s", (trace_id[:32],))
+            r = cur.fetchone()
+        if not r:
+            return None
+        return {"trace_id": r[0], "created_at": r[1].isoformat() if r[1] else None, "source": r[2],
+                "score": r[3], "verdict": r[4], "doc": r[5]}
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def list_shadow_scams(limit: int = 50, min_score: int = 40) -> list:
+    """Recent checks whose SHADOW scam verdict reached the card threshold —
+    what readers would have seen. Titles are the stored (redacted) ones."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT url_key, created_at, result->>'title', result->>'platform',
+                       (result->'scam_shadow'->>'score')::int, result->'scam_shadow'->>'verdict',
+                       result->'scam_shadow'->'pattern_names', result->'scam_shadow'->>'confidence_label',
+                       result->'scam_shadow'->'report'->>'audit_trace_id'
+                FROM checks
+                WHERE result ? 'scam_shadow' AND (result->'scam_shadow'->>'score') ~ '^[0-9]+$'
+                  AND (result->'scam_shadow'->>'score')::int >= %s
+                ORDER BY created_at DESC LIMIT %s
+                """, (int(min_score), int(limit)))
+            return [{"url_key": r[0], "created_at": r[1].isoformat() if r[1] else None, "title": (r[2] or "")[:120],
+                     "platform": r[3], "score": r[4], "verdict": r[5], "pattern_names": r[6] or [], "confidence": r[7],
+                     "trace_id": r[8]} for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def scam_audit_stats(days: int = 30) -> dict:
+    """Verdict distribution over the window, by source — the admin tile."""
+    conn = _get_conn()
+    out = {"days": days, "total": 0, "by_verdict": {}, "by_source": {}}
+    if conn is None:
+        return out
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT verdict, source, count(*) FROM scam_audits WHERE created_at >= now() - (%s || ' days')::interval GROUP BY verdict, source", (str(int(days)),))
+            for v, src, n in cur.fetchall():
+                out["by_verdict"][v or "?"] = out["by_verdict"].get(v or "?", 0) + int(n)
+                out["by_source"][src or "?"] = out["by_source"].get(src or "?", 0) + int(n)
+                out["total"] += int(n)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return out
+
+
+# ---- Glowby's own scam dataset: redacted, consented, human-reviewed ----
+# Every reader flag on the scam lens ("It's a scam" / "Not a scam") and
+# every admin-confirmed trace can become a sample — but only REDACTED
+# (codes, cards, SSNs, emails, addresses, phones replaced by typed
+# placeholders), with its source and consent recorded, and only counted
+# as ground truth after a person marks it verified. Raw evidence and the
+# training set are separate tables; nothing users submit is ever trained
+# on automatically.
+
+SAMPLE_SOURCES = ("user_flag", "admin_trace", "admin_paste", "partner_api")
+
+
+def save_scam_sample(redacted_text: str, label: str, channel: str, scam_types, requested_actions,
+                     risk_signals, payment_method, source_type: str, consent: str,
+                     trace_id: str = "", url_key: str = "", note: str = "", label_confidence: float = 0.5) -> int | None:
+    conn = _get_conn()
+    if conn is None or not redacted_text or label not in ("scam", "ok") or source_type not in SAMPLE_SOURCES:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scam_samples (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    observed_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                    redacted_text TEXT NOT NULL,
+                    channel TEXT,
+                    label TEXT NOT NULL,
+                    scam_types JSONB,
+                    requested_actions JSONB,
+                    risk_signals JSONB,
+                    payment_method TEXT,
+                    source_type TEXT NOT NULL,
+                    consent TEXT NOT NULL,
+                    trace_id TEXT,
+                    url_key TEXT,
+                    note TEXT,
+                    label_confidence REAL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    human_verified BOOLEAN NOT NULL DEFAULT false,
+                    reviewed_at TIMESTAMPTZ
+                )
+                """)
+            cur.execute("SELECT id FROM scam_samples WHERE redacted_text = %s AND label = %s LIMIT 1", (redacted_text[:4000], label))
+            row = cur.fetchone()
+            if row:
+                return row[0]
+            cur.execute(
+                "INSERT INTO scam_samples (redacted_text, channel, label, scam_types, requested_actions, risk_signals, payment_method, "
+                "source_type, consent, trace_id, url_key, note, label_confidence) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+                (redacted_text[:4000], (channel or "")[:20], label, json.dumps(list(scam_types or [])[:6]),
+                 json.dumps(list(requested_actions or [])[:6]), json.dumps(list(risk_signals or [])[:10]),
+                 (payment_method or None), source_type, (consent or "")[:80], (trace_id or "")[:32], (url_key or "")[:300],
+                 (note or "")[:300], float(label_confidence or 0)))
+            return cur.fetchone()[0]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
+def review_scam_sample(sample_id: int, status: str, label: str = "") -> bool:
+    """A person decides: verified (with the final label), rejected, or back
+    to pending. Only verified samples ever reach the corpus."""
+    if status not in ("verified", "rejected", "pending"):
+        return False
+    conn = _get_conn()
+    if conn is None:
+        return False
+    try:
+        with conn.cursor() as cur:
+            if label in ("scam", "ok"):
+                cur.execute("UPDATE scam_samples SET status=%s, label=%s, human_verified=%s, label_confidence=%s, reviewed_at=now() WHERE id=%s",
+                            (status, label, status == "verified", 0.97 if status == "verified" else 0.5, int(sample_id)))
+            else:
+                cur.execute("UPDATE scam_samples SET status=%s, human_verified=%s, reviewed_at=now() WHERE id=%s",
+                            (status, status == "verified", int(sample_id)))
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def list_scam_samples(status: str = "pending", limit: int = 100) -> list:
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, created_at, observed_date, redacted_text, channel, label, scam_types, requested_actions, risk_signals, "
+                "payment_method, source_type, consent, trace_id, note, label_confidence, status, human_verified "
+                "FROM scam_samples WHERE (%s = '' OR status = %s) ORDER BY id DESC LIMIT %s", (status or "", status or "", int(limit)))
+            out = []
+            for r in cur.fetchall():
+                out.append({"id": r[0], "created_at": r[1].isoformat() if r[1] else None, "observed_date": str(r[2]) if r[2] else None,
+                            "redacted_text": r[3], "channel": r[4], "label": r[5], "scam_types": r[6] or [], "requested_actions": r[7] or [],
+                            "risk_signals": r[8] or [], "payment_method": r[9], "source_type": r[10], "consent": r[11],
+                            "trace_id": r[12], "note": r[13] or "", "label_confidence": r[14], "status": r[15], "human_verified": bool(r[16])})
+            return out
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def scam_sample_stats() -> dict:
+    conn = _get_conn()
+    out = {"pending": 0, "verified": 0, "rejected": 0, "verified_scam": 0, "verified_ok": 0}
+    if conn is None:
+        return out
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status, label, count(*) FROM scam_samples GROUP BY status, label")
+            for st, lab, n in cur.fetchall():
+                out[st] = out.get(st, 0) + int(n)
+                if st == "verified":
+                    out["verified_" + lab] = out.get("verified_" + lab, 0) + int(n)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return out
+
+
+# ---- the exam: validation and hidden cases live HERE, never in the repo ----
+# The dev split ships with the code (app/data/scam_corpus.json). The
+# validation and hidden splits are uploaded by a person and stored in
+# Postgres; the hidden split is never returned to a caller — only run.
+
+def save_exam_cases(cases: list, split: str, replace: bool = False) -> int:
+    if split not in ("validation", "hidden"):
+        return 0
+    conn = _get_conn()
+    if conn is None:
+        return 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scam_exam_cases (
+                    id BIGSERIAL PRIMARY KEY,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    split TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    expected JSONB,
+                    expected_types JSONB,
+                    required_codes JSONB,
+                    shape TEXT,
+                    source TEXT
+                )
+                """)
+            cur.execute("ALTER TABLE scam_exam_cases ADD COLUMN IF NOT EXISTS fingerprint TEXT")
+            cur.execute("ALTER TABLE scam_exam_cases ADD COLUMN IF NOT EXISTS licence TEXT")
+            cur.execute("ALTER TABLE scam_exam_cases ADD COLUMN IF NOT EXISTS reviewer TEXT")
+            cur.execute("ALTER TABLE scam_exam_cases ADD COLUMN IF NOT EXISTS reviewed_at TEXT")
+            cur.execute("ALTER TABLE scam_exam_cases ADD COLUMN IF NOT EXISTS safe_action TEXT")
+            if replace:
+                cur.execute("DELETE FROM scam_exam_cases WHERE split = %s", (split,))
+            n = 0
+            for c in cases:
+                if c.get("label") not in ("scam", "ok", "ambiguous", "insufficient") or not c.get("text"):
+                    continue
+                from app.agents.scamexam import fingerprint
+                fp = fingerprint(c["text"])
+                cur.execute("SELECT 1 FROM scam_exam_cases WHERE text = %s OR fingerprint = %s LIMIT 1", (c["text"][:2000], fp))
+                if cur.fetchone():
+                    continue  # the same — or a lightly rewritten — message must not appear in two splits
+                cur.execute(
+                    "INSERT INTO scam_exam_cases (split, label, text, expected, expected_types, required_codes, shape, source, fingerprint, licence, reviewer, reviewed_at, safe_action) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (split, c["label"], c["text"][:2000], json.dumps(c.get("expected") or []), json.dumps(c.get("expected_types") or []),
+                     json.dumps(c.get("required_codes") or []), (c.get("shape") or "")[:40], (c.get("source") or "")[:40], fp,
+                     (c.get("licence") or "")[:60], (c.get("reviewer") or "")[:60], (c.get("reviewed_at") or "")[:20], (c.get("safe_action") or "")[:200]))
+                n += 1
+        return n
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return 0
+
+
+def load_exam_cases(split: str) -> list:
+    """Used by the runner only. The hidden split's texts never leave the
+    server: the runner returns rates, not cases."""
+    conn = _get_conn()
+    if conn is None or split not in ("validation", "hidden"):
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT label, text, expected, expected_types, required_codes, shape, source FROM scam_exam_cases WHERE split = %s ORDER BY id", (split,))
+            return [{"label": r[0], "text": r[1], "expected": r[2] or [], "expected_types": r[3] or [], "required_codes": r[4] or [],
+                     "shape": r[5] or "", "source": r[6] or "", "split": split} for r in cur.fetchall()]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return []
+
+
+def exam_case_counts() -> dict:
+    conn = _get_conn()
+    out = {"validation": 0, "hidden": 0}
+    if conn is None:
+        return out
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT split, count(*) FROM scam_exam_cases GROUP BY split")
+            for sp, n in cur.fetchall():
+                out[sp] = int(n)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return out
 
 
 def save_review(doc: dict) -> int | None:

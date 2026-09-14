@@ -189,5 +189,14 @@ def analyze(image_b64, posted_date=None):
                             "or authenticity."),
             "source_link": None,
         })
+    seen, plist = set(), []
+    for pg in (pages or [])[:12]:
+        u = str(pg.get("url") or "")
+        if not u.startswith("http") or u in seen:
+            continue
+        seen.add(u)
+        plist.append({"url": u, "title": str(pg.get("pageTitle") or "")[:120],
+                      "domain": re.sub(r"^https?://(www\.)?", "", u).split("/")[0].lower()})
     return {"assessment_status": "completed", "evidence": evidence,
-            "earliest": earliest, "context_note": note, "reason": None}
+            "earliest": earliest, "context_note": note, "reason": None,
+            "pages": plist[:8], "match_count": len(full) + len(pages)}
