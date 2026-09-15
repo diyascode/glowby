@@ -362,6 +362,7 @@ html.light .tr-card{background:#fff;border-color:rgba(0,0,0,.14)}
 .modeseg{display:flex;gap:5px;justify-content:center;flex-wrap:nowrap;max-width:100%;padding:2px 2px 6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .modeseg::-webkit-scrollbar{display:none}
 .modeseg button{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);color:var(--muted);cursor:pointer;padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:color .2s,background .2s,border-color .2s,box-shadow .2s,transform .15s;line-height:1}
+.modeseg button[hidden]{display:none}
 .modeseg button:hover{color:var(--ink);border-color:rgba(255,255,255,.28)}
 .modeseg button:active{transform:scale(.97)}
 .modeseg button svg{width:11px;height:11px;flex:none;opacity:.85}
@@ -369,6 +370,7 @@ html.light .tr-card{background:#fff;border-color:rgba(0,0,0,.14)}
 .modeseg button.on{color:#fff;border-color:transparent;background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 100%);box-shadow:0 6px 18px -8px rgba(138,124,255,.95)}
 .modeseg button.on svg{opacity:1}
 .modeseg button[data-mode="on"].on{background:linear-gradient(100deg,#5B8CFF 0%,#38bdf8 100%);box-shadow:0 6px 18px -8px rgba(56,189,248,.95)}
+.modeseg button[data-mode="scam"].on{background:linear-gradient(100deg,#f87171 0%,#fab219 100%);color:#1a1a24;box-shadow:0 6px 18px -8px rgba(248,113,113,.9)}
 .modeseg button[data-mode="only"].on{background:linear-gradient(100deg,#a78bfa 0%,#f472b6 100%);box-shadow:0 6px 18px -8px rgba(244,114,182,.9)}
 .modeseg button#qChip.on{background:rgba(138,124,255,.16);border-color:rgba(138,124,255,.7);color:#d6d0ff;box-shadow:none}
 .modehint{font-size:11px;color:var(--muted);text-align:center;max-width:520px;min-height:1.3em}
@@ -593,6 +595,7 @@ html.light .uq-q{color:#111114}
         <button type="button" data-mode="off" class="on" role="radio" aria-checked="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span class="ml">Claims</span><span class="ms">Claims</span></button>
         <button type="button" data-mode="on" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg><span class="ml">Claims + AI detect</span><span class="ms">Claims + AI</span></button>
         <button type="button" data-mode="only" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M12 8l1.2 2.8L16 12l-2.8 1.2L12 16l-1.2-2.8L8 12l2.8-1.2z"/></svg><span class="ml">AI detect only</span><span class="ms">AI only</span></button>
+        <button type="button" data-mode="scam" role="radio" aria-checked="false" __SCAM_BUTTON__><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><span class="ml">Scam check</span><span class="ms">Scam</span></button>
         <button type="button" id="qChip" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.8a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.4M12 16.5h.01"/></svg><span class="ml">Ask a question</span><span class="ms">Ask</span></button>
       </div>
       <div id="modeHint" class="modehint">Fact-checks the claims · the AI check also runs automatically on high-stakes videos</div>
@@ -620,10 +623,12 @@ html.light .uq-q{color:#111114}
   <div class="sugg2" aria-hidden="true">
     <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📰 Articles</span><span>💬 Claims</span><span>❓ Questions</span><span>📷 Screenshots</span>
   </div>
-  <div class="mini"><span class="alive">● Glowby is alive</span></div>
-  <div class="aihint">AI-powered · results can be wrong · always check the sources</div>
-  <div class="aihint" style="margin-top:2px">What you submit (a link, text, photo or recording) is sent to AI services to check it · <a href="/about#datasent" target="_blank" style="color:inherit">what &amp; who</a></div>
-  <div class="aihint" style="margin-top:4px">Got a scam text, email or voicemail? Paste the text, screenshot it with the camera button, or <a href="#" id="recBtn" style="color:var(--brand)">🎙 check a voicemail or call recording</a></div>
+  <!-- Sept 15 (Diya): "Glowby is alive" out; one line of small print; the
+       scam invitation hidden while the scam lens stays in shadow mode
+       (the recording door is still wired — flip GLOWBY_SCAM_MODE=on and
+       un-hide #recRow to bring it back). -->
+  <div class="aihint" style="margin-top:14px">AI-powered · results can be wrong · always check the sources · <a href="/about#datasent" target="_blank" style="color:inherit">what&rsquo;s sent</a></div>
+  <div class="aihint" id="recRow" hidden style="margin-top:4px">Got a scam text, email or voicemail? Paste the text, screenshot it with the camera button, or <a href="#" id="recBtn" style="color:var(--brand)">🎙 check a voicemail or call recording</a></div>
   <div class="storewrap"><a class="storebadge" href="https://apps.apple.com/us/app/glowby/id6798336220" target="_blank" rel="noopener" aria-label="Download Glowby on the App Store"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.8 3-.5 7.6 1.3 10.1.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.3.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.9-1.1-2.9-4zM14 5.2c.7-.8 1.2-2 1-3.2-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1.1 3.1 1.1.1 2.3-.6 3-1.4z"/></svg><span><small>Download on the</small><b>App Store</b></span></a></div>
 
   <div id="steps">
@@ -634,7 +639,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.65.5 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.65.8 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -682,19 +687,25 @@ function userQuestion(){const q=document.getElementById('qIn');return q?q.value.
 // MODE SELECTOR: Claims (gate decides) · Claims + AI · AI only.
 // A visible choice, not a chip that cycles. Resets after every check.
 const MODE_HINTS={
-  off:'Fact-checks the claims \u00b7 the AI check also runs automatically on high-stakes videos',
-  on:'Fact-checks the claims AND runs the AI media check (\u2248 4\u00a2 extra)',
-  only:'Skips fact-checking \u2014 only asks whether the footage is AI-made'};
+  off:'Checks the claims \u00b7 AI check runs on high-stakes videos',
+  on:'Checks the claims + runs the AI media check',
+  only:'Only asks whether the footage is AI-made',
+  scam:'Is this a scam? Paste the text or link, screenshot it, or \ud83c\udf99 send a voicemail'};
+const PLACEHOLDERS={scam:'Paste the text, email or link\u2026'};
+const DEFAULT_PLACEHOLDER='Paste a video link \u2014 or type any claim to fact-check...';
 (function(){const seg=document.getElementById('modeSeg');if(!seg)return;
   seg.dataset.sel='off';
   seg.querySelectorAll('button[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));})();
 function setMode(m){const seg=document.getElementById('modeSeg');if(!seg)return;
   seg.dataset.sel=m;
   seg.querySelectorAll('button[data-mode]').forEach(b=>{const on=b.dataset.mode===m;b.classList.toggle('on',on);b.setAttribute('aria-checked',on?'true':'false');});
-  const hint=document.getElementById('modeHint');if(hint)hint.textContent=MODE_HINTS[m]||'';}
+  const hint=document.getElementById('modeHint');if(hint)hint.textContent=MODE_HINTS[m]||'';
+  const u=document.getElementById('url');if(u)u.placeholder=PLACEHOLDERS[m]||DEFAULT_PLACEHOLDER;
+  const rr=document.getElementById('recRow');if(rr)rr.hidden=(m!=='scam');}
 function aiChipState(){const seg=document.getElementById('modeSeg');return seg?(seg.dataset.sel||'off'):'off';}
 function resetAiChip(){setMode('off');}
-function detectAiOn(){return aiChipState()!=='off';}
+function detectAiOn(){const m=aiChipState();return m==='on'||m==='only';}
+function scamModeOn(){return aiChipState()==='scam';}
 // CONSENT GATE — Apple 5.1.1(i)/5.1.2(i): permission before the first
 // send, on every path (link, photo, shared link, follow-up AI check).
 function hasConsent(){try{return localStorage.getItem('gbConsent')==='1';}catch(e){return false;}}
@@ -713,6 +724,7 @@ async function checkFetch(body){
   const uq=userQuestion(); if(uq)body.question=uq;
   if(detectAiOn())body.detect_ai=true;
   if(aiChipState()==='only')body.ai_only=true;
+  if(scamModeOn())body.scam_check=true;
   body.captcha_token=await tsGet();
   let r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(r.status===403&&tsOn){tsReset();body.captcha_token=await tsGet();
@@ -732,7 +744,7 @@ const NC_KINDS={
   'no-claim':['\u2014','No claims','Nothing said that can be true or false.']};
 function noCheck(d){
   const rep=d.report||{};
-  if(d.answer_mode||rep.safety_notice||d.media_only||d.private||d.refused)return null;
+  if(d.answer_mode||rep.safety_notice||d.media_only||d.private||d.refused||d.scam_only)return null;
   if(rep.headline_score!==null&&rep.headline_score!==undefined)return null;
   if(rep.headline_state&&rep.headline_state!=='unverified')return null;
   let kind=rep.nothing_to_check;
@@ -974,11 +986,22 @@ function renderList(d){
   }
   if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
   html+=scamCard(d)+photoCard(d);
+  const au=d.authenticity;
+  if(d.scam_only){
+    // SCAM CHECK on a message: the scam card IS the result. No ring, no
+    // "unverified" — a low/none finding gets one honest line instead.
+    const sc=d.scam||{};
+    if(!(sc.risk==='high'||sc.risk==='medium')){
+      html+='<div class="headline">'+oneLine(rep)+'<div class="nc-big">'+(sc.risk==='low'?'A few warning signs':'No scam patterns found')+'</div>'
+        +'<div class="nc-sub">'+(sc.risk==='low'?'Nothing decisive \u2014 stay careful with codes, money and links.':'That never means safe \u2014 detection can miss things. Never share a code or send money on a stranger\u2019s say-so.')+'</div>'
+        +(sc.ran?'':'<div class="nc-sub">The scam check could not run \u2014 try again.</div>')+'</div>';
+    }
+    html+='<div class="meta" style="text-align:center">Scam check only \u2014 the claims were not fact-checked.</div>';
+  }else{
   const cnt=rep.counts||{};
   // TWIN DIALS: when the authenticity lane has a real FINDING, the
   // headline shows two equal dials (CLAIMS + AI). "No signal" never gets
   // a dial - absence is the honest blank (founder design, Sep 2026).
-  const au=d.authenticity;
   const AU_STYLES={verified_ai_provenance:['#a78bfa','verified AI \u2014 signed provenance',1.0],
                    declared_ai:['#38bdf8','creator-labeled AI',0.95],
                    likely_synthetic:['#f87171','strong synthetic signals',0.95],
@@ -1049,6 +1072,7 @@ function renderList(d){
     aiRow(au,mediaLeads)+'</div>';
   }
   html+=scamLine(d);
+  }
   if(d.private){
     const strong=!!(au&&(au.origin_result==='likely_synthetic'||au.origin_result==='verified_ai_provenance'||au.origin_result==='declared_ai'));
     html+='<div class="privcard">'+(strong

@@ -1415,7 +1415,7 @@ try:
 finally:
     if _k85: _os85.environ["ANTHROPIC_API_KEY"] = _k85
 _m85 = open("app/main.py").read()
-if _m85.count("_scam_lens_finish(result, _scam_started)") != 3 or "from app.agents import scam" not in _m85: fails.append("m85 lens not wired at all three call sites")
+if _m85.count("_scam_lens_finish(result, _scam_started)") != 4 or "from app.agents import scam" not in _m85: fails.append("m85 lens not wired at all four call sites")  # + the scam-only path (v0.65.7)
 if "-2 <= fb.claim_idx < 50" not in _m85: fails.append("m85 feedback scopes (-1 AI, -2 scam) not accepted")
 from app.storage import FEEDBACK_KINDS as _fk85
 if "scam_missed" not in _fk85 or "scam_false_alarm" not in _fk85: fails.append("m85 feedback kinds")
@@ -1455,7 +1455,7 @@ _h86 = open("app/templates/app.html").read()
 for _need in ("Get help — what to do now", 'href="tel:', "Sextortion pattern", "Why Glowby flagged it", "sc-help"):
     if _need not in _h86: fails.append(f"m86 UI missing: {_need}")
 if _h86.index("html+=scamCard(d);") > _h86.index("function splitLead(t){"): fails.append("m86 answer mode (pasted message) must show the card")
-if open("app/main.py").read().count("_scam_lens_finish(result, _scam_started)") != 3: fails.append("m86 lens not run in answer mode")
+if open("app/main.py").read().count("_scam_lens_finish(result, _scam_started)") != 4: fails.append("m86 lens not run in answer mode")
 _t86 = open("app/templates/trust.html").read()
 for _need in ("877-908-3360", "833-372-8311", "0300 123 2040", "1-888-495-8501", "1-800-843-5678", "Sextortion"):
     if _need not in _t86: fails.append(f"m86 trust page missing {_need}")
@@ -1958,6 +1958,42 @@ if not _cons102("Unclear — no reliable evidence either way on this claim.", _r
 if "if _ok_line(rep[\"one_line\"], result):" not in open("app/main.py").read(): fails.append("m102 stored bad captions not rewritten on read")
 if "runJavaScriptConfirmPanelWithMessage" not in open("/home/claude/ios/ContentView.swift").read() if _os85.path.exists("/home/claude/ios/ContentView.swift") else False: fails.append("m102 shell lacks dialog delegate")
 
+# 103. SCAM CHECK BUTTON (Sept 15, Diya): a fifth mode. The lens answers
+# VISIBLY for that check whatever the global mode; a pasted message,
+# screenshot or recording skips the fact-check (the lens is the answer);
+# a stored result reveals its shadow finding without a re-run; the mode
+# never turns on the paid AI media check by itself.
+import app.main as _M103
+_k103 = _os85.environ.pop("ANTHROPIC_API_KEY", None)
+try:
+    _os85.environ["GLOWBY_SCAM_MODE"] = "shadow"
+    _res = {"title": "x", "transcript": "This is the IRS. Pay today with Apple gift cards and read me the codes.", "uploader": "typed", "url_key": "text:abc", "scam_requested": True}
+    _M103._scam_lens_finish(_res, _M103._scam_lens_start(_res))
+    if _res["scam"]["risk"] != "high" or "scam_shadow" in _res: fails.append(f"m103 requested check must be visible in shadow mode: {_res['scam'].get('risk')}")
+    _os85.environ["GLOWBY_SCAM_MODE"] = "off"
+    _res = {"title": "x", "transcript": "This is the IRS. Pay today with Apple gift cards and read me the codes.", "uploader": "typed", "url_key": "text:abc", "scam_requested": True}
+    _M103._scam_lens_finish(_res, _M103._scam_lens_start(_res))
+    if _res["scam"]["risk"] != "high": fails.append("m103 requested check must run even when the global mode is off")
+finally:
+    _os85.environ.pop("GLOWBY_SCAM_MODE", None)
+    if _k103: _os85.environ["ANTHROPIC_API_KEY"] = _k103
+_m103 = open("app/main.py").read()
+for _need in ("scam_check: bool = False", 'if scam_check and url_key.startswith(("text:", "img:", "aud:")):', 'result["scam_only"] = True', 'cached["scam"] = cached["scam_shadow"]', "bool(req.scam_check)"):
+    if _need not in _m103: fails.append(f"m103 main wiring missing: {_need}")
+_h103 = open("app/templates/app.html").read()
+for _need in ('data-mode="scam"', "if(scamModeOn())body.scam_check=true;", "function detectAiOn(){const m=aiChipState();return m==='on'||m==='only';}", "if(d.scam_only){", "scam:'Is this a scam?"):
+    if _need not in _h103: fails.append(f"m103 page wiring missing: {_need}")
+if "off:'Checks the claims \\u00b7 AI check runs on high-stakes videos'" not in _h103: fails.append("m103 shorter claims hint missing")
+# parked (v0.65.8): the button is hidden unless GLOWBY_SCAM_BUTTON=1 — the code behind it stays
+if 'data-mode="scam" role="radio" aria-checked="false" __SCAM_BUTTON__' not in _h103 or '"__SCAM_BUTTON__", "" if os.environ.get("GLOWBY_SCAM_BUTTON", "").strip() == "1" else "hidden"' not in _m103: fails.append("m103 scam button must be parked behind GLOWBY_SCAM_BUTTON")
+_M103._template_cache = None
+_os85.environ.pop("GLOWBY_SCAM_BUTTON", None)
+if 'aria-checked="false" hidden>' not in _M103._page(): fails.append("m103 scam button visible without the flag")
+_M103._template_cache = None
+_os85.environ["GLOWBY_SCAM_BUTTON"] = "1"
+if 'aria-checked="false" >' not in _M103._page(): fails.append("m103 scam button missing with the flag")
+_os85.environ.pop("GLOWBY_SCAM_BUTTON", None); _M103._template_cache = None
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 102/102 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups")
+    "FINAL MATRIX PASS: 103/103 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button")

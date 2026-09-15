@@ -84,7 +84,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.65.5"
+VERSION = "0.65.8"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -191,6 +191,11 @@ def _page() -> str:
         with open(_TEMPLATE_PATH, encoding="utf-8") as f:
             _template_cache = f.read().replace(
                 "__TURNSTILE_SITE_KEY__", TURNSTILE_SITE_KEY
+            ).replace(
+                # SCAM CHECK BUTTON (built Sept 15, parked by Diya the same
+                # day: "save it for the future"). GLOWBY_SCAM_BUTTON=1 in
+                # Railway shows it; everything behind it keeps working.
+                "__SCAM_BUTTON__", "" if os.environ.get("GLOWBY_SCAM_BUTTON", "").strip() == "1" else "hidden"
             )
     return _template_cache
 
@@ -394,7 +399,7 @@ def _scam_lens_start(result: dict):
     and runs alongside routing and judging; the media lane's finding is
     folded in at the end (apply_media). Never allowed to break a check."""
     box = {}
-    if scam_mode() == "off":
+    if scam_mode() == "off" and not result.get("scam_requested"):
         return None, box
 
     def _go():
@@ -413,7 +418,10 @@ def _scam_lens_start(result: dict):
 
 def _scam_lens_finish(result: dict, started) -> None:
     th, box = started if started else (None, {})
-    if scam_mode() == "off":
+    # SCAM CHECK MODE (Sept 15): the reader pressed the Scam check button —
+    # the lens answers visibly for this check, whatever the global mode.
+    asked = bool(result.get("scam_requested"))
+    if scam_mode() == "off" and not asked:
         result["scam"] = {"risk": "none", "patterns": [], "ran": False, "mode": "off"}
         return
     try:
@@ -446,7 +454,7 @@ def _scam_lens_finish(result: dict, started) -> None:
             add_usage(0.003)
         if aud.get("queries"):
             add_usage(0.005 * aud["queries"])
-        mode = scam_mode()
+        mode = "on" if asked else scam_mode()
         if rep.get("audit_trace_id"):
             try:
                 save_scam_audit(rep["audit_trace_id"], "app" if mode == "on" else "app-shadow", rep,
@@ -469,7 +477,8 @@ _fresh_lock = threading.Lock()
 def _run_pipeline(job_id: str, url: str, url_key: str,
                   user_question: str = "", prior_claims=None,
                   image_b64: str = None, detect_ai: bool = False,
-                  ai_only: bool = False, audio_upload: str = None) -> None:
+                  ai_only: bool = False, audio_upload: str = None,
+                  scam_check: bool = False) -> None:
     try:
         t0 = time.time()
         _rec_clip = None
@@ -697,6 +706,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 return
 
         _set_job(job_id, stage="routing")
+        if scam_check:
+            result["scam_requested"] = True
         _scam_started = _scam_lens_start(result)
         posted = result.get("posted_date")
         # re-check consistency: anchor claim-splitting to the prior run's
@@ -715,6 +726,27 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # claim may live in on-screen text (overlay captions, headlines).
         # Open the eyes on the standby frames and route again before
         # declaring "nothing to verify."
+        if scam_check and url_key.startswith(("text:", "img:", "aud:")):
+            # SCAM CHECK on a pasted message, screenshot or recording: the
+            # lens is the answer (≈4s); claims are not routed or judged.
+            result.pop("frames_standby", None)
+            _set_job(job_id, stage="assembling")
+            result["claims"] = []
+            result["scam_only"] = True
+            _scam_lens_finish(result, _scam_started)
+            result = build_report(result)
+            result["report"]["headline_label"] = "Scam check — see the card above."
+            result["report"]["nothing_to_check"] = None
+            _ensure_one_line(result)
+            result["timings"] = {"total_s": round(time.time() - t0, 1)}
+            result["cached"] = False
+            try:
+                save_result(url_key, url, result)
+            except Exception:
+                pass
+            _set_job(job_id, status="done", result=result)
+            return
+
         if ai_only:
             # MEDIA-ONLY CHECK: the user asked "is this real?", not
             # "is this true?" — skip routing, evidence and judges (the
@@ -1094,6 +1126,7 @@ class CheckRequest(BaseModel):
     audio_b64: str = ""  # uploaded recording (voicemail / call; m4a, mp3, wav, webm, ogg; base64)
     detect_ai: bool = False  # "+detect AI": user asked for the media check
     ai_only: bool = False  # "AI only": skip claim routing/judging entirely
+    scam_check: bool = False  # "Scam check" mode: the scam lens answers VISIBLY for this check
 
 
 MAX_IMAGE_B64 = 10_000_000  # ~7.5 MB decoded — client resizes first
@@ -1222,6 +1255,11 @@ def api_check(req: CheckRequest, request: Request):
         _cau = cached.get("authenticity") or {}
         if _cau.get("stage") != 2:
             cached = None
+    if cached is not None and req.scam_check and cached.get("scam_shadow"):
+        # a stored result whose scam finding was kept in the shadows: the
+        # reader asked for it — reveal it, no re-run needed
+        cached["scam"] = cached["scam_shadow"]
+        cached["scam_requested"] = True
     if cached is not None:
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
@@ -1317,7 +1355,7 @@ def api_check(req: CheckRequest, request: Request):
         target=_run_pipeline,
         args=(job_id, (raw if looks_like_url(raw) else req.url), url_key, question, prior_claims, image_b64,
               bool(req.detect_ai) or bool(req.ai_only) or bool(audio_b64), bool(req.ai_only),
-              audio_b64),
+              audio_b64, bool(req.scam_check)),
         daemon=True,
     ).start()
     return {"job_id": job_id}
