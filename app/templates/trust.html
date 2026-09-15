@@ -86,9 +86,15 @@
     <div class="band"><b class="n">—</b><span>Unverified — nothing could be reliably judged either way.</span></div>
   </div>
   <h3>How the headline score is built</h3>
-  <p>The score is set by the video's <b>main-point claims</b> — the lowest one
-  sets the number, so one true claim can never launder a false video. A harmless
-  side detail can't drag a video into "mixed" territory, but a side detail that
+  <p>The score is set by the video's <b>main-point claims</b>, blended: each
+  central claim counts, and a false one (below 4.0) counts <b>double</b>, so a
+  mostly-false video lands in "misleading" while one wrong claim among true ones
+  lands in "mixed" instead of sinking the whole video. Three caps keep the blend
+  honest: a video with any false central claim can never score above 5.9 (never
+  green); a false claim that is <b>dangerous if wrong</b> (medical instructions,
+  election mechanics, safety directions) caps it at 3.9 (misleading); and any
+  questionable central claim caps it at 7.9 (never "accurate"). A harmless side
+  detail can't drag a video into "mixed" territory, but a side detail that
   doesn't fully check out <b>caps</b> the score at 7.5 — a video with a wrong
   aside can be green, never near-perfect. Exception: a side claim that is
   dangerous if wrong (medical instructions, election mechanics, safety

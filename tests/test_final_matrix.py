@@ -325,7 +325,7 @@ r = _br({"title": "iran video", "claims": [
     _cl("hague settlement", 8.7, "supported"),
     _cl("sanctions made cash necessary", 5.5, "partly_supported", stances=("supports", "refutes"))]})
 rep = r["report"]
-if rep["headline_score"] != 5.5: fails.append("m24 headline")
+if rep["headline_score"] != 7.6: fails.append(f"m24 headline {rep['headline_score']}")  # blend: (8.5+8.7+5.5)/3=7.57, capped 7.9
 if "disputed by experts" not in rep["headline_label"]: fails.append("m24 label: " + rep["headline_label"])
 # a truly CONTRADICTED driver must keep the warning label
 r2 = _br({"title": "v", "claims": [
@@ -1120,13 +1120,19 @@ def _mk76(score, state, stances=()):
             "verdict": {"truth_score": score, "verdict_state": state, "verdict": "v", "evidence_strength": "moderate", "key_sources": []},
             "evidence": {"fact_checks": [], "web_sources": [{"url": "https://a", "stance": st} for st in stances]}}
 _r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("supports",)), _mk76(8.6, "supported")]})["report"]
-if _r["headline_score"] != _pf76 or "nothing here is disputed" not in _r["headline_label"]: fails.append(f"m76 provisional floor: {_r['headline_score']} {_r['headline_label']}")
+# blend (v0.65.1): the provisional claim enters at its 6.0 floor, so the
+# headline is (8.3+6.0+8.6)/3 = 7.6 (capped 7.9) — and the honest label stays
+if _r["headline_score"] != 7.6 or "nothing here is disputed" not in _r["headline_label"]: fails.append(f"m76 provisional floor: {_r['headline_score']} {_r['headline_label']}")
+if _pf76 != 6.0: fails.append("m76 provisional floor constant changed")
+# a DISPUTED provisional claim gets no floor: (8.3+4.0)/2 = 6.2 (blend), not the 7.2 a 6.0 floor would give
 _r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("refutes",))]})["report"]
-if _r["headline_score"] != 4.0: fails.append("m76 disputed provisional wrongly lifted")
+if _r["headline_score"] != 6.2: fails.append(f"m76 disputed provisional wrongly lifted: {_r['headline_score']}")
+# a contradicted claim still drags (double weight + the 5.9 false cap): (8.3+2×2.0)/3 = 4.1
 _r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(2.0, "contradicted")]})["report"]
-if _r["headline_score"] != 2.0: fails.append("m76 contradicted claim no longer drags")
+if _r["headline_score"] != 4.1 or _r["headline_state"] != "mixed": fails.append(f"m76 contradicted claim no longer drags: {_r['headline_score']}")
+# an insufficient 3.0 is below the false band: double weight → (8.3+6.0)/3 = 4.8
 _r = _br76({"claims": [_mk76(8.3, "supported"), _mk76(3.0, "insufficient")]})["report"]
-if _r["headline_score"] != 3.0: fails.append("m76 insufficient claim wrongly lifted")
+if _r["headline_score"] != 4.8: fails.append(f"m76 insufficient claim wrongly lifted: {_r['headline_score']}")
 _c = _br76({"claims": [_mk76(8.3, "supported"), _mk76(4.0, "provisional", ("supports",))]})["claims"]
 if _c[1]["verdict"]["truth_score"] != 4.0: fails.append("m76 card score was altered")
 
@@ -1135,7 +1141,7 @@ if _c[1]["verdict"]["truth_score"] != 4.0: fails.append("m76 card score was alte
 # with a harsh-rate; the score card cut to a third of its words and the
 # clean-AI card folded into one blue pill inside it.
 _h77 = open("app/templates/app.html").read()
-for _n in ('id="fbRow"', 'data-k="harsh"', "function wireFeedback", "'/api/feedback'", 'class="cflag"', "function aiRow", "<b>AI check ran</b>", 'id="aiDet"', "the lowest sets the score"):
+for _n in ('id="fbRow"', 'data-k="harsh"', "function wireFeedback", "'/api/feedback'", 'class="cflag"', "function aiRow", "<b>AI check ran</b>", 'id="aiDet"', "false claims weigh double"):
     if _n not in _h77: fails.append(f"m77 page missing {_n}")
 if '<div class="hl-sub" style="margin-top:3px;opacity:.75">AI fact-check' in _h77: fails.append("m77 old disclaimer line still in the score card")
 if "AI media check ran \\u2014 no synthetic signal found" in _h77: fails.append("m77 old two-line AI card still present")
@@ -1271,7 +1277,7 @@ _w = _ftr(None, 0.223, None, "forensic_video_frames", classes_seen=660)
 if _w["evidence"][0]["band"] != "weak" or "weak synthetic" not in _w["evidence"][0]["explanation"]: fails.append("m80 weak band missing")
 if _ftr(None, 0.02, None, "x", classes_seen=10)["evidence"][0]["band"] != "none": fails.append("m80 none band broken")
 _h80 = open("app/templates/app.html").read()
-if "weak signals only" not in _h80 or "claims scored · the lowest sets the score" not in _h80: fails.append("m80 UI wording missing")
+if "weak signals only" not in _h80 or "claims scored · false claims weigh double" not in _h80: fails.append("m80 UI wording missing")
 
 # 81. OIL AT $100: "rebounded to $100" docked to 6.5 because sources said
 # "near $100" (rounding in prose); and the headline called an undisputed
@@ -1856,6 +1862,43 @@ finally:
 if "Plant care, animals, gardening" not in open("app/agents/router.py").read(): fails.append("m99 router: plants/animals → science rule missing")
 if "re-routed from" not in open("app/templates/app.html").read(): fails.append("m99 card chip missing")
 
+# 100. THE ONE LINE + DONE NOTIFICATION (Sept 15, Diya): a plain-English
+# answer above the score ("Yes — Trump dyed his hair, but the clip is
+# AI-generated"), captioned FROM the verdicts and guarded against
+# contradicting them; a fallback that needs no model; a long-poll
+# /api/job/<id>/wait for the iPhone shell's background notification.
+from app.agents import summary as _S100
+_r100 = {"report": {"headline_score": 8.4, "headline_state": "accurate"},
+         "claims": [{"claim": "Donald Trump dyed his hair a darker shade this week", "central": True,
+                     "verdict": {"truth_score": 8.4, "verdict_state": "supported", "verdict": "Reported widely."}}],
+         "authenticity": {"origin_result": "likely_synthetic", "stage": 2}}
+_fb100 = _S100.fallback_line(_r100)
+if not _fb100.startswith("Yes") or "AI-generated" not in _fb100: fails.append(f"m100 fallback: {_fb100}")
+if _S100.consistent("No — Trump did not dye his hair.", _r100): fails.append("m100 a contradicting lead must be rejected")
+if _S100.consistent("Yes — Trump dyed his hair.", _r100): fails.append("m100 an unmentioned AI finding must be rejected")
+if not _S100.consistent("Yes — Trump dyed his hair, but the clip is AI-generated.", _r100): fails.append("m100 a good line must pass")
+_c100 = _S100.clean('"Yes, Chase is definitely a scam and totally fake"')
+if "definitely" in _c100 or "is a scam" in _c100: fails.append(f"m100 clean: {_c100}")
+if len(_S100.clean(" ".join(["word"] * 60)).split()) > _S100.MAX_WORDS + 1: fails.append("m100 length cap")
+if not _S100.fallback_line({"report": {"headline_score": None, "nothing_to_check": "opinion"}}).startswith("Nothing here"): fails.append("m100 opinion fallback")
+if not _S100.fallback_line({"report": {"headline_score": None, "safety_notice": "x"}}).startswith("Do not act"): fails.append("m100 safety fallback")
+# no key → the fallback is the line, and it lands in the report
+import app.main as _M100
+_k100 = _os85.environ.pop("ANTHROPIC_API_KEY", None)
+try:
+    _M100._ensure_one_line(_r100)
+    if _r100["report"].get("one_line") != _fb100: fails.append("m100 report.one_line not set on the no-key path")
+finally:
+    if _k100: _os85.environ["ANTHROPIC_API_KEY"] = _k100
+_m100 = open("app/main.py").read()
+for _need in ('@app.get("/api/job/{job_id}/wait")', "_ensure_one_line(cached, url_key)", "_ensure_one_line(cached, key)", "patch_result(save_key, result)"):
+    if _need not in _m100: fails.append(f"m100 main wiring missing {_need}")
+_h100 = open("app/templates/app.html").read()
+for _need in ("class=\"oneline\"", "messageHandlers.glowby", "Notification.requestPermission", "askNotify(d.job_id)", "type:'done'"):
+    if _need not in _h100: fails.append(f"m100 app wiring missing {_need}")
+if _h100.count("oneLine(rep)") < 4: fails.append("m100 the line must sit on every headline layout")
+if "def patch_result" not in open("app/storage.py").read(): fails.append("m100 patch_result missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 99/99 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk")
+    "FINAL MATRIX PASS: 100/100 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify")

@@ -30,6 +30,7 @@ Adds result["report"]:
 }
 """
 
+import os
 import re
 
 BANNED_INTENSIFIERS = re.compile(
@@ -112,6 +113,22 @@ def is_safety_instruction(claim_text: str) -> bool:
     warning a person might act on, rather than a description?"""
     return bool(_INSTRUCTION_RE.search(claim_text or ""))
 
+# HEADLINE RULE (Diya, Sept 15: "lots of scores are too harsh — the MIN
+# rule is ineffective"). "blend" (default): the headline is the weighted
+# mean of the counting claims, false claims (< 4.0) weighing double, with
+# three caps — any false central claim caps the video at FALSE_CAP (it
+# can never be green), a false HIGH/CRITICAL-risk claim caps it at
+# DANGEROUS_FALSE_CAP (misleading), and any non-green central claim caps
+# it at NOT_PERFECT_CAP (never "accurate" with a questionable claim in
+# it). A majority-false video still lands in misleading; one wrong claim
+# among true ones lands in mixed instead of cratering. "min" restores
+# the old lowest-claim rule.
+HEADLINE_RULE = os.environ.get("GLOWBY_HEADLINE_RULE", "blend").strip().lower()
+FALSE_CAP = 5.9
+DANGEROUS_FALSE_CAP = 3.9
+NOT_PERFECT_CAP = 7.9
+FALSE_BAND = 4.0
+
 # a low-risk side detail can cap the headline down to this floor, but
 # never below it — "mostly checks out" is the worst a wrong aside can do
 SIDE_DETAIL_FLOOR = 7.5
@@ -121,6 +138,28 @@ SIDE_DETAIL_FLOOR = 7.5
 # accurate and questionable claims" was being printed over videos where
 # nothing was questionable (the iPhone 18 Pro aperture, Sept 2026).
 PROVISIONAL_FLOOR = 6.0
+
+
+def blend_score(vals, claims) -> float:
+    """Pure (unit-tested): the blended headline for the counting claims.
+    vals are the per-claim headline weights (provisional floor applied);
+    claims are the matching claim dicts, for risk levels."""
+    if not vals:
+        return 0.0
+    num = den = 0.0
+    for v in vals:
+        w = 2.0 if v < FALSE_BAND else 1.0   # a false claim weighs double
+        num += v * w
+        den += w
+    score = num / den
+    if any(v < FALSE_BAND for v in vals):
+        dangerous = any(
+            v < FALSE_BAND and (c.get("risk_level") in ("high", "critical"))
+            for v, c in zip(vals, claims))
+        score = min(score, DANGEROUS_FALSE_CAP if dangerous else FALSE_CAP)
+    if any(v < 7.5 for v in vals):
+        score = min(score, NOT_PERFECT_CAP)
+    return max(0.0, min(9.9, score))
 
 
 def _headline_weight(c):
@@ -168,16 +207,28 @@ def build_report(result: dict) -> dict:
     ]
     if counting:
         # sides that fully check out (accurate band, >= 8.0) leave the
-        # headline alone; a questionable side enters the MIN clamped up
-        # to the floor — it caps, never craters
-        effective = [_headline_weight(c) for c in counting] + [
+        # headline alone; a questionable side enters clamped up to the
+        # floor — it caps, never craters
+        side_vals = [
             max(c["verdict"]["truth_score"], SIDE_DETAIL_FLOOR)
             for c in scored
             if c not in counting and c["verdict"]["truth_score"] < 8.0
         ]
+        main_vals = [_headline_weight(c) for c in counting]
     else:  # nothing central was scorable — every side claim counts fully
-        effective = [_headline_weight(c) for c in scored]
-    headline = round(min(effective), 1) if effective else None
+        side_vals = []
+        main_vals = [_headline_weight(c) for c in scored]
+    if not main_vals:
+        headline = None
+        uncapped = None
+    elif HEADLINE_RULE == "min":
+        uncapped = round(min(main_vals), 1)
+        headline = round(min(main_vals + side_vals), 1)
+    else:
+        uncapped = round(blend_score(main_vals, counting or scored), 1)
+        headline = uncapped
+        if side_vals:
+            headline = round(min(headline, min(side_vals)), 1)
     # disclosure: a side claim scored below the headline (raw), i.e. it
     # was softened by the floor or simply sits under the main claims
     side_lower = headline is not None and any(
@@ -185,8 +236,7 @@ def build_report(result: dict) -> dict:
         for c in scored if c not in counting
     )
     side_capped = (
-        headline is not None and counting
-        and headline < round(min(_headline_weight(c) for c in counting), 1)
+        headline is not None and uncapped is not None and headline < uncapped
     )
 
     # safety collapse (spec: named critical protocol)
@@ -224,9 +274,10 @@ def build_report(result: dict) -> dict:
         # every other counting claim verified green, "mixes accurate and
         # questionable claims" smears the whole video. Same honest number,
         # truthful sentence: nothing here is false.
-        if state == "mixed" and counting:
+        low_w = min((_headline_weight(c) for c in counting), default=None)
+        if state in ("mixed", "mostly_accurate") and counting:
             drivers = [c for c in counting
-                       if c["verdict"]["truth_score"] == headline]
+                       if _headline_weight(c) == low_w]
             others = [c for c in counting if c not in drivers]
             if (drivers and others
                     and all(c["verdict"].get("verdict_state")
@@ -239,14 +290,14 @@ def build_report(result: dict) -> dict:
                 # (the oil-at-$100 nitpick, Sept 2026)
                 if all(_has_disputing_source(c) for c in drivers):
                     label = ("The main claims check out. One claim is genuinely "
-                             "disputed by experts — and the lowest claim sets "
-                             "the score.")
+                             "disputed by experts — and that pulls the score "
+                             "down.")
                 else:
                     label = ("The main claims check out. One claim is only "
-                             "partly confirmed — and the lowest claim sets "
-                             "the score.")
-        if counting and state in ("mixed", "mostly"):
-            drivers = [c for c in counting if _headline_weight(c) == headline]
+                             "partly confirmed — and that pulls the score "
+                             "down.")
+        if counting and state in ("mixed", "mostly", "mostly_accurate"):
+            drivers = [c for c in counting if _headline_weight(c) == low_w]
             if drivers and all(c["verdict"].get("verdict_state") == "provisional"
                                and not _has_disputing_source(c) for c in drivers):
                 label = ("The main claims check out. One claim is credibly "

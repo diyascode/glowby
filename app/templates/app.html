@@ -403,6 +403,11 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
 .fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .hl-meta{font-size:12px;color:var(--muted);margin-top:6px}
+/* THE ONE LINE (Sept 15): the plain-English answer above the score, in a
+   highlighted strip — what the reader most wants to know, before the number */
+.oneline{margin:-6px -4px 14px;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,rgba(124,108,246,.18),rgba(56,189,248,.10));border:1px solid rgba(124,108,246,.35);font-size:1rem;font-weight:700;line-height:1.35;color:var(--ink);text-align:left}
+.oneline b{color:#c4bbff;font-weight:800}
+html.light .oneline{background:linear-gradient(135deg,rgba(124,108,246,.12),rgba(56,189,248,.08));color:#1a1a24}
 /* VERDICT WORD (founder design A, Sep 14): the band name in the ring's colour,
    directly under the number — the colour finally says its name */
 .vw{display:inline-block;margin-top:10px;padding:5px 14px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;border:1px solid}
@@ -628,7 +633,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.64.6 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.65.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -743,6 +748,13 @@ function noCheck(d){
 }
 // band word for the headline — derived from the SCORE so it can never
 // disagree with the ring's colour (the sentence below it comes from the server)
+function oneLine(rep){
+  const t=(rep&&rep.one_line)||'';
+  if(!t)return '';
+  // bold the lead word (Yes / No / Partly / Mostly yes / Unclear) — the answer at a glance
+  const m=t.match(/^(Mostly yes|Mostly no|Yes|No|Partly|Unclear|Nothing here)\b/i);
+  return '<div class="oneline">'+(m?'<b>'+esc(m[0])+'</b>'+esc(t.slice(m[0].length)):esc(t))+'</div>';
+}
 function verdictWord(rep){
   if(rep.safety_notice)return null;
   const s=rep.headline_score;
@@ -984,7 +996,7 @@ function renderList(d){
   const nc=noCheck(d);
   const mediaLeads=!!((auStyle||auRan)&&(noClaims||d.media_only)&&!(nc&&!auStyle));
   if(nc&&!mediaLeads){
-    html+='<div class="headline">'+ncChip(nc)
+    html+='<div class="headline">'+oneLine(rep)+ncChip(nc)
       +'<div class="nc-big">Nothing to fact-check</div>'
       +'<div class="nc-sub">'+esc(nc.line)+'</div>'
       +aiRow(au,false)+fbRow(d,true)+'</div>';
@@ -994,7 +1006,7 @@ function renderList(d){
     const frac=auStyle?auStyle[2]:1.0;
     const word=auStyle?auStyle[1]:(auWeak(au)!==null?('weak synthetic signals only ('+auWeak(au)+')'):'no synthetic signal found');
     const dash=auStyle?'':' stroke-dasharray="7 9"';
-    html+='<div class="headline"><div style="position:relative;width:170px;height:170px;display:inline-grid;place-items:center">'
+    html+='<div class="headline">'+oneLine(rep)+'<div style="position:relative;width:170px;height:170px;display:inline-grid;place-items:center">'
       +'<svg width="170" height="170" style="position:absolute;inset:0;transform:rotate(-90deg)">'
       +'<circle cx="85" cy="85" r="60" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="12"/>'
       +(auStyle?('<circle cx="85" cy="85" r="60" fill="none" stroke="'+col+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+CIRC2.toFixed(1)+'" stroke-dashoffset="'+(CIRC2*(1-frac)).toFixed(1)+'"/>')
@@ -1009,7 +1021,7 @@ function renderList(d){
       +(d.private?'':fbRowAi(d))+'</div>';
   }else if(auStyle){
     const CIRC=(2*Math.PI*60);
-    html+='<div class="headline"><div class="dial-row">'
+    html+='<div class="headline">'+oneLine(rep)+'<div class="dial-row">'
       +'<div class="dial-col"><div class="hero-ring" style="display:inline-block">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,140,10)+'</div>'
       +'<div class="dial-lbl">CLAIMS</div></div>'
       +'<div class="dial-col">'
@@ -1026,13 +1038,13 @@ function renderList(d){
       +'</div></div>'+verdictPill(rep)+fbRowAi(d)+
     fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · false claims weigh double')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';
   }else{
-  html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
+  html+='<div class="headline">'+oneLine(rep)+'<div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
     verdictPill(rep)+fbRow(d)+
     '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
-    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · the lowest sets the score')+'</div>'+
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · false claims weigh double')+'</div>'+
     aiRow(au,mediaLeads)+'</div>';
   }
   html+=scamLine(d);
@@ -1449,12 +1461,31 @@ function renderLive(p){
 }
 // ---- Phase 1: leave-and-return (no permissions, no push) ----
 const _origTitle=document.title;
+// ---- Phase 2 (Sept 15): a real notification when the check finishes ----
+// Browser: the Notification API (asked once, at the moment a fresh check
+// starts — a user gesture). iPhone app: the shell is told the job id when
+// it starts and the answer when it ends, and posts a local notification
+// (it keeps waiting for the answer in the background on its own).
+function shell(msg){try{if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.glowby){window.webkit.messageHandlers.glowby.postMessage(msg);return true;}}catch(e){}return false;}
+let _lastJob='';
+function askNotify(jobId){
+  _lastJob=jobId||'';
+  if(shell({type:'started',job_id:_lastJob}))return;
+  try{if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();}catch(e){}
+}
 function notifyDone(){
+  const d=currentResult||{};const rep=d.report||{};
+  const body=rep.one_line||(d.title?('Result ready: '+d.title):'Your result is ready.');
+  shell({type:'done',title:'Glowby finished checking',body:body,hidden:!!document.hidden,job_id:_lastJob});
   if(!document.hidden)return;
   document.title='\u2713 Result ready \u2014 Glowby';
   const restore=()=>{document.title=_origTitle;
     document.removeEventListener('visibilitychange',restore);};
   document.addEventListener('visibilitychange',restore);
+  try{if('Notification' in window&&Notification.permission==='granted'){
+    const n=new Notification('Glowby finished checking',{body:body,icon:'/static/icon-192.png',tag:'glowby-done'});
+    n.onclick=()=>{try{window.focus();}catch(e){}n.close();};}}catch(e){}
+  try{if(navigator.vibrate)navigator.vibrate([120,60,120]);}catch(e){}
 }
 function setPending(p){try{localStorage.setItem('gbPending',JSON.stringify(
   Object.assign({t:Date.now()},p)));}catch(e){}}
@@ -1524,7 +1555,7 @@ async function runAudioCheck(b64){
     const r=await checkFetch({url:'',audio_b64:b64,question:userQuestion()});
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'Something went wrong.');
-    if(d.job_id)setPending({job_id:d.job_id});
+    if(d.job_id){setPending({job_id:d.job_id});askNotify(d.job_id);}
     currentResult=d.job_id?await poll(d.job_id):d;
     clearPending();notifyDone();
     $('steps').style.display='none';
@@ -1581,7 +1612,7 @@ async function runImageCheck(){
     const r=await checkFetch({url:'',image_b64:pendingImage,question:userQuestion()});
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'Something went wrong.');
-    if(d.job_id)setPending({job_id:d.job_id});
+    if(d.job_id){setPending({job_id:d.job_id});askNotify(d.job_id);}
     currentResult=d.job_id?await poll(d.job_id):d;
     clearPending();notifyDone();
     $('steps').style.display='none';
@@ -1607,7 +1638,7 @@ $('f').addEventListener('submit',async(e)=>{
     const r=await checkFetch({url:$('url').value});
     const d=await r.json();
     if(!r.ok)throw new Error(d.detail||'Something went wrong.');
-    if(d.job_id)setPending({job_id:d.job_id,url:$('url').value});
+    if(d.job_id){setPending({job_id:d.job_id,url:$('url').value});askNotify(d.job_id);}
     currentResult=d.job_id?await poll(d.job_id):d;
     clearPending();notifyDone();
     $('steps').style.display='none';

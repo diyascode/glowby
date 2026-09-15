@@ -305,6 +305,23 @@ def save_result(url_key: str, url: str, result: dict) -> None:
         pass
 
 
+def patch_result(url_key: str, result: dict) -> None:
+    """Re-save a stored result WITHOUT touching created_at (a lazily added
+    caption must not reset the cache clock or the admin timeline)."""
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        clean = {k: v for k, v in result.items()
+                 if k not in ("cached", "first_checked_at",
+                              "user_question", "user_answer")}
+        with conn.cursor() as cur:
+            cur.execute("UPDATE checks SET result = %s WHERE url_key = %s",
+                        (json.dumps(clean), url_key))
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------------ route audits
 # Spec §3.10: every classification explainable and reproducible.
 

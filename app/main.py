@@ -37,6 +37,7 @@ from app.agents.ingest import IngestError, ingest
 from app.agents.judge import judge_with_rubric
 from app.agents.vision import describe_frames
 from app.agents.output import build_report
+from app.agents.summary import one_line as _one_line
 from app.agents.router import (
     MODEL as ROUTER_MODEL,
     TAXONOMY_VERSION,
@@ -49,6 +50,7 @@ from app.storage import (
     admin_recent_checks,
     cache_available,
     canonical_key,
+    patch_result,
     is_short_link,
     legacy_key,
     resolve_short_link,
@@ -82,7 +84,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.64.6"
+VERSION = "0.65.1"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -972,6 +974,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         result["cached"] = False
         with _fresh_lock:
             result["fresh_reason"] = _fresh_reasons.pop(job_id, None) or "first check"
+        _ensure_one_line(result)
         save_result(url_key, url, result)
         # "+ask": the check is DONE — now answer the user's question FROM
         # the completed analysis (attached after save, so the shared cache
@@ -1208,6 +1211,7 @@ def api_check(req: CheckRequest, request: Request):
         cached.setdefault("url_key", url_key)
         if "report" not in cached:  # results stored before v0.9
             build_report(cached)
+        _ensure_one_line(cached, url_key)
         # "+ask": answer the user's question from the cached check. The
         # answer is a paid AI call, so it shares the rate limit + budget.
         if question:
@@ -1304,6 +1308,35 @@ def api_check(req: CheckRequest, request: Request):
     return {"job_id": job_id}
 
 
+@app.get("/api/job/{job_id}/wait")
+def api_job_wait(job_id: str, max_s: int = 110):
+    """Long-poll: hold the request until the job finishes (or ~110s), then
+    answer with the one line that matters. The iPhone app asks for this
+    through a background download, so a check that finishes while the
+    phone is in a pocket still becomes a notification ("once Glowby is
+    done, send a notification" — Diya, Sept 15)."""
+    max_s = max(5, min(int(max_s or 110), 115))
+    t_end = time.time() + max_s
+    job = {}
+    while time.time() < t_end:
+        with _jobs_lock:
+            job = dict(_jobs.get(job_id) or {})
+        if not job:
+            return JSONResponse(status_code=404, content={"status": "unknown"})
+        if job.get("status") in ("done", "error"):
+            break
+        time.sleep(1.0)
+    st = job.get("status") or "running"
+    if st != "done":
+        return {"status": st, "error": job.get("error") if st == "error" else None}
+    res = job.get("result") or {}
+    rep = res.get("report") or {}
+    _ensure_one_line(res)
+    return {"status": "done", "title": (res.get("title") or "")[:120],
+            "one_line": rep.get("one_line") or "", "score": rep.get("headline_score"),
+            "url_key": res.get("url_key")}
+
+
 @app.get("/api/job/{job_id}")
 def api_job(job_id: str):
     with _jobs_lock:
@@ -1320,6 +1353,22 @@ def api_job(job_id: str):
     return job
 
 
+def _ensure_one_line(result: dict, save_key: str = None) -> None:
+    """The plain-English line above the score (app/agents/summary.py).
+    Written once per result; older stored results get theirs the first
+    time they are opened. ~0.2¢, never fatal."""
+    try:
+        rep = result.get("report")
+        if not isinstance(rep, dict) or rep.get("one_line"):
+            return
+        rep["one_line"] = _one_line(result)
+        add_usage(0.002)
+        if save_key:
+            patch_result(save_key, result)
+    except Exception:
+        pass
+
+
 @app.get("/api/result/{key:path}")
 def api_result(key: str):
     cached = get_cached(key)
@@ -1328,6 +1377,7 @@ def api_result(key: str):
     cached.setdefault("url_key", key)
     if "report" not in cached:
         build_report(cached)
+    _ensure_one_line(cached, key)
     return cached
 
 
