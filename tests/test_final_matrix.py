@@ -1884,10 +1884,10 @@ _r100 = {"report": {"headline_score": 8.4, "headline_state": "accurate"},
                      "verdict": {"truth_score": 8.4, "verdict_state": "supported", "verdict": "Reported widely."}}],
          "authenticity": {"origin_result": "likely_synthetic", "stage": 2}}
 _fb100 = _S100.fallback_line(_r100)
-if not _fb100.startswith("Yes") or "AI-generated" not in _fb100: fails.append(f"m100 fallback: {_fb100}")
+if not _fb100.startswith("Accurate") or "AI-generated" not in _fb100: fails.append(f"m100 fallback: {_fb100}")  # lead = pill word since v0.66.3
 if _S100.consistent("No — Trump did not dye his hair.", _r100): fails.append("m100 a contradicting lead must be rejected")
-if _S100.consistent("Yes — Trump dyed his hair.", _r100): fails.append("m100 an unmentioned AI finding must be rejected")
-if not _S100.consistent("Yes — Trump dyed his hair, but the clip is AI-generated.", _r100): fails.append("m100 a good line must pass")
+if _S100.consistent("Accurate — Trump dyed his hair.", _r100): fails.append("m100 an unmentioned AI finding must be rejected")
+if not _S100.consistent("Accurate — Trump dyed his hair, but the clip is AI-generated.", _r100): fails.append("m100 a good line must pass")
 _c100 = _S100.clean('"Yes, Chase is definitely a scam and totally fake"')
 if "definitely" in _c100 or "is a scam" in _c100: fails.append(f"m100 clean: {_c100}")
 if len(_S100.clean(" ".join(["word"] * 60)).split()) > _S100.MAX_WORDS + 1: fails.append("m100 length cap")
@@ -1954,7 +1954,7 @@ for _need in ("function inlineAsk", "rc.dataset.armed", "inlineAsk(row,'What loo
 from app.agents.summary import consistent as _cons102
 _r102 = {"report": {"headline_score": None, "headline_state": "unverified"}}
 if _cons102("I appreciate the detailed instructions, but I notice there's a logical issue: you've asked me to caption a verdict.", _r102): fails.append("m102 meta caption accepted")
-if not _cons102("Unclear — no reliable evidence either way on this claim.", _r102): fails.append("m102 honest unclear line rejected")
+if not _cons102("Unverified — no reliable evidence either way on this claim.", _r102): fails.append("m102 honest unverified line rejected")
 if "if _ok_line(rep[\"one_line\"], result):" not in open("app/main.py").read(): fails.append("m102 stored bad captions not rewritten on read")
 if "runJavaScriptConfirmPanelWithMessage" not in open("/home/claude/ios/ContentView.swift").read() if _os85.path.exists("/home/claude/ios/ContentView.swift") else False: fails.append("m102 shell lacks dialog delegate")
 
@@ -2013,12 +2013,14 @@ if _os85.path.exists("/home/claude/ios/ContentView.swift"):
 # model only writes the rest; the reel gets one obvious button.
 from app.agents import summary as _S105
 _r105 = {"report": {"headline_score": 7.5, "headline_state": "mostly_accurate"}}
-if _S105.force_lead("Partly — Alibaba's AI attempted mining.", _r105) != "Mostly — Alibaba's AI attempted mining.": fails.append(f"m105 force_lead: {_S105.force_lead('Partly — Alibaba AI attempted mining.', _r105)}")
+# v0.66.3: the lead word is the PILL word, letter for letter
+if _S105.force_lead("Partly — Alibaba's AI attempted mining.", _r105) != "Mostly accurate — Alibaba's AI attempted mining.": fails.append(f"m105 force_lead: {_S105.force_lead('Partly — Alibaba AI attempted mining.', _r105)}")
 if _S105.consistent("Partly — Alibaba's AI attempted mining.", _r105): fails.append("m105 a mismatched lead must be rejected")
-if not _S105.consistent("Mostly — Alibaba's AI attempted mining.", _r105): fails.append("m105 the band lead must pass")
-for _sc, _ld in ((8.6, "Yes"), (7.7, "Mostly"), (5.2, "Partly"), (2.0, "No"), (None, "Unclear")):
+if not _S105.consistent("Mostly accurate — Alibaba's AI attempted mining.", _r105): fails.append("m105 the band lead must pass")
+for _sc, _ld in ((8.6, "Accurate"), (7.7, "Mostly accurate"), (5.2, "Mixed"), (2.0, "Misleading"), (None, "Unverified")):
     if _S105.canonical_lead({"report": {"headline_score": _sc}}) != _ld: fails.append(f"m105 lead for {_sc}")
-if not _S105.fallback_line(_r105).startswith("Mostly — "): fails.append("m105 fallback lead")
+if not _S105.fallback_line(_r105).startswith("Mostly accurate — "): fails.append("m105 fallback lead")
+if _S105.force_lead("No — diesel is expensive but needs no gold.", {"report": {"headline_score": 3.4}}) != "Misleading — diesel is expensive but needs no gold.": fails.append("m105 the diesel case")
 _h105 = open("app/templates/app.html").read()
 for _need in ('class="openreel"', "Watch the reel", "class=\"srcline\""):
     if _need not in _h105: fails.append(f"m105 source line missing: {_need}")

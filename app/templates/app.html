@@ -403,7 +403,7 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .fb-thanks{font-size:12.5px;color:#4ade80;margin-top:8px} .fb-thanks span{color:var(--muted)}
 .fb-note{display:flex;gap:6px;max-width:480px;margin:8px auto 0}
 .fb-thanks.fb-err{color:var(--bad)}
-.srcline{margin:4px 0 10px}
+.srcline{margin:4px 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .openreel{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;background:rgba(124,108,246,.16);border:1px solid rgba(124,108,246,.55);color:#c4bbff;font-weight:800;font-size:.9rem;text-decoration:none}
 .openreel:hover{background:rgba(124,108,246,.28)}
 html.light .openreel{background:rgba(124,108,246,.1);color:#4c3fd6}
@@ -644,7 +644,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.66.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.66.3 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -956,8 +956,9 @@ function renderList(d){
     html+='<div class="privnote">\ud83d\udd12 Private AI check \u00b7 not stored \u00b7 not shareable \u00b7 never in Trending</div>';
   }
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
+  let savedChip='';
   if(d.cached){const fc=d.first_checked_at?new Date(String(d.first_checked_at).slice(0,10)+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-    html+='<div class="meta">\u26a1 Saved result'+(fc?' from '+esc(fc):'')+' \u00b7 <button type="button" id="recheck" class="linkbtn">Re-check</button></div>';}
+    savedChip='<span class="meta" style="margin:0">\u26a1 Saved'+(fc?' '+esc(fc):'')+' \u00b7 <button type="button" id="recheck" class="linkbtn">Re-check</button></span>';}
   // SOURCE LINE (Sept 15, Diya): one obvious button to open the reel, one
   // short line of facts. The long caption moves behind "full caption".
   const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
@@ -970,7 +971,9 @@ function renderList(d){
   // to confirm it's the right video; the caption lives in the transcript view
   const when=d.posted_date?new Date(d.posted_date+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'';
   const who=[esc(d.uploader||''),when?esc(when):''].filter(Boolean).join(' \u00b7 ');
-  if(!d.private)html+='<div class="srcline">'+openBtn+(who?'<div class="meta" style="margin-top:6px">'+who+'</div>':'')+'</div>';
+  // one line (Diya, Sept 15): button · creator · date · saved/re-check; wraps only on narrow phones
+  if(!d.private)html+='<div class="srcline">'+openBtn+(who?'<span class="meta" style="margin:0">'+who+'</span>':'')+savedChip+'</div>';
+  else if(savedChip)html+='<div class="srcline">'+savedChip+'</div>';
   if(d.answer_mode){
     html+=scamCard(d);
     function splitLead(t){
