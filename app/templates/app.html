@@ -403,6 +403,10 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .fb-thanks{font-size:12.5px;color:#4ade80;margin-top:8px} .fb-thanks span{color:var(--muted)}
 .fb-note{display:flex;gap:6px;max-width:480px;margin:8px auto 0}
 .fb-thanks.fb-err{color:var(--bad)}
+.srcline{margin:4px 0 10px}
+.openreel{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;background:rgba(124,108,246,.16);border:1px solid rgba(124,108,246,.55);color:#c4bbff;font-weight:800;font-size:.9rem;text-decoration:none}
+.openreel:hover{background:rgba(124,108,246,.28)}
+html.light .openreel{background:rgba(124,108,246,.1);color:#4c3fd6}
 .linkbtn{background:none;border:none;padding:0;margin:0;color:var(--brand);font:inherit;font-size:inherit;text-decoration:underline;cursor:pointer}
 .fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
 .fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
@@ -599,7 +603,7 @@ html.light .uq-q{color:#111114}
         <button type="button" data-mode="scam" role="radio" aria-checked="false" __SCAM_BUTTON__><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><span class="ml">Scam check</span><span class="ms">Scam</span></button>
         <button type="button" id="qChip" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.8a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.4M12 16.5h.01"/></svg><span class="ml">Ask a question</span><span class="ms">Ask</span></button>
       </div>
-      <div id="modeHint" class="modehint">Fact-checks the claims · the AI check also runs automatically on high-stakes videos</div>
+      <div id="modeHint" class="modehint">Checks the claims · AI check runs on high-stakes videos</div>
     </div>
     <div id="qOpen" hidden>
       <span class="qmark">?</span>
@@ -640,7 +644,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.65.9 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.66.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -952,13 +956,21 @@ function renderList(d){
     html+='<div class="privnote">\ud83d\udd12 Private AI check \u00b7 not stored \u00b7 not shareable \u00b7 never in Trending</div>';
   }
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
-  if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <button type="button" id="recheck" class="linkbtn">Re-check this video</button></div>';
+  if(d.cached){const fc=d.first_checked_at?new Date(String(d.first_checked_at).slice(0,10)+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+    html+='<div class="meta">\u26a1 Instant'+(fc?' \u00b7 checked '+esc(fc):'')+' \u00b7 <button type="button" id="recheck" class="linkbtn">Re-check</button></div>';}
+  // SOURCE LINE (Sept 15, Diya): one obvious button to open the reel, one
+  // short line of facts. The long caption moves behind "full caption".
   const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
   const fullTitle=String(d.title||'');
-  const shortTitle=(fullTitle.length>90)?(fullTitle.slice(0,90).trim()+'\u2026'):fullTitle;
-  const titleHtml=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(shortTitle)+' \u2197</a>'):esc(shortTitle);
-  const moreTitle=(fullTitle.length>90)?(' <a href="#" class="ttlmore" data-full="'+esc(fullTitle)+'" style="color:var(--brand)">full caption</a>'):'';
-  if(!d.private)html+='<div class="meta">'+esc(d.platform)+' · '+titleHtml+moreTitle+' · '+esc(d.uploader)+(d.posted_date?' · posted '+esc(d.posted_date):'')+' · transcript: '+esc(d.transcript_source)+(d.timings&&d.timings.total_s?' · checked in '+Math.round(d.timings.total_s)+'s':'')+'</div>';
+  const PLAT={tiktok:'TikTok',youtube:'YouTube',instagram:'Instagram',facebook:'Facebook',x:'X',twitter:'X',article:'the article',typed:'',other:''};
+  const pname=PLAT[String(d.platform||'').toLowerCase()]||String(d.platform||'');
+  const isVideo=!/^(article|typed|other)$/i.test(String(d.platform||''));
+  const openBtn=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" class="openreel">\u25b6 '+(isVideo?'Watch the reel':'Open the article')+(pname?' on '+esc(pname):'')+' \u2197</a>'):'';
+  // no caption under the button (Diya, Sept 15) — creator + date are enough
+  // to confirm it's the right video; the caption lives in the transcript view
+  const when=d.posted_date?new Date(d.posted_date+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'';
+  const who=[esc(d.uploader||''),when?esc(when):''].filter(Boolean).join(' \u00b7 ');
+  if(!d.private)html+='<div class="srcline">'+openBtn+(who?'<div class="meta" style="margin-top:6px">'+who+'</div>':'')+'</div>';
   if(d.answer_mode){
     html+=scamCard(d);
     function splitLead(t){
@@ -1360,7 +1372,7 @@ function render(){
   const ad=$('aiDet');
   if(ad)ad.onclick=(e)=>{e.preventDefault();const det=out.querySelector('.audet');if(det){det.open=true;det.scrollIntoView({behavior:'smooth',block:'center'});}};
   const tro=$('trOpen');
-  if(tro)tro.onclick=(e)=>{e.preventDefault();$('trBody').textContent=d.transcript||'';$('trOverlay').hidden=false;};
+  if(tro)tro.onclick=(e)=>{e.preventDefault();$('trBody').textContent=(d.title?'Caption: '+d.title+'\n\n':'')+(d.transcript||'');$('trOverlay').hidden=false;};
   (function(){const ov=$('trOverlay'),cl=$('trClose');if(!ov)return;
     if(cl)cl.onclick=()=>{ov.hidden=true;};
     ov.onclick=(e)=>{if(e.target===ov)ov.hidden=true;};})();

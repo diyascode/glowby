@@ -231,8 +231,12 @@ with sync_playwright() as pw:
     if _v != "ok":
         fails.append(f"render() threw: {_v}")
     _txt = _pg.inner_text("#out")
-    if "full caption" not in _txt:
-        fails.append("long caption not trimmed to a link")
+    # v0.66.1: the caption is no longer shown under the reel button at all;
+    # it lives in the transcript view. The button must be there instead.
+    if "A very long caption" in _txt:
+        fails.append("caption leaked under the reel button")
+    if "Open the article" not in _txt and "Watch the reel" not in _txt:
+        fails.append("reel/article button missing")
     if "Open the original video" not in _txt:
         fails.append("source link missing")
     _b.close()

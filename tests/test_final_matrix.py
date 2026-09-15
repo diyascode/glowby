@@ -750,7 +750,7 @@ if "Media-only check" not in _h56: fails.append("m56 media-only headline missing
 # 57. FOLLOW-UP AI BUTTON + SOURCE LINK + TITLE TRIM
 if 'id="fuAi"' not in _h56: fails.append("m57 follow-up AI button missing")
 if "Open the original video" not in _h56: fails.append("m57 source link missing")
-if "fullTitle.length>90" not in _h56: fails.append("m57 long title not trimmed")
+if "Caption: '+d.title" not in _h56: fails.append("m57 caption must survive in the transcript view")  # v0.66.1: no caption under the reel button
 
 # 58. PARSE-GAP HONESTY: zero readable class scores is reported as a
 # parsing gap, never as a clean bill of health
@@ -923,7 +923,7 @@ if "_DOC_CLAIM.search(claim)" not in _e66: fails.append("m66 document page-read 
 # 67. DESIGN: mode selector (three visible choices, honest hint, reset),
 # transcript as an overlay link, two-part follow-up
 _h67 = open("app/templates/app.html").read()
-for _n in ('data-mode="off"', 'data-mode="on"', 'data-mode="only"', "also runs automatically on high-stakes"):
+for _n in ('data-mode="off"', 'data-mode="on"', 'data-mode="only"', "AI check runs on high-stakes videos"):  # shortened v0.65.7
     if _n not in _h67: fails.append(f"m67 mode selector missing {_n}")
 if "function resetAiChip(){setMode('off');}" not in _h67: fails.append("m67 mode does not reset to Claims")
 if 'id="trOpen"' not in _h67 or 'id="trOverlay"' not in _h67: fails.append("m67 transcript overlay missing")
@@ -2007,6 +2007,22 @@ if _os85.path.exists("/home/claude/ios/ContentView.swift"):
     for _need in ("createWebViewWith", "decidePolicyFor navigationAction", "window.__glowbyShellOpens = true", 'case "open":'):
         if _need not in _sw104: fails.append(f"m104 shell missing: {_need}")
 
+# 105. LEAD WORD = BAND + THE SOURCE LINE (Sept 15, Diya): a "Mostly
+# accurate" pill can never sit under a "Partly" line — the lead word is
+# set by the score band (Yes / Mostly / Partly / No / Unclear) and the
+# model only writes the rest; the reel gets one obvious button.
+from app.agents import summary as _S105
+_r105 = {"report": {"headline_score": 7.5, "headline_state": "mostly_accurate"}}
+if _S105.force_lead("Partly — Alibaba's AI attempted mining.", _r105) != "Mostly — Alibaba's AI attempted mining.": fails.append(f"m105 force_lead: {_S105.force_lead('Partly — Alibaba AI attempted mining.', _r105)}")
+if _S105.consistent("Partly — Alibaba's AI attempted mining.", _r105): fails.append("m105 a mismatched lead must be rejected")
+if not _S105.consistent("Mostly — Alibaba's AI attempted mining.", _r105): fails.append("m105 the band lead must pass")
+for _sc, _ld in ((8.6, "Yes"), (7.7, "Mostly"), (5.2, "Partly"), (2.0, "No"), (None, "Unclear")):
+    if _S105.canonical_lead({"report": {"headline_score": _sc}}) != _ld: fails.append(f"m105 lead for {_sc}")
+if not _S105.fallback_line(_r105).startswith("Mostly — "): fails.append("m105 fallback lead")
+_h105 = open("app/templates/app.html").read()
+for _need in ('class="openreel"', "Watch the reel", "class=\"srcline\""):
+    if _need not in _h105: fails.append(f"m105 source line missing: {_need}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 104/104 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links")
+    "FINAL MATRIX PASS: 105/105 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band")

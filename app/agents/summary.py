@@ -37,8 +37,9 @@ Facts decided by the system (treat as fixed):
 
 Write ONE sentence, at most {max_words} words, plain English a 12-year-old \
 reads at a glance, that says what the reader most wants to know: is the \
-main thing in the video true, and is the video itself real. Lead with the \
-answer (Yes / No / Partly / Unclear). If the main claim is false or only \
+main thing in the video true, and is the video itself real. Start with \
+exactly this word, which matches the score band: "{lead}" — then a dash \
+and the rest. If the main claim is false or only \
 partly true and the verdict says what is actually true, put the correction \
 in the same sentence ("No — X did not …; in fact …"), taken from the \
 verdict text, never from your own knowledge. If the footage is AI-generated \
@@ -122,8 +123,7 @@ def fallback_line(result: dict) -> str:
         subject = str(claims[0].get("claim", "")).strip().rstrip(".")
         if len(subject) > 90:
             subject = subject[:87].rsplit(" ", 1)[0] + "…"
-    lead = {"true": "Yes", "mostly true": "Mostly yes", "partly true": "Partly",
-            "false": "No", "unverified": "Unclear"}[_band(hs)]
+    lead = LEAD_FOR_BAND[_band(hs)]
     if hs is None:
         states = {c["verdict"].get("verdict_state") for c in claims}
         if claims and states <= {"not_scoreable"}:
@@ -178,6 +178,33 @@ def clean(line: str) -> str:
 
 
 _LEADS = ("yes", "no", "partly", "mostly", "unclear", "nothing", "do not", "don't")
+# THE LEAD WORD IS THE BAND (Sept 15, Diya: "Partly" over a "Mostly accurate"
+# pill). Accurate → Yes · Mostly accurate → Mostly · Mixed → Partly ·
+# Misleading → No · Unverified → Unclear. The model writes the rest.
+LEAD_FOR_BAND = {"true": "Yes", "mostly true": "Mostly", "partly true": "Partly",
+                 "false": "No", "unverified": "Unclear"}
+_LEAD_RE = re.compile(r"^(mostly yes|mostly no|mostly true|mostly|yes|no|partly true|partly|unclear|true|false)\b[\s,:—–-]*", re.I)
+
+
+def canonical_lead(result: dict):
+    """Pure: the lead word the card's band dictates, or None for the
+    special cards (nothing to check / safety alert) that have their own."""
+    rep = result.get("report") or {}
+    if rep.get("safety_notice") or rep.get("nothing_to_check"):
+        return None
+    return LEAD_FOR_BAND[_band(rep.get("headline_score"))]
+
+
+def force_lead(line: str, result: dict) -> str:
+    """Pure (unit-tested): replace whatever lead the model wrote with the
+    band's word, joined with an em dash."""
+    lead = canonical_lead(result)
+    if not lead:
+        return line
+    rest = _LEAD_RE.sub("", (line or "").strip().lstrip("\"'“ "), count=1).strip()
+    if not rest:
+        return line
+    return f"{lead} — {rest}"
 _META = re.compile(r"\b(I appreciate|I notice|I can't|I cannot|I'm unable|as an AI|instructions?|caption|you've asked|you asked|logical issue|the facts you|verdicts? (that|you)|system prompt)\b", re.I)
 
 
@@ -193,6 +220,9 @@ def consistent(line: str, result: dict) -> bool:
     if not low.startswith(_LEADS):
         return False
     if _META.search(line):
+        return False
+    lead = canonical_lead(result)
+    if lead and not low.startswith(lead.lower() + " "):
         return False
     band = _band(hs)
     if not rep.get("safety_notice") and not rep.get("nothing_to_check") and hs is not None:
@@ -219,9 +249,10 @@ def one_line(result: dict, client=None) -> str:
         msg = client.messages.create(
             model=FAST_MODEL, max_tokens=80, temperature=0,
             messages=[{"role": "user", "content": PROMPT.format(
-                facts=facts_for(result), max_words=MAX_WORDS)}])
+                facts=facts_for(result), max_words=MAX_WORDS,
+                lead=canonical_lead(result) or "Nothing here")}])
         raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
-        line = clean(raw)
+        line = force_lead(clean(raw), result)
         if len(line.split()) >= 3 and consistent(line, result):
             return line
     except Exception:
