@@ -159,6 +159,15 @@ Do not use outside knowledge to settle the claim; the rubric tells you how \
 to weigh the evidence.
 
 Fleet-wide rules (always apply):
+- YOU NEVER DECLINE A CLAIM FOR BEING OUTSIDE YOUR CATEGORY. Your rubric's \
+"Scope" and "handoff" sections describe where claims are normally routed; \
+they are NOT permission to refuse. A plant-care claim at the health desk, \
+a gardening claim at the science desk, a sports claim at the business \
+desk: judge it anyway, from the evidence, the way a general fact-checker \
+would, applying whatever rubric caps still make sense — and set \
+"wrong_desk" to the better category so Glowby can learn. "not_scoreable" \
+exists ONLY for: depends on a definition, a guilt gate, a matter of taste. \
+"Not within this category's scope" is never a verdict.
 - TRUTH SCORE is 0.0-9.9, one decimal. Higher = better supported by \
 evidence. 9.9 is the ceiling; never award 10.0.
 - Apply every relevant cap from the rubric (single-study caps, provisional \
@@ -407,18 +416,23 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
         to = v.get("wrong_desk") or claim.get("secondary_bucket") or "science"
         if to == here:
             to = claim.get("secondary_bucket") or ("science" if here != "science" else "other")
-        if to and to != here:
+        # the desks to try, in order, each with the no-refusal reminder;
+        # "other" (the general desk) is always the last resort
+        desks = [d for d in (to, "other") if d and d != here]
+        if not desks:
+            desks = ["other"]
+        for desk in dict.fromkeys(desks):
             c2 = dict(claim)
-            c2["bucket"] = to
+            c2["bucket"] = desk
             c2["secondary_bucket"] = None
             c2["_rerouted"] = True
-            v2 = _judge_once(c2, evidence)
+            v2 = _judge_once(c2, evidence, reminder=NO_REFUSAL_REMINDER)
             if isinstance(v2, dict) and not scope_refused(v2):
                 v2["rerouted_from"] = here
-                v2["rerouted_to"] = to
+                v2["rerouted_to"] = desk
                 v2.pop("wrong_desk", None)
                 # the card shows the desk that actually ruled
-                claim["bucket"] = to
+                claim["bucket"] = desk
                 claim["secondary_bucket"] = None
                 claim["rerouted_from"] = here
                 return v2
@@ -427,7 +441,15 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
     return v
 
 
-def _judge_once(claim: dict, evidence: dict) -> dict:
+NO_REFUSAL_REMINDER = (
+    "REMINDER: another desk declined this claim as outside its category. "
+    "You may NOT decline it for category. Judge it from the evidence above "
+    "as a general fact-checker would and give a truth_score unless the "
+    "claim depends on a definition, a guilt gate, or a matter of taste."
+)
+
+
+def _judge_once(claim: dict, evidence: dict, reminder: str = "") -> dict:
     bucket = claim.get("bucket", "other")
 
     # a TECHNICAL search failure still short-circuits — no judge can rule
@@ -486,6 +508,8 @@ def _judge_once(claim: dict, evidence: dict) -> dict:
     rules_part = prompt[:rub_at]            # identical for EVERY category
     rubric_part = prompt[rub_at:claim_at]   # identical within a category
     dynamic_part = prompt[claim_at:]        # this claim + its evidence
+    if reminder:
+        dynamic_part += "\n\n" + reminder
     model = pick_judge_model(claim)
 
     client = anthropic.Anthropic(api_key=api_key)

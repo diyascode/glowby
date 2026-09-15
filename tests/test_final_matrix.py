@@ -1839,7 +1839,7 @@ _v99c = _J99.parse_judge_response('{"truth_score": 8.0, "verdict_state": "suppor
 if _v99c.get("wrong_desk") != "science": fails.append("m99 wrong_desk field dropped by parser")
 _orig99 = _J99._judge_once
 _calls99 = []
-def _fake99(claim, ev):
+def _fake99(claim, ev, reminder=""):
     _calls99.append(claim["bucket"])
     if claim["bucket"] == "health":
         return {"truth_score": None, "verdict_state": "not_scoreable", "verdict": "falls outside this category's scope", "evidence_strength": "none", "key_sources": [], "why_unverifiable": "depends_on_definition"}
@@ -1851,12 +1851,23 @@ try:
     if _calls99 != ["health", "science"] or _o99["truth_score"] != 8.8 or _o99.get("rerouted_from") != "health": fails.append(f"m99 reroute: {_calls99} {_o99}")
     if _c99["bucket"] != "science" or _c99.get("rerouted_from") != "health": fails.append("m99 card must show the desk that ruled")
     _calls99.clear()
-    def _fake99b(claim, ev):
+    def _fake99b(claim, ev, reminder=""):
         _calls99.append(claim["bucket"]); return {"truth_score": None, "verdict_state": "not_scoreable", "verdict": "outside this category's scope", "evidence_strength": "none", "key_sources": [], "why_unverifiable": "no_sources_found"}
     _J99._judge_once = _fake99b
     _c99 = {"claim": "x", "bucket": "health", "secondary_bucket": "science"}
     _J99.judge_with_rubric(_c99, {})
-    if len(_calls99) != 2 or _c99["bucket"] != "health": fails.append(f"m99 must re-judge exactly once and keep the desk on a second refusal: {_calls99}")
+    # v0.65.5: a second refusal gets one last pass at the general desk; the card keeps the original desk if that fails too
+    if _calls99 != ["health", "science", "other"] or _c99["bucket"] != "health": fails.append(f"m99 desks tried: {_calls99} / card desk {_c99['bucket']}")
+    _calls99.clear()
+    def _fake99c(claim, ev, reminder=""):
+        _calls99.append((claim["bucket"], bool(reminder)))
+        if claim["bucket"] == "science": return {"truth_score": None, "verdict_state": "not_scoreable", "verdict": "not a scientific research question within this category's scope", "evidence_strength": "none", "key_sources": [], "why_unverifiable": "no_sources_found"}
+        return {"truth_score": 8.9, "verdict_state": "supported", "verdict": "ok", "evidence_strength": "strong", "key_sources": [], "why_unverifiable": None}
+    _J99._judge_once = _fake99c
+    _c99 = {"claim": "Succulents require water", "bucket": "science", "secondary_bucket": None}
+    _o99 = _J99.judge_with_rubric(_c99, {})
+    if _calls99 != [("science", False), ("other", True)] or _o99["truth_score"] != 8.9 or _c99["bucket"] != "other": fails.append(f"m99 science refusal → general desk with reminder: {_calls99} {_c99['bucket']}")
+    if "YOU NEVER DECLINE A CLAIM FOR BEING OUTSIDE YOUR CATEGORY" not in open("app/agents/judge.py").read(): fails.append("m99 fleet rule missing")
 finally:
     _J99._judge_once = _orig99
 if "Plant care, animals, gardening" not in open("app/agents/router.py").read(): fails.append("m99 router: plants/animals → science rule missing")
