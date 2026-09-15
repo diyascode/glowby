@@ -84,7 +84,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.65.1"
+VERSION = "0.65.2"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -899,6 +899,39 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             claims[i]["verifying"] = True
         _set_job(job_id, stage="judging")
         _publish_partial(job_id, result, claims)
+        # SPEED (Sept 15): the media lane (Hive frames, audio, reverse
+        # search) used to run AFTER judging — 5–15s added to the end of
+        # every check it fired on. It needs the claims (for its gate), not
+        # the verdicts, so it now runs alongside the evidence hunt and is
+        # folded in when both are done. Same work, same result, less wait.
+        _media_box = {}
+        _media_thread = None
+        if AUTHENTICITY_ENABLED:
+            def _media_lane():
+                try:
+                    _au = result.get("authenticity") or {}
+                    _go, _why = hive_detect.should_run_stage2(
+                        title=result.get("title") or "",
+                        user_question=user_question or "",
+                        claims=claims,
+                        stage1_origin=_au.get("origin_result"),
+                        on_demand=detect_ai)
+                    if _go:
+                        _media_box["authenticity"] = run_media_detection(
+                            _au,
+                            frames=None if url_key.startswith("img:") else _au_frames,
+                            extra_frames=_au_extra,
+                            image_b64=image_b64 if url_key.startswith("img:") else None,
+                            audio_b64=_audio_clip,
+                            reason=_why, allow_reverse=True,
+                            posted_date=result.get("posted_date"),
+                            person_hint=((result.get("transcript") or "") + " "
+                                         + (result.get("title") or "") + " "
+                                         + (user_question or "")))
+                except Exception:
+                    pass  # the lane must never break a check
+            _media_thread = threading.Thread(target=_media_lane, daemon=True)
+            _media_thread.start()
         if selected:
             # stagger launches ~0.3s apart: a burst of simultaneous API
             # calls can trip rate limits (the Lindsey Graham incident);
@@ -925,31 +958,13 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         result["claims"] = claims
         # STAGE 2+: the media lane — Hive frames, adaptive second pass,
         # audio, face pass, forensic second opinion, reverse search — one
-        # orchestrator (app/agents/detection.py). Gated; dormant without a
-        # HIVE key; never allowed to break a check.
-        if AUTHENTICITY_ENABLED:
-            try:
-                _au = result.get("authenticity") or {}
-                _go, _why = hive_detect.should_run_stage2(
-                    title=result.get("title") or "",
-                    user_question=user_question or "",
-                    claims=claims,
-                    stage1_origin=_au.get("origin_result"),
-                    on_demand=detect_ai)
-                if _go:
-                    result["authenticity"] = run_media_detection(
-                        _au,
-                        frames=None if url_key.startswith("img:") else _au_frames,
-                        extra_frames=_au_extra,
-                        image_b64=image_b64 if url_key.startswith("img:") else None,
-                        audio_b64=_audio_clip,
-                        reason=_why, allow_reverse=True,
-                        posted_date=result.get("posted_date"),
-                        person_hint=((result.get("transcript") or "") + " "
-                                     + (result.get("title") or "") + " "
-                                     + (user_question or "")))
-            except Exception:
-                pass  # the lane must never break a check
+        # orchestrator (app/agents/detection.py). Started above, alongside
+        # the evidence hunt; folded in here. Gated; dormant without a HIVE
+        # key; never allowed to break a check.
+        if _media_thread is not None:
+            _media_thread.join(timeout=120)
+            if _media_box.get("authenticity"):
+                result["authenticity"] = _media_box["authenticity"]
         _scam_lens_finish(result, _scam_started)
         # PROFILE-PHOTO CHECK: an uploaded photo of a person gets "where
         # else does this photo appear?" — what the WSJ sisters did by hand
