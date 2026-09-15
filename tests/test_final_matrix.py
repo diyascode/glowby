@@ -1899,6 +1899,36 @@ for _need in ("class=\"oneline\"", "messageHandlers.glowby", "Notification.reque
 if _h100.count("oneLine(rep)") < 4: fails.append("m100 the line must sit on every headline layout")
 if "def patch_result" not in open("app/storage.py").read(): fails.append("m100 patch_result missing")
 
+# 101. SPEED WITHOUT LOSS (Sept 15): the media lane runs alongside the
+# evidence hunt; Whisper starts before frames are sampled and gets a mono
+# 16 kHz file (what it listens to internally anyway — same words, ~4×
+# smaller upload). Verified on a generated clip with a stubbed Whisper.
+_m101 = open("app/main.py").read()
+for _need in ("_media_thread = threading.Thread(target=_media_lane", "_media_thread.join(timeout=120)"):
+    if _need not in _m101: fails.append(f"m101 media lane not parallel: {_need}")
+if _m101.index("_media_thread.start()") > _m101.index("ex.map(_verify_staggered"): fails.append("m101 media lane must start before judging")
+_i101 = open("app/agents/ingest.py").read()
+if '"-ac", "1", "-ar", "16000"' not in _i101 or "whisper_future = wpool.submit(_whisper_file, audio)" not in _i101: fails.append("m101 whisper-first ingest missing")
+if _i101.index("wpool.submit(_whisper_file") > _i101.index("frames = _sample_frames(vid, tmpdir, max_frames)\n    try:\n        _EXTRAS.data"): fails.append("m101 whisper must start before frame sampling")
+if 'TRANSCRIBE_MODEL = os.environ.get("GLOWBY_TRANSCRIBE_MODEL", "whisper-1")' not in _i101: fails.append("m101 transcribe model switch missing / default changed")
+import shutil as _sh101, tempfile as _tf101, subprocess as _sp101, time as _tm101
+if _sh101.which("ffmpeg"):
+    from app.agents import ingest as _ing101
+    _tmp101 = _tf101.mkdtemp(); _vid101 = _os85.path.join(_tmp101, "v.mp4")
+    _sp101.run(["ffmpeg", "-f", "lavfi", "-i", "testsrc=duration=6:size=320x240:rate=10", "-f", "lavfi", "-i", "sine=frequency=440:duration=6", "-shortest", "-y", _vid101], capture_output=True)
+    _seen101 = {}
+    _ow101, _od101 = _ing101._whisper_file, _ing101._describe_safely
+    try:
+        _ing101._whisper_file = lambda path: (_seen101.__setitem__("bytes", _os85.path.getsize(path)), _tm101.sleep(0.5), "hello world")[-1]
+        _ing101._describe_safely = lambda frames: "eyes"
+        _txt, _fr, _desc, _err = _ing101._process_video_file(_vid101, _tmp101, 6)
+        if _txt != "hello world" or _desc != "eyes" or _err is not None or len(_fr or []) != 6: fails.append(f"m101 ingest flow: {_txt} {_desc} {_err} {len(_fr or [])}")
+        _pr = _sp101.run(["ffprobe", "-v", "error", "-show_entries", "stream=channels,sample_rate", "-of", "default=nw=1", _os85.path.join(_tmp101, "audio.mp3")], capture_output=True, text=True).stdout
+        if "sample_rate=16000" not in _pr or "channels=1" not in _pr: fails.append(f"m101 audio not mono 16k: {_pr.strip()}")
+    finally:
+        _ing101._whisper_file, _ing101._describe_safely = _ow101, _od101
+        _sh101.rmtree(_tmp101, ignore_errors=True)
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 100/100 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify")
+    "FINAL MATRIX PASS: 101/101 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss")

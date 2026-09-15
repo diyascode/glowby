@@ -654,21 +654,37 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
     import subprocess
     from concurrent.futures import ThreadPoolExecutor
 
+    # SPEED (Sept 15): the ears start FIRST. The audio track is pulled
+    # out (a one-second ffmpeg job) and sent to Whisper right away, on
+    # its own thread; frame sampling and the eyes run while Whisper is
+    # busy. Before, frames were sampled, THEN audio encoded, THEN Whisper
+    # called — three waits in a row. Same audio, same model, same words.
+    #
+    # The file is mono 16 kHz at 48 kbps — exactly what Whisper listens
+    # to internally (it downmixes and resamples every upload to that), so
+    # the transcript is identical and the upload is ~4× smaller/faster.
+    audio = os.path.join(tmpdir, "audio.mp3")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", vid, "-vn", "-ac", "1", "-ar", "16000",
+             "-acodec", "libmp3lame", "-b:a", "48k", "-y", audio],
+            capture_output=True, timeout=120)
+    except Exception:
+        pass
+    audio_ok = os.path.exists(audio) and os.path.getsize(audio) > 0
+    audio_big = audio_ok and os.path.getsize(audio) > 25 * 1024 * 1024
+
+    whisper_future = None
+    if audio_ok and not audio_big:
+        wpool = ThreadPoolExecutor(max_workers=1)
+        whisper_future = wpool.submit(_whisper_file, audio)
+        wpool.shutdown(wait=False)
+
     frames = _sample_frames(vid, tmpdir, max_frames)
     try:
         _EXTRAS.data = {"audio_clip_b64": _audio_clip_b64(vid, tmpdir)}
     except Exception:
         _EXTRAS.data = {}
-
-    # audio track -> mp3
-    audio = os.path.join(tmpdir, "audio.mp3")
-    try:
-        subprocess.run(
-            ["ffmpeg", "-i", vid, "-vn", "-acodec", "libmp3lame",
-             "-q:a", "5", "-y", audio],
-            capture_output=True, timeout=120)
-    except Exception:
-        pass
 
     # eyes start looking NOW, in parallel with whatever the ears do
     vision_future = None
@@ -685,16 +701,19 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
         except Exception:
             return None
 
-    if not os.path.exists(audio) or os.path.getsize(audio) == 0:
+    if not audio_ok:
         return None, frames, _vision_result(), IngestError(
             "This video's audio could not be extracted (it may be silent).")
-    if os.path.getsize(audio) > 25 * 1024 * 1024:
+    if audio_big:
         return None, frames, _vision_result(), IngestError(
             "The audio for this video is too large to transcribe (over 25MB).")
     try:
-        text = _whisper_file(audio)
+        text = whisper_future.result(timeout=180)
     except IngestError as e:
         return None, frames, _vision_result(), e
+    except Exception as e:
+        return None, frames, _vision_result(), IngestError(
+            f"Transcription failed. (Details: {str(e)[:200]})")
     # ALWAYS take the eyes' description — a video can SPEAK one claim and
     # SHOW another (on-screen text, charts). Both must reach the router,
     # so the visual read is merged with the audio, never discarded.
@@ -712,6 +731,12 @@ def _describe_safely(frames: list):
         return None
 
 
+# whisper-1 by default. OpenAI's newer "gpt-4o-mini-transcribe" is faster
+# and scores better on word-error benchmarks; flip it with one Railway
+# variable after a side-by-side on a few real videos, never blind.
+TRANSCRIBE_MODEL = os.environ.get("GLOWBY_TRANSCRIBE_MODEL", "whisper-1")
+
+
 def _whisper_file(audio_file: str):
     """Transcribe one audio file with Whisper. None when it hears nothing."""
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -726,7 +751,7 @@ def _whisper_file(audio_file: str):
     try:
         with open(audio_file, "rb") as f:
             transcription = client.audio.transcriptions.create(
-                model="whisper-1", file=f,
+                model=TRANSCRIBE_MODEL, file=f,
                 temperature=0)  # deterministic: same audio -> same text
     except Exception as e:
         raise IngestError(f"Transcription failed. (Details: {str(e)[:200]})")
