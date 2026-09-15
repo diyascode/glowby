@@ -403,6 +403,7 @@ html.light #qOpen .qx{background:rgba(0,0,0,.06)}
 .fb-thanks{font-size:12.5px;color:#4ade80;margin-top:8px} .fb-thanks span{color:var(--muted)}
 .fb-note{display:flex;gap:6px;max-width:480px;margin:8px auto 0}
 .fb-thanks.fb-err{color:var(--bad)}
+.linkbtn{background:none;border:none;padding:0;margin:0;color:var(--brand);font:inherit;font-size:inherit;text-decoration:underline;cursor:pointer}
 .fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
 .fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .hl-meta{font-size:12px;color:var(--muted);margin-top:6px}
@@ -639,7 +640,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.65.8 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.65.9 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -951,7 +952,7 @@ function renderList(d){
     html+='<div class="privnote">\ud83d\udd12 Private AI check \u00b7 not stored \u00b7 not shareable \u00b7 never in Trending</div>';
   }
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
-  if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <a href="#" id="recheck" style="color:var(--brand)">Re-check this video</a></div>';
+  if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory. <button type="button" id="recheck" class="linkbtn">Re-check this video</button></div>';
   const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
   const fullTitle=String(d.title||'');
   const shortTitle=(fullTitle.length>90)?(fullTitle.slice(0,90).trim()+'\u2026'):fullTitle;
@@ -1406,7 +1407,7 @@ function render(){
   };
   const rc=$('recheck');
   if(rc)rc.onclick=async(e)=>{
-    e.preventDefault();
+    if(e&&e.preventDefault)e.preventDefault();
     // first tap arms it, second tap runs it (in-page, no confirm popup)
     if(!rc.dataset.armed){rc.dataset.armed='1';const was=rc.textContent;rc.textContent='Tap again to re-run the full check (replaces the stored result)';
       setTimeout(()=>{if(rc.dataset.armed){delete rc.dataset.armed;rc.textContent=was;}},8000);return;}
@@ -1932,6 +1933,25 @@ if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceW
   var isApp = /[?&]app=1(&|$)/.test(location.search) || embedded;
   if(!isApp) return;
   document.documentElement.classList.add('appmode','has-tabbar');
+
+  // NEW-TAB LINKS (Sept 15): inside the app's web view a target="_blank"
+  // link is silently dropped unless the shell handles it — "what's sent",
+  // every source link under every claim, "open the original video" were
+  // all dead taps. Now: the shell is asked to open outside sites in Safari
+  // (v4.4+); shells that can't get the link loaded in place instead, and
+  // the swipe-back gesture returns to the result.
+  document.addEventListener('click', function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[target="_blank"]') : null;
+    if(!a || !a.href) return;
+    ev.preventDefault();
+    var external = a.host && a.host !== location.host;
+    var handled = false;
+    try{
+      var mh = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glowby;
+      if(mh && external && window.__glowbyShellOpens){ mh.postMessage({type:'open', url:a.href}); handled = true; }
+    }catch(e){}
+    if(!handled) location.href = a.href;
+  }, true);
 
   // 2.1a CRASH FIX: in the app, image upload is PHOTO-LIBRARY ONLY.
   // A multi-select image input never offers "Take Photo" on iOS (a camera
