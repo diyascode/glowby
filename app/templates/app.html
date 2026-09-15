@@ -644,7 +644,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.66.1 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.66.2 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -957,7 +957,7 @@ function renderList(d){
   }
   if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
   if(d.cached){const fc=d.first_checked_at?new Date(String(d.first_checked_at).slice(0,10)+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
-    html+='<div class="meta">\u26a1 Instant'+(fc?' \u00b7 checked '+esc(fc):'')+' \u00b7 <button type="button" id="recheck" class="linkbtn">Re-check</button></div>';}
+    html+='<div class="meta">\u26a1 Saved result'+(fc?' from '+esc(fc):'')+' \u00b7 <button type="button" id="recheck" class="linkbtn">Re-check</button></div>';}
   // SOURCE LINE (Sept 15, Diya): one obvious button to open the reel, one
   // short line of facts. The long caption moves behind "full caption".
   const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
