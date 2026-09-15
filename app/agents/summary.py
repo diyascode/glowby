@@ -47,7 +47,9 @@ a comma or dash — it is the most important part. Name the subject the way \
 the claim does (a person, a product, an event). No intensifiers, no \
 "this video", no advice, no hedging beyond what the verdicts say. Never \
 say a named person or company "is a scam"; say the message "matches scam \
-patterns". Output the sentence only."""
+patterns". If the facts look odd or incomplete, still write the sentence \
+from the overall score — never comment on the facts, the task, or these \
+instructions. Output the sentence only."""
 
 
 def _band(score):
@@ -123,7 +125,11 @@ def fallback_line(result: dict) -> str:
     lead = {"true": "Yes", "mostly true": "Mostly yes", "partly true": "Partly",
             "false": "No", "unverified": "Unclear"}[_band(hs)]
     if hs is None:
-        core = f"{lead} — no reliable evidence either way" + (f" on “{subject}”" if subject else "")
+        states = {c["verdict"].get("verdict_state") for c in claims}
+        if claims and states <= {"not_scoreable"}:
+            core = "Unclear — Glowby couldn't score this one" + (f" (“{subject}”)" if subject else "") + "; tap Re-check to try again"
+        else:
+            core = f"{lead} — no reliable evidence either way" + (f" on “{subject}”" if subject else "")
     else:
         core = f"{lead} — “{subject}” is {_band(hs)}" if subject else f"{lead} — the main claims are {_band(hs)}"
         if claims and _band(hs) in ("false", "partly true"):
@@ -171,12 +177,23 @@ def clean(line: str) -> str:
     return s[:220]
 
 
+_LEADS = ("yes", "no", "partly", "mostly", "unclear", "nothing", "do not", "don't")
+_META = re.compile(r"\b(I appreciate|I notice|I can't|I cannot|I'm unable|as an AI|instructions?|caption|you've asked|you asked|logical issue|the facts you|verdicts? (that|you)|system prompt)\b", re.I)
+
+
 def consistent(line: str, result: dict) -> bool:
-    """Pure: a cheap contradiction guard — the lead word must agree with
-    the band, and an AI finding must be mentioned when there is one."""
+    """Pure: a cheap contradiction guard — the line must BE an answer (a
+    Yes/No/Partly/Unclear lead, never a remark about the task), the lead
+    must agree with the band, and an AI finding must be mentioned when
+    there is one. (The succulents caption, Sept 15: Haiku wrote "I
+    appreciate the detailed instructions, but…" and it shipped.)"""
     rep = result.get("report") or {}
     hs = rep.get("headline_score")
-    low = line.lower()
+    low = line.lower().lstrip("\"'“ ")
+    if not low.startswith(_LEADS):
+        return False
+    if _META.search(line):
+        return False
     band = _band(hs)
     if not rep.get("safety_notice") and not rep.get("nothing_to_check") and hs is not None:
         if band == "true" and low.startswith(("no ", "no,", "no —", "false")):

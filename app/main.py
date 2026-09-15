@@ -84,7 +84,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.65.3"
+VERSION = "0.65.4"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1374,8 +1374,14 @@ def _ensure_one_line(result: dict, save_key: str = None) -> None:
     time they are opened. ~0.2¢, never fatal."""
     try:
         rep = result.get("report")
-        if not isinstance(rep, dict) or rep.get("one_line"):
+        if not isinstance(rep, dict):
             return
+        if rep.get("one_line"):
+            # a stored line that is not an answer (the model remarked on
+            # its instructions once, Sept 15) gets rewritten on next read
+            from app.agents.summary import consistent as _ok_line
+            if _ok_line(rep["one_line"], result):
+                return
         rep["one_line"] = _one_line(result)
         add_usage(0.002)
         if save_key:

@@ -728,7 +728,10 @@ _SCOPE_REFUSAL_RE = re.compile(
     r"(outside (this|the|my) (category|rubric|desk)|this category.s scope|"
     r"falls outside|not (a|an) (health|medical|political|legal|economic|"
     r"business|technology|science|sports|entertainment|historical) claim|"
-    r"wrong (category|desk)|not within (this|my) (category|scope))", re.I)
+    r"not (a|an) [^.;]{0,60}?\b(health|medical|political|legal|economic|business|"
+    r"technology|science|scientific|sports|entertainment|historical) (or [a-z]+ )?claim|"
+    r"wrong (category|desk)|not within (this|my) (category|scope)|"
+    r"(horticultur|gardening|plant[- ]care)[^.;]{0,80}?\bnot (a|an) )", re.I)
 
 
 def scope_refused(verdict: dict) -> bool:

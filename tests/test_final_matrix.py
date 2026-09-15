@@ -1929,6 +1929,24 @@ if _sh101.which("ffmpeg"):
         _ing101._whisper_file, _ing101._describe_safely = _ow101, _od101
         _sh101.rmtree(_tmp101, ignore_errors=True)
 
+# 102. NO NATIVE POPUPS + CAPTION GUARD (Sept 15): inside the iPhone app's
+# web view, confirm() answers "no" and prompt() returns null silently —
+# Re-check and "Score is wrong" were dead there. Every dialog is in-page
+# now. And a caption that is a remark about the task, not an answer, is
+# rejected and rewritten on the next read.
+import re as _re102
+_h102 = open("app/templates/app.html").read()
+_dl = [l for l in _h102.split("\n") if _re102.search(r"(?<![\w.])(alert|confirm|prompt)\(", l) and not l.strip().startswith("//")]
+if _dl: fails.append(f"m102 native dialogs remain: {len(_dl)}")
+for _need in ("function inlineAsk", "rc.dataset.armed", "inlineAsk(row,'What looks wrong?", "function showCopyBox"):
+    if _need not in _h102: fails.append(f"m102 in-page replacement missing: {_need}")
+from app.agents.summary import consistent as _cons102
+_r102 = {"report": {"headline_score": None, "headline_state": "unverified"}}
+if _cons102("I appreciate the detailed instructions, but I notice there's a logical issue: you've asked me to caption a verdict.", _r102): fails.append("m102 meta caption accepted")
+if not _cons102("Unclear — no reliable evidence either way on this claim.", _r102): fails.append("m102 honest unclear line rejected")
+if "if _ok_line(rep[\"one_line\"], result):" not in open("app/main.py").read(): fails.append("m102 stored bad captions not rewritten on read")
+if "runJavaScriptConfirmPanelWithMessage" not in open("/home/claude/ios/ContentView.swift").read() if _os85.path.exists("/home/claude/ios/ContentView.swift") else False: fails.append("m102 shell lacks dialog delegate")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 101/101 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss")
+    "FINAL MATRIX PASS: 102/102 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups")
