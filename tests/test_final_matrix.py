@@ -863,7 +863,7 @@ if "def visitor_monthly" not in _s64 or "monthly_visitors" not in _s64:
 if "d.day::date::text" not in _s64: fails.append("m64 daily series still returns timestamps")
 if "def q(sql, params=None):" not in _s64: fails.append("m64 quality_stats not fault-isolated")
 _m64 = open("app/main.py").read()
-if 'f"{salt}:month:{month}:{ip}"' not in _m64: fails.append("m64 monthly hash not salted per month")
+if 'f"{salt}:month:{month}:{vid}"' not in _m64: fails.append("m64 monthly hash not salted per month")
 _a64 = open("app/templates/admin.html").read()
 if "String(d).slice(0,10)" not in _a64: fails.append("m64 fmtDay still NaN-prone")
 if "Visitors this month" not in _a64: fails.append("m64 monthly tile missing")
@@ -2025,6 +2025,37 @@ _h105 = open("app/templates/app.html").read()
 for _need in ('class="openreel"', "Watch the reel", "class=\"srcline\""):
     if _need not in _h105: fails.append(f"m105 source line missing: {_need}")
 
+# 106. HEADCOUNT WITHOUT CRAWLERS (Sept 16, Inderpreet: "get rid of those
+# crawlers"): visitors are counted by the page's beacon, not by whoever
+# fetches "/". A random device code (no IP) is the unit; bot user-agents
+# and malformed codes are refused; the page routes count nothing.
+_vid106 = "a" * 32
+_calls106 = []
+_orig106 = (m.record_visitor, m.record_visitor_month)
+m.record_visitor = lambda h: _calls106.append(("day", h))
+m.record_visitor_month = lambda h: _calls106.append(("month", h))
+try:
+    if not m._count_visitor(_vid106, "Mozilla/5.0 (iPhone) AppleWebKit"): fails.append("m106 a real browser must count")
+    for _ua in ("Googlebot/2.1", "facebookexternalhit/1.1", "Slackbot-LinkExpanding", "UptimeRobot/2.0 monitor", "python-requests/2.31", "HeadlessChrome"):
+        if m._count_visitor(_vid106, _ua): fails.append(f"m106 counted a bot: {_ua}")
+    for _bad in ("", "short", "A" * 32, "z" * 32, "a" * 31):
+        if m._count_visitor(_bad, "Mozilla/5.0"): fails.append(f"m106 counted a malformed code: {_bad!r}")
+    time.sleep(0.2)
+    _hs106 = [h for _, h in _calls106]
+    if len(_hs106) != 2 or _vid106 in _hs106[0] or len(set(_hs106)) != 2: fails.append(f"m106 hashes: {_calls106}")
+finally:
+    m.record_visitor, m.record_visitor_month = _orig106
+_src106 = open("app/main.py").read()
+for _route in ('def home(request: Request)', 'def checker(request: Request)', 'def permalink_page(key: str, request: Request)'):
+    _body = _src106[_src106.index(_route):_src106.index("return _page()", _src106.index(_route))]
+    if "_count_visitor" in _body: fails.append(f"m106 server-side counting still on: {_route}")
+if '@app.post("/api/visit")' not in _src106: fails.append("m106 beacon route missing")
+_h106 = open("app/templates/app.html").read()
+for _need in ("gbVid", "fetch('/api/visit'", "crypto.getRandomValues"):
+    if _need not in _h106: fails.append(f"m106 page beacon missing: {_need}")
+if "unique devices" not in open("app/templates/admin.html").read(): fails.append("m106 admin tile still says people")
+if "random code that stays on your device" not in open("app/templates/trust.html").read(): fails.append("m106 trust page not updated")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 105/105 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band")
+    "FINAL MATRIX PASS: 106/106 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers")

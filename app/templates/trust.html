@@ -488,12 +488,15 @@
   design — that's what share links are.</p>
   <p><b>IP addresses</b> are used in memory for rate limiting (stopping abuse)
   and are not stored with results.</p>
-  <p><b>Visitor counting:</b> Glowby counts how many people visit using
-  one-way scrambled codes: one that changes every day (a daily headcount)
-  and one that changes every calendar month (so a person is counted once
-  per month, not once per visit). No IP addresses are stored, the codes
-  cannot be reversed, and the same visitor cannot be recognized across
-  months — it is a headcount, not tracking.</p>
+  <p><b>Visitor counting:</b> Glowby counts how many devices visit. Your
+  browser makes a random code that stays on your device (it has no name,
+  email, or IP address in it); the server scrambles that code one-way with
+  the date — one version that changes every day (a daily headcount) and
+  one that changes every calendar month (so a device is counted once per
+  month, not once per visit). Nothing identifying is stored, the codes
+  cannot be reversed, and the same device cannot be recognized across
+  months — it is a headcount, not tracking. Clearing your browser data
+  resets the code.</p>
   <p><b>Services Glowby relies on</b> (each receives only what's needed to do
   its job): Anthropic (AI analysis of transcripts, video frames, and
   evidence), OpenAI (transcription of audio from videos without captions),

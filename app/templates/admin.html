@@ -612,12 +612,12 @@ function render(d){
   const barCls = pct >= 90 ? "crit" : pct >= 60 ? "hot" : "";
 
   $("tiles").innerHTML =
-    tile("Visitors today", t.visitors ?? 0, "unique people (anonymous count)") +
+    tile("Visitors today", t.visitors ?? 0, "unique devices · bots & link previews excluded") +
     (() => {
       const mo = d.visitors_monthly || [];
       const thisMo = mo.length ? mo[0].unique : 0;
       const grand = mo.reduce((a, x) => a + (x.unique || 0), 0);
-      return tile("Visitors this month", thisMo, "unique people (one count per person per month)") +
+      return tile("Visitors this month", thisMo, "unique devices (one count per device per month)") +
              tile("Visitors all-time", grand || (d.visitors_total ?? 0), grand ? "sum of monthly uniques" : "daily counts added up (monthly count starts today)");
     })() +
     tile("Total checks", d.total_checks ?? 0, "all-time, fresh checks run") +

@@ -84,7 +84,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.3"
+VERSION = "0.66.4"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1058,14 +1058,12 @@ _index_cache = None
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request) -> str:
     """One unified page — the glowing checker IS the front door."""
-    _count_visitor(request)
-    return _page()
+    return _page()  # visitors are counted by the page's beacon (v0.66.4)
 
 
 @app.get("/app", response_class=HTMLResponse)
 def checker(request: Request) -> str:
     """The checker itself; ?u=<link> arrives prefilled from the landing."""
-    _count_visitor(request)
     return _page()
 
 
@@ -1113,7 +1111,6 @@ def about() -> str:
 @app.get("/r/{key:path}", response_class=HTMLResponse)
 def permalink_page(key: str, request: Request) -> str:
     # same single-page app; its JS loads /api/result/<key>
-    _count_visitor(request)
     return _page()
 
 
@@ -1625,25 +1622,51 @@ def api_admin_login(req: AdminLogin):
 
 
 # ---- privacy-first visitor counting ----
-# The hash mixes the date in, so the same person hashes differently
-# every day: daily counts exist, cross-day tracking is impossible,
-# and no raw IPs are ever stored.
+# v0.66.4: counted from the PAGE, not the server. Crawlers, link-preview
+# fetchers (iMessage/Slack unfurls), uptime pings and App Review's servers
+# all load "/" but never run the page's script, so they no longer count.
+# The page sends an anonymous random device code (made on the device,
+# stored only there, no personal info); the server hashes it with the date
+# so daily counts exist, cross-day tracking is impossible, and nothing
+# that identifies a device is stored. IP addresses are no longer used for
+# counting at all — a phone on cellular used to count 2-3× a day as the
+# carrier rotated its address, and a whole household on one Wi-Fi
+# counted as one person.
+
+_BOT_UA = re.compile(r"bot|crawl|spider|slurp|preview|facebookexternalhit|"
+                     r"whatsapp|telegram|discord|skype|slack|twitterbot|"
+                     r"headless|python-requests|curl/|wget/|monitor|uptime",
+                     re.I)
+_VID_RE = re.compile(r"^[a-f0-9]{32}$")
 
 
-def _count_visitor(request) -> None:
+class Visit(BaseModel):
+    vid: str = ""
+
+
+def _count_visitor(vid: str, user_agent: str = "") -> bool:
+    """Pure-ish: True when the visit was counted."""
+    if not _VID_RE.match(vid or "") or _BOT_UA.search(user_agent or ""):
+        return False
     try:
-        ip = _client_ip(request)
         day = time.strftime("%Y-%m-%d")
         salt = ADMIN_KEY or "glowby"
-        vh = hashlib.sha256(f"{salt}:{day}:{ip}".encode()).hexdigest()[:32]
+        vh = hashlib.sha256(f"{salt}:{day}:{vid}".encode()).hexdigest()[:32]
         threading.Thread(target=record_visitor, args=(vh,), daemon=True).start()
-        # monthly code: one count per person per calendar month, never
-        # linkable across months (different salt input), no IP stored
+        # monthly code: one count per device per calendar month, never
+        # linkable across months (different salt input)
         month = time.strftime("%Y-%m")
-        mh = hashlib.sha256(f"{salt}:month:{month}:{ip}".encode()).hexdigest()[:32]
+        mh = hashlib.sha256(f"{salt}:month:{month}:{vid}".encode()).hexdigest()[:32]
         threading.Thread(target=record_visitor_month, args=(mh,), daemon=True).start()
+        return True
     except Exception:
-        pass
+        return False
+
+
+@app.post("/api/visit")
+def api_visit(v: Visit, request: Request):
+    """The page's headcount beacon. Anonymous; nothing about who is stored."""
+    return {"ok": _count_visitor(v.vid, request.headers.get("user-agent", ""))}
 
 
 class ScoreFeedback(BaseModel):
