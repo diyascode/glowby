@@ -241,6 +241,22 @@ def _get_conn():
                 )
                 """
             )
+            # v0.66.6: per-day speed counters (see add_video_timing);
+            # created here so every daily query can rely on the columns
+            try:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_usage (
+                        day DATE PRIMARY KEY,
+                        checks INTEGER NOT NULL DEFAULT 0,
+                        est_cost NUMERIC NOT NULL DEFAULT 0
+                    )
+                    """
+                )
+                cur.execute("ALTER TABLE daily_usage ADD COLUMN IF NOT EXISTS video_checks INTEGER NOT NULL DEFAULT 0")
+                cur.execute("ALTER TABLE daily_usage ADD COLUMN IF NOT EXISTS video_seconds DOUBLE PRECISION NOT NULL DEFAULT 0")
+            except Exception:
+                pass
         return _conn
     except Exception:
         _conn = None
@@ -542,11 +558,27 @@ def quality_stats() -> dict:
           "FROM checks GROUP BY 1 ORDER BY 2 DESC")
     if r is not None:
         out["verdict_distribution"] = {(x[0] or "unknown"): x[1] for x in r}
-    r = q("SELECT round(avg((result->'timings'->>'total_s')::float)::numeric, 1) "
+    # v0.66.5: the average is over the LAST 7 DAYS, not all-time (an
+    # all-time number can never show a speed-up), and it is split by
+    # stage so the slow part is visible: fetch (download + transcribe),
+    # route (claim split), verify (evidence + judges).
+    r = q("SELECT round(avg((result->'timings'->>'total_s')::float)::numeric, 1), "
+          "round(avg((result->'timings'->>'fetch_s')::float)::numeric, 1), "
+          "round(avg((result->'timings'->>'route_s')::float)::numeric, 1), "
+          "round(avg((result->'timings'->>'verify_s')::float)::numeric, 1), "
+          "count(*), "
+          "round(percentile_cont(0.5) WITHIN GROUP (ORDER BY (result->'timings'->>'total_s')::float)::numeric, 1) "
           "FROM checks WHERE result->'timings'->>'total_s' IS NOT NULL "
-          "AND result->>'transcript_source' IS DISTINCT FROM 'typed'")
-    if r:
+          "AND result->>'transcript_source' IS DISTINCT FROM 'typed' "
+          "AND created_at > now() - interval '7 days'")
+    if r and r[0][4]:
         out["avg_check_seconds"] = float(r[0][0]) if r[0][0] is not None else None
+        out["avg_stages"] = {"fetch_s": r[0][1] and float(r[0][1]), "route_s": r[0][2] and float(r[0][2]),
+                             "verify_s": r[0][3] and float(r[0][3]), "n": int(r[0][4]),
+                             "median_s": r[0][5] and float(r[0][5])}
+    else:
+        out["avg_check_seconds"] = None
+        out["avg_stages"] = {"n": 0}
     r = q("SELECT status, count(*) FROM mistake_reports GROUP BY 1")
     if r is not None:
         out["reports_by_status"] = {x[0]: x[1] for x in r}
@@ -585,6 +617,57 @@ def add_usage(est_cost: float) -> None:
         pass
 
 
+def add_video_timing(seconds: float) -> None:
+    """v0.66.6: remember how long one fresh VIDEO check took, per day.
+    Lives in daily_usage (two extra columns) so the per-day average
+    survives re-checks and cache expiry — the checks table only keeps
+    the latest result per link. No-ops on failure."""
+    conn = _get_conn()
+    if conn is None or seconds is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE daily_usage ADD COLUMN IF NOT EXISTS video_checks INTEGER NOT NULL DEFAULT 0")
+            cur.execute("ALTER TABLE daily_usage ADD COLUMN IF NOT EXISTS video_seconds DOUBLE PRECISION NOT NULL DEFAULT 0")
+            cur.execute(
+                "INSERT INTO daily_usage (day, checks, est_cost, video_checks, video_seconds) "
+                "VALUES (CURRENT_DATE, 0, 0, 1, %s) "
+                "ON CONFLICT (day) DO UPDATE SET "
+                "video_checks = daily_usage.video_checks + 1, "
+                "video_seconds = daily_usage.video_seconds + EXCLUDED.video_seconds",
+                (float(seconds),),
+            )
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+# per-day speed for days BEFORE the counters existed: the average over
+# whatever results from that day are still stored (approximate — a
+# re-checked link moves to its re-check day)
+_STORED_DAY_SPEED = """
+  SELECT created_at::date AS day,
+         avg((result->'timings'->>'total_s')::float) AS avg_s,
+         count(*) AS n
+  FROM checks
+  WHERE result->'timings'->>'total_s' IS NOT NULL
+    AND result->>'transcript_source' IS DISTINCT FROM 'typed'
+  GROUP BY 1
+"""
+
+
+def _speed_cols(alias_u="u", alias_t="t") -> str:
+    """avg video seconds for a day: the live counters when present,
+    else the stored-results estimate."""
+    return (f"CASE WHEN COALESCE({alias_u}.video_checks, 0) > 0 "
+            f"THEN {alias_u}.video_seconds / {alias_u}.video_checks "
+            f"ELSE {alias_t}.avg_s END, "
+            f"CASE WHEN COALESCE({alias_u}.video_checks, 0) > 0 "
+            f"THEN {alias_u}.video_checks ELSE COALESCE({alias_t}.n, 0) END")
+
+
 def daily_usage_series(days: int = 14) -> list:
     """Fresh checks + est cost per day, oldest first. [] on failure."""
     conn = _get_conn()
@@ -595,20 +678,48 @@ def daily_usage_series(days: int = 14) -> list:
             cur.execute(
                 """
                 SELECT d.day::date::text, COALESCE(u.checks, 0),
-                       COALESCE(u.est_cost, 0)
+                       COALESCE(u.est_cost, 0), """ + _speed_cols() + """
                 FROM generate_series(
                     CURRENT_DATE - %s::int + 1, CURRENT_DATE, '1 day'
                 ) AS d(day)
                 LEFT JOIN daily_usage u ON u.day = d.day
+                LEFT JOIN (""" + _STORED_DAY_SPEED + """) t ON t.day = d.day
                 ORDER BY d.day
                 """,
                 (days,),
             )
             rows = cur.fetchall()
-        return [{"day": r[0], "checks": r[1], "est_cost": float(r[2])}
-                for r in rows]
+        return [_day_row(r) for r in rows]
     except Exception:
-        return []
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        # columns missing (first boot after upgrade): plain series
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT d.day::date::text, COALESCE(u.checks, 0), COALESCE(u.est_cost, 0)
+                    FROM generate_series(CURRENT_DATE - %s::int + 1, CURRENT_DATE, '1 day') AS d(day)
+                    LEFT JOIN daily_usage u ON u.day = d.day ORDER BY d.day
+                    """, (days,))
+                return [_day_row(r) for r in cur.fetchall()]
+        except Exception:
+            return []
+
+
+def _day_row(r) -> dict:
+    """(day, checks, est_cost[, avg_s, video_n]) -> admin row with the
+    two per-day averages the founder asked for (Sept 17)."""
+    checks = int(r[1] or 0)
+    cost = float(r[2] or 0)
+    avg_s = r[3] if len(r) > 3 else None
+    n_video = int(r[4] or 0) if len(r) > 4 else 0
+    return {"day": r[0], "checks": checks, "est_cost": cost,
+            "avg_seconds": round(float(avg_s), 1) if avg_s is not None else None,
+            "video_checks": n_video,
+            "avg_cost": round(cost / checks, 4) if checks else None}
 
 
 def admin_recent_checks(limit: int = 25) -> list:
@@ -843,16 +954,21 @@ def month_calendar(month: str) -> list:
                 ),
                 v AS (SELECT day, count(*) AS visitors FROM daily_visitors GROUP BY day)
                 SELECT d.day::text, COALESCE(v.visitors, 0),
-                       COALESCE(u.checks, 0), COALESCE(u.est_cost, 0)
+                       COALESCE(u.checks, 0), COALESCE(u.est_cost, 0), """ + _speed_cols() + """
                 FROM days d
                 LEFT JOIN v ON v.day = d.day
                 LEFT JOIN daily_usage u ON u.day = d.day
+                LEFT JOIN (""" + _STORED_DAY_SPEED + """) t ON t.day = d.day
                 ORDER BY d.day
                 """,
                 (month, month),
             )
-            return [{"day": r[0], "visitors": int(r[1]), "checks": int(r[2]),
-                     "est_cost": float(r[3])} for r in cur.fetchall()]
+            out = []
+            for r in cur.fetchall():
+                row = _day_row((r[0], r[2], r[3], r[4], r[5]))
+                row["visitors"] = int(r[1])
+                out.append(row)
+            return out
     except Exception:
         try:
             conn.rollback()
@@ -877,6 +993,16 @@ def day_detail(day: str) -> dict:
             r = cur.fetchone()
             if r:
                 out["checks"], out["est_cost"] = int(r[0]), float(r[1])
+                out["avg_cost"] = round(out["est_cost"] / out["checks"], 4) if out["checks"] else None
+            try:
+                cur.execute("SELECT " + _speed_cols() + " FROM daily_usage u "
+                            "LEFT JOIN (" + _STORED_DAY_SPEED + ") t ON t.day = u.day "
+                            "WHERE u.day = %s::date", (day,))
+                r = cur.fetchone()
+                if r and r[0] is not None:
+                    out["avg_seconds"], out["video_checks"] = round(float(r[0]), 1), int(r[1] or 0)
+            except Exception:
+                conn.rollback()
             cur.execute("SELECT kind, count FROM daily_events WHERE day = %s::date", (day,))
             out["events"] = {r[0]: int(r[1]) for r in cur.fetchall()}
             try:

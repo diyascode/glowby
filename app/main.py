@@ -47,6 +47,7 @@ from app.agents.router import (
 )
 from app.storage import (
     add_usage,
+    add_video_timing,
     admin_recent_checks,
     cache_available,
     canonical_key,
@@ -84,7 +85,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.4"
+VERSION = "0.66.6"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1022,6 +1023,8 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         with _fresh_lock:
             result["fresh_reason"] = _fresh_reasons.pop(job_id, None) or "first check"
         _ensure_one_line(result)
+        if result.get("transcript_source") != "typed":
+            threading.Thread(target=add_video_timing, args=(result["timings"]["total_s"],), daemon=True).start()
         save_result(url_key, url, result)
         # "+ask": the check is DONE — now answer the user's question FROM
         # the completed analysis (attached after save, so the shared cache
@@ -2272,6 +2275,14 @@ def api_admin_stats(key: str = ""):
     return stats
 
 
+def _ev_brave_on() -> bool:
+    try:
+        from app.agents import evidence as _ev
+        return bool(_ev.brave_available())
+    except Exception:
+        return False
+
+
 @app.get("/api/admin/dashboard")
 def api_admin_dashboard(key: str = ""):
     """Everything the /admin page needs in one call."""
@@ -2295,6 +2306,9 @@ def api_admin_dashboard(key: str = ""):
         "visitors_monthly": visitor_monthly(),
         "total_checks": total_fresh_checks(),
         "cache_ttl_days": CACHE_TTL_DAYS,
+        # v0.66.5: which evidence hunt is live. Brave = ~2-4s per claim;
+        # Claude's built-in web search = ~10-20s per claim (the slow path).
+        "evidence_backend": ("brave" if _ev_brave_on() else "claude_web_search"),
         "events": event_stats(),
         "stats": quality_stats(),
         "daily": daily,

@@ -91,7 +91,7 @@ a{color:var(--brand);text-decoration:none}
 .cal .day.empty{visibility:hidden}
 .cal .day .n{font-size:12px;color:var(--muted,#8a86a3)}
 .cal .day .v{font-size:13px;font-weight:600;margin-top:4px}
-.cal .day .c{font-size:11px;color:var(--muted,#8a86a3)}
+.cal .day .c{font-size:11px;color:var(--muted,#8a86a3);line-height:1.35}
 .cal .day .heat{position:absolute;left:6px;right:6px;bottom:4px;height:3px;border-radius:2px;background:#8a7cff;opacity:.85}
 .daydetail{margin-top:14px}
 .daydetail .row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px}
@@ -154,6 +154,15 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     <div class="card">
       <h2>Fresh checks — last 14 days</h2>
       <div id="chartWrap"></div>
+    </div>
+
+    <div class="card">
+      <h2>Speed &amp; cost per day — last 14 days</h2>
+      <div class="s" style="margin:-4px 0 8px">Average video check time (seconds) and average cost per fresh check, each day. Hover a bar for the numbers.</div>
+      <div class="s" style="margin-bottom:2px">Avg video check · seconds</div>
+      <div id="speedWrap"></div>
+      <div class="s" style="margin:10px 0 2px">Avg cost per check · cents</div>
+      <div id="costWrap"></div>
     </div>
 
     <div class="card">
@@ -291,7 +300,7 @@ async function loadCalendar(month){
     const n = +x.day.slice(8,10);
     const heat = Math.round(x.visitors / maxV * 100);
     h += `<button type="button" class="day${x.day===today?' today':''}" data-day="${x.day}">` +
-         `<div class="n">${n}</div><div class="v">${x.visitors}</div><div class="c">${x.checks} chk · $${x.est_cost.toFixed(2)}</div>` +
+         `<div class="n">${n}</div><div class="v">${x.visitors}</div><div class="c">${x.checks} chk · $${x.est_cost.toFixed(2)}${x.avg_seconds != null ? " · " + Math.round(x.avg_seconds) + "s" : ""}${x.avg_cost != null ? " · " + (x.avg_cost*100).toFixed(1) + "¢/chk" : ""}</div>` +
          (x.visitors ? `<div class="heat" style="width:${Math.max(8,heat)}%"></div>` : "") + `</button>`;
   });
   el.innerHTML = h;
@@ -301,7 +310,7 @@ async function loadCalendar(month){
   });
   $("calPrev").onclick = () => { window.__calMonth = shiftMonth(month, -1); loadCalendar(window.__calMonth); };
   $("calNext").onclick = () => { window.__calMonth = shiftMonth(month, +1); loadCalendar(window.__calMonth); };
-  const dd = $("dayDetail"); if (dd && !dd.innerHTML) dd.innerHTML = '<div class="empty">Tap a day to see its unique visitors, fresh checks, spend, and what was checked.</div>';
+  const dd = $("dayDetail"); if (dd && !dd.innerHTML) dd.innerHTML = '<div class="empty">Tap a day to see its unique visitors, fresh checks, spend, average check time and cost, and what was checked.</div>';
 }
 function shiftMonth(m, delta){
   const d = new Date(m + "-01T00:00:00"); d.setMonth(d.getMonth() + delta);
@@ -563,6 +572,8 @@ async function loadDay(day){
   let h = `<div class="row"><div><b>${d.visitors}</b><br><span>unique visitors</span></div>` +
           `<div><b>${d.checks}</b><br><span>fresh checks</span></div>` +
           `<div><b>$${(d.est_cost||0).toFixed(2)}</b><br><span>est. spend</span></div>` +
+          `<div><b>${d.avg_seconds != null ? d.avg_seconds + "s" : "—"}</b><br><span>avg video check${d.video_checks ? " (" + d.video_checks + ")" : ""}</span></div>` +
+          `<div><b>${d.avg_cost != null ? (d.avg_cost*100).toFixed(1) + "¢" : "—"}</b><br><span>avg cost per check</span></div>` +
           `<div><b>${(ev.copy_result||0)+(ev.copy_link||0)+(ev.share||0)}</b><br><span>results shared/copied</span></div></div>`;
   const fb = d.feedback || {};
   if ((fb.fair||0)+(fb.harsh||0)+(fb.wrong||0))
@@ -628,7 +639,13 @@ function render(d){
       `<div class="budget"><i class="${barCls}" style="width:${pct}%"></i></div></div>` +
     tile("Checks stored", s.checks_stored ?? 0, "all-time, cached + shareable") +
     tile("Total views", s.total_views ?? 0, "incl. cache hits + share links") +
-    tile("Avg video check", s.avg_check_seconds != null ? s.avg_check_seconds + "s" : "—", "videos only — no typed, no cached") +
+    (() => {
+      const st = s.avg_stages || {};
+      const sub = st.n ? `last 7 days · ${st.n} checks · median ${st.median_s}s · fetch ${st.fetch_s}s / claims ${st.route_s}s / verify ${st.verify_s}s` : "no fresh video checks in the last 7 days";
+      const slow = d.evidence_backend === "claude_web_search";
+      return tile("Avg video check", s.avg_check_seconds != null ? s.avg_check_seconds + "s" : "—",
+                  sub + (slow ? " · evidence: Claude web search (slow — add BRAVE_SEARCH_KEY)" : " · evidence: Brave"), slow ? "warn" : undefined);
+    })() +
     (() => {
       const views = s.total_views ?? 0, stored = s.checks_stored ?? 0;
       const hitPct = views > 0 ? Math.round((views - stored) / views * 100) : 0;
@@ -652,6 +669,27 @@ function render(d){
       labs += `<span>${fmtDay(x.day)}</span>`;
     });
     $("chartWrap").innerHTML = bars + "</div>" + labs + "</div>";
+  }
+
+  // ---- speed & cost per day (v0.66.6) ----
+  function miniBars(rows, get, fmt, color){
+    const vals = rows.map(get);
+    const max = Math.max(1e-9, ...vals.filter(v => v != null));
+    let bars = '<div class="chart" style="height:110px">', labs = '<div class="xlab">';
+    rows.forEach((x, i) => {
+      const v = vals[i];
+      const h = v == null ? 0 : Math.max(2, Math.round(v / max * 100));
+      bars += `<div class="bar"><span class="tip"><b>${v == null ? "—" : fmt(v)}</b> · ${x.checks} checks<br>${esc(x.day)}</span>` +
+              `<i style="height:${h}%;${color ? "background:" + color : ""}${v == null ? ";opacity:.15" : ""}"></i></div>`;
+      labs += `<span>${fmtDay(x.day)}<br><b style="color:var(--ink)">${v == null ? "—" : fmt(v)}</b></span>`;
+    });
+    return bars + "</div>" + labs + "</div>";
+  }
+  if (daily.length){
+    $("speedWrap").innerHTML = miniBars(daily, x => x.avg_seconds, v => v.toFixed(1) + "s", "#38bdf8");
+    $("costWrap").innerHTML = miniBars(daily, x => x.avg_cost, v => (v * 100).toFixed(1) + "¢", "#fab219");
+  } else {
+    $("speedWrap").innerHTML = $("costWrap").innerHTML = '<div class="empty">No daily data yet.</div>';
   }
 
   // ---- calendar (click a day for its visitors / checks / spend) ----

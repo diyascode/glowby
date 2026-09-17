@@ -2056,6 +2056,24 @@ for _need in ("gbVid", "fetch('/api/visit'", "crypto.getRandomValues"):
 if "unique devices" not in open("app/templates/admin.html").read(): fails.append("m106 admin tile still says people")
 if "random code that stays on your device" not in open("app/templates/trust.html").read(): fails.append("m106 trust page not updated")
 
+# 107. SPEED & COST PER DAY (Sept 17, Inderpreet): the admin shows, for
+# every day, the average video-check time and the average cost per
+# check. Counters live in daily_usage so they survive re-checks.
+import app.storage as _st107
+_r107 = _st107._day_row(("2026-09-17", 10, 1.50, 31.26, 8))
+if _r107["avg_seconds"] != 31.3 or _r107["avg_cost"] != 0.15 or _r107["video_checks"] != 8: fails.append(f"m107 day row: {_r107}")
+_r107b = _st107._day_row(("2026-09-18", 0, 0.0, None, 0))
+if _r107b["avg_seconds"] is not None or _r107b["avg_cost"] is not None: fails.append(f"m107 empty day must be None, not 0: {_r107b}")
+if _st107._day_row(("2026-09-19", 4, 0.40))["avg_cost"] != 0.1: fails.append("m107 legacy 3-column row")
+_src107 = open("app/main.py").read()
+if "add_video_timing" not in _src107 or 'transcript_source") != "typed"' not in _src107: fails.append("m107 video timing not recorded per check")
+_st107s = open("app/storage.py").read()
+for _need in ("video_checks INTEGER", "video_seconds DOUBLE PRECISION", "def add_video_timing", "_STORED_DAY_SPEED"):
+    if _need not in _st107s: fails.append(f"m107 storage missing: {_need}")
+_a107 = open("app/templates/admin.html").read()
+for _need in ("Speed &amp; cost per day", 'id="speedWrap"', 'id="costWrap"', "x.avg_seconds", "x.avg_cost", "avg cost per check"):
+    if _need not in _a107: fails.append(f"m107 admin missing: {_need}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 106/106 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers")
+    "FINAL MATRIX PASS: 107/107 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day")
