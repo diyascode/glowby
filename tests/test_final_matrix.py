@@ -2074,6 +2074,30 @@ _a107 = open("app/templates/admin.html").read()
 for _need in ("Speed &amp; cost per day", 'id="speedWrap"', 'id="costWrap"', "x.avg_seconds", "x.avg_cost", "avg cost per check"):
     if _need not in _a107: fails.append(f"m107 admin missing: {_need}")
 
+# 108. THE LINK YOU TEXT PEOPLE (Sept 17, Inderpreet: "feels too big, not
+# nice"): glowby.io/get and the home page carry compact link-preview tags
+# (a small square image => the small iMessage card), /get sends iPhones
+# to the App Store by script only (previewers never run it), and the
+# small image is really served.
+from fastapi.testclient import TestClient as _TC108
+_c108 = _TC108(m.app)
+_g108 = _c108.get("/get")
+if _g108.status_code != 200: fails.append("m108 /get missing")
+for _need in ('property="og:image" content="https://glowby.io/og-icon.png"', 'name="twitter:card" content="summary"', "id6798336220", 'href="/"', "location.replace"):
+    if _need not in _g108.text: fails.append(f"m108 /get missing: {_need}")
+if 'summary_large_image' in _g108.text: fails.append("m108 /get must not ask for the large card")
+_h108 = _c108.get("/").text
+if 'property="og:image" content="https://glowby.io/og-icon.png"' not in _h108 or 'name="twitter:card" content="summary"' not in _h108: fails.append("m108 home page preview tags")
+_i108 = _c108.get("/og-icon.png")
+if _i108.status_code != 200 or not _i108.content.startswith(b"\x89PNG"): fails.append("m108 og-icon not served")
+from PIL import Image as _Im108; import io as _io108
+if _Im108.open(_io108.BytesIO(_i108.content)).size != (300, 300): fails.append("m108 og-icon must be 300x300 (compact card)")
+# v0.66.8: glowby.io/how — per-app instructions, one anchor per app
+_w108 = _c108.get("/how")
+if _w108.status_code != 200: fails.append("m108 /how missing")
+for _need in ('id="tiktok"', 'id="instagram"', 'id="facebook"', 'id="youtube"', 'id="fav"', 'id="noapp"', 'href="/get"', "Copy link"):
+    if _need not in _w108.text: fails.append(f"m108 /how missing: {_need}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 107/107 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day")
+    "FINAL MATRIX PASS: 108/108 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card")

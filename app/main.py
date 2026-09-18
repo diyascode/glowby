@@ -85,7 +85,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.6"
+VERSION = "0.66.8"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1109,6 +1109,139 @@ def about() -> str:
         with open(_TRUST_PATH, encoding="utf-8") as f:
             _trust_cache = f.read()
     return _trust_cache
+
+
+# ---- the link you text people (v0.66.7, Inderpreet: "the text message
+# link feels too big, not nice") ----
+# glowby.io/get previews as a COMPACT card in iMessage/WhatsApp: a small
+# square icon on the left, "Glowby" and one line on the right — not the
+# big App Store banner. Link previewers read the tags and never run
+# JavaScript, so the card is ours; a person on an iPhone is sent straight
+# to the App Store, anyone else gets a two-button page.
+_GET_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glowby</title>
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Glowby">
+<meta property="og:title" content="Glowby">
+<meta property="og:description" content="Is that video true? Share it to Glowby and get the answer in one line. Free.">
+<meta property="og:url" content="https://glowby.io/get">
+<meta property="og:image" content="https://glowby.io/og-icon.png">
+<meta property="og:image:width" content="300"><meta property="og:image:height" content="300">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Glowby">
+<meta name="twitter:description" content="Is that video true? Share it to Glowby and get the answer in one line. Free.">
+<meta name="twitter:image" content="https://glowby.io/og-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#08070F">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#08070F;color:#e8eaf0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;text-align:center;padding:24px}
+.c{max-width:340px}img{width:96px;height:96px;border-radius:22px}
+h1{font-size:1.6rem;margin:14px 0 6px}p{color:#9aa0b0;margin:0 0 22px;line-height:1.45}
+a.b{display:block;margin:10px 0;padding:14px 18px;border-radius:14px;font-weight:700;text-decoration:none;font-size:1rem}
+a.p{background:#7c6cf6;color:#fff}a.s{background:rgba(255,255,255,.07);color:#e8eaf0;border:1px solid rgba(255,255,255,.14)}
+small{display:block;margin-top:18px;color:#6b7080;font-size:.8rem}
+</style></head><body><div class="c">
+<img src="/icon-192.png" alt="">
+<h1>Glowby</h1>
+<p>Share it a TikTok, Reel or Short. About a minute later: is it true, and is the person in it real.</p>
+<a class="b p" href="https://apps.apple.com/us/app/glowby/id6798336220">Get the iPhone app</a>
+<a class="b s" href="/">Use it in the browser</a>
+<small>Free · no account · AI-powered, results can be wrong</small>
+</div>
+<script>
+// iPhone/iPad: straight to the App Store (previewers never run this)
+if(/iPhone|iPad|iPod/.test(navigator.userAgent) && !/[?&]stay/.test(location.search)){
+  location.replace("https://apps.apple.com/us/app/glowby/id6798336220");
+}
+</script></body></html>"""
+
+
+@app.get("/get", response_class=HTMLResponse, include_in_schema=False)
+def get_page() -> str:
+    return _GET_HTML
+
+
+# ---- glowby.io/how — how to send a video from each app (v0.66.8) ----
+# The link that goes with the text message: one short page, one section
+# per app, anchors so a text can point at a section (glowby.io/how#tiktok).
+_HOW_HTML = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to use Glowby</title>
+<meta property="og:type" content="website"><meta property="og:site_name" content="Glowby">
+<meta property="og:title" content="How to use Glowby">
+<meta property="og:description" content="Share any TikTok, Reel, Facebook video or YouTube Short to Glowby. Here is where the Share button is in each app.">
+<meta property="og:url" content="https://glowby.io/how">
+<meta property="og:image" content="https://glowby.io/og-icon.png">
+<meta property="og:image:width" content="300"><meta property="og:image:height" content="300">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#08070F">
+<style>
+:root{--bg:#08070F;--ink:#e8eaf0;--muted:#9aa0b0;--brand:#7c6cf6;--surface:rgba(255,255,255,.05);--border:rgba(255,255,255,.12)}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+.w{max-width:560px;margin:0 auto;padding:28px 18px 48px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:6px}.top img{width:44px;height:44px;border-radius:11px}
+h1{font-size:1.5rem;margin:0}.lead{color:var(--muted);margin:6px 0 18px}
+.jump{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 22px}
+.jump a{padding:7px 12px;border-radius:999px;background:var(--surface);border:1px solid var(--border);color:var(--ink);text-decoration:none;font-size:.9rem;font-weight:600}
+section{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 16px 6px;margin:0 0 14px;scroll-margin-top:12px}
+h2{font-size:1.1rem;margin:0 0 8px}
+ol{margin:0 0 10px;padding-left:22px}li{margin:4px 0}
+b.k{background:rgba(124,108,246,.18);border:1px solid rgba(124,108,246,.45);color:#c4bbff;border-radius:6px;padding:1px 6px;font-weight:700;white-space:nowrap}
+.note{color:var(--muted);font-size:.9rem;margin:0 0 10px}
+.cta{display:block;text-align:center;margin:22px 0 0;padding:14px;border-radius:14px;background:var(--brand);color:#fff;font-weight:700;text-decoration:none}
+small{display:block;text-align:center;color:#6b7080;margin-top:14px;font-size:.8rem}
+</style></head><body><div class="w">
+<div class="top"><img src="/icon-192.png" alt=""><h1>How to use Glowby</h1></div>
+<p class="lead">Find the video&rsquo;s <b>Share</b> button, pick <b>Glowby</b>, wait about a minute. You get a one-line answer, a score, the sources, and whether the video looks AI-generated. You&rsquo;ll get a notification when it&rsquo;s done.</p>
+<div class="jump"><a href="#tiktok">TikTok</a><a href="#instagram">Instagram</a><a href="#facebook">Facebook</a><a href="#youtube">YouTube</a><a href="#photo">Screenshot</a><a href="#fav">Put Glowby first</a><a href="#noapp">No app?</a></div>
+
+<section id="tiktok"><h2>TikTok</h2><ol>
+<li>On the video, tap the <b class="k">Share</b> arrow on the right.</li>
+<li>In the bottom row of apps, swipe left and tap <b class="k">Glowby</b>. If you don&rsquo;t see it, tap <b class="k">More</b> and find it there.</li>
+</ol><p class="note">Or tap <b>Copy link</b>, open Glowby, and paste.</p></section>
+
+<section id="instagram"><h2>Instagram Reels</h2><ol>
+<li>On the reel, tap the <b class="k">paper-plane</b> (Send) icon on the right.</li>
+<li>Scroll to the bottom of that sheet and tap <b class="k">Share to&hellip;</b>, then <b class="k">Glowby</b>.</li>
+</ol><p class="note">Or tap the <b>&middot;&middot;&middot;</b> menu &rarr; <b>Copy link</b>, open Glowby, and paste.</p></section>
+
+<section id="facebook"><h2>Facebook Reels &amp; videos</h2><ol>
+<li>Under the video, tap <b class="k">Share</b>.</li>
+<li>Tap <b class="k">More options</b> (or <b class="k">Share to&hellip;</b>), then <b class="k">Glowby</b>.</li>
+</ol><p class="note">Or tap <b>Copy link</b>, open Glowby, and paste. Public videos only &mdash; Glowby can&rsquo;t see private posts.</p></section>
+
+<section id="youtube"><h2>YouTube Shorts &amp; videos</h2><ol>
+<li>Tap <b class="k">Share</b> under the video (on a Short, the arrow on the right).</li>
+<li>Tap <b class="k">More</b> in the row of apps, then <b class="k">Glowby</b>.</li>
+</ol><p class="note">Or tap <b>Copy link</b>, open Glowby, and paste.</p></section>
+
+<section id="photo"><h2>A screenshot, photo or text</h2><ol>
+<li>Someone sent you a screenshot? Open it in <b class="k">Photos</b>, tap <b class="k">Share</b>, then <b class="k">Glowby</b>.</li>
+<li>A claim in a message? Open Glowby and type or paste it.</li>
+</ol></section>
+
+<section id="fav"><h2>Put Glowby first in the Share menu (one time)</h2><ol>
+<li>Open any Share menu and swipe the row of app icons all the way left, then tap <b class="k">More</b>.</li>
+<li>Tap <b class="k">Edit</b> (top right), tap the green <b class="k">+</b> next to Glowby, then <b class="k">Done</b>.</li>
+</ol><p class="note">From then on Glowby is always in the first few apps.</p></section>
+
+<section id="noapp"><h2>No app, or on Android or a computer</h2><ol>
+<li>Copy the video&rsquo;s link (every app has <b>Copy link</b> in its Share menu).</li>
+<li>Open <b class="k">glowby.io</b> and paste it.</li>
+</ol></section>
+
+<a class="cta" href="/get">Get Glowby &mdash; free</a>
+<small>AI-powered &middot; results can be wrong &middot; always check the sources &middot; <a href="/trust" style="color:inherit">what&rsquo;s sent</a></small>
+</div></body></html>"""
+
+
+@app.get("/how", response_class=HTMLResponse, include_in_schema=False)
+def how_page() -> str:
+    return _HOW_HTML
 
 
 @app.get("/r/{key:path}", response_class=HTMLResponse)
@@ -2399,6 +2532,7 @@ _PWA_FILES = {
     "icon-512.png": "image/png",
     "icon-512-maskable.png": "image/png",
     "apple-touch-icon.png": "image/png",
+    "og-icon.png": "image/png",   # v0.66.7: small square = compact iMessage card
 }
 
 
@@ -2431,6 +2565,11 @@ def pwa_icon_192() -> FileResponse:
 @app.get("/icon-512.png", include_in_schema=False)
 def pwa_icon_512() -> FileResponse:
     return _pwa_file("icon-512.png")
+
+
+@app.get("/og-icon.png", include_in_schema=False)
+def og_icon() -> FileResponse:
+    return _pwa_file("og-icon.png")
 
 
 @app.get("/icon-512-maskable.png", include_in_schema=False)
