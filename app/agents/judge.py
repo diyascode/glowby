@@ -338,6 +338,17 @@ number within about 3% of it. "Oil rebounded to $100" against sources \
 saying "oil near $100" is supported — never "not verified because the \
 sources say near, not to." Test: would a careful reporter call the claim \
 wrong? If not, it is not wrong.
+- A MATCHING FIGURE IS NOT CONTRADICTED BY A DIFFERENT STATISTIC: when \
+the claim's number matches a figure a reliable source reports for the \
+fact AS STATED (within rounding — "8%" against "7.9%"), the claim is \
+supported on that figure, full stop. A different statistic — another \
+period, another measure (sheltered vs unsheltered, city vs county, one \
+count vs a two-year trend), another baseline — is CONTEXT: it may cap \
+the verdict at partly_supported (6.0-7.5) when the video's framing \
+invites the wrong reading, and the verdict should name it ("true for the \
+2025 count; over her full term the number fell 17.5%"). It can never \
+turn a matching figure into "contradicted". Contradicted means the \
+figure the video gives is not what the sources say for the fact as stated.
 - ANNOUNCED IS NOT PREDICTED (overrides any rubric roadmap / pre-release / \
 prediction cap): once a maker has OFFICIALLY ANNOUNCED a product or feature \
 with its specifications — a keynote, a press release, a published spec \
@@ -459,9 +470,69 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
             v = dict(v)
             v["verdict_state"] = "insufficient"
             v["why_unverifiable"] = v.get("why_unverifiable") or "the sources found don't settle this for the named bill"
+    # ROUNDING BACKSTOP (Sep 20, "8% vs 7.9% — too harsh"): a judge that
+    # rules CONTRADICTED while its own verdict cites a figure that matches
+    # the claim's (within 3%) has broken the rounding rule — one more pass
+    # with the match spelled out.
+    if isinstance(v, dict) and not claim.get("_rounding_retry"):
+        pair = matching_figure(str(claim.get("claim") or ""), v)
+        if pair:
+            c2 = dict(claim)
+            c2["_rounding_retry"] = True
+            v2 = _judge_once(c2, evidence, reminder=ROUNDING_REMINDER.format(a=pair[0], b=pair[1]))
+            if isinstance(v2, dict) and v2.get("verdict_state"):
+                v2["rounding_retry"] = True
+                v = v2
     if isinstance(v, dict):
         v.pop("wrong_desk", None)
     return v
+
+
+_NUM_RE = re.compile(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(%|percent)?", re.I)
+
+
+def _figures(text: str) -> list:
+    out = []
+    for m in _NUM_RE.finditer(text or ""):
+        try:
+            val = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        out.append((val, bool(m.group(2)), m.group(0).strip()))
+    return out
+
+
+def _looks_like_year(raw: str, pct: bool) -> bool:
+    d = raw.rstrip("%").replace("percent", "").strip()
+    return (not pct) and d.isdigit() and len(d) == 4 and 1900 <= int(d) <= 2100
+
+
+def matching_figure(claim_text: str, verdict: dict):
+    """Pure: when a CONTRADICTED verdict's own text cites a number within
+    3% of a number in the claim (same unit: % with %, plain with plain),
+    return (claim_figure, verdict_figure) — else None. Years are skipped."""
+    if not isinstance(verdict, dict) or verdict.get("verdict_state") != "contradicted":
+        return None
+    vt = str(verdict.get("verdict") or "")
+    for cv, cpct, craw in _figures(claim_text):
+        if cv == 0 or _looks_like_year(craw, cpct):
+            continue
+        for vv, vpct, vraw in _figures(vt):
+            if vpct != cpct or vv == 0 or _looks_like_year(vraw, vpct):
+                continue
+            if abs(cv - vv) / max(abs(cv), abs(vv)) <= 0.03 and craw != vraw:
+                return (craw, vraw)
+    return None
+
+
+ROUNDING_REMINDER = (
+    "REMINDER — ROUNDING IS NOT AN ERROR: you ruled this claim contradicted, "
+    "but your own verdict cites {b}, which is the claim's {a} rounded the way "
+    "people speak. On that figure the claim is supported. If a DIFFERENT "
+    "statistic (another period, measure or baseline) changes the picture, "
+    "say so and rule partly_supported (6.0-7.5), naming both figures. "
+    "Never rule contradicted on a figure that matches."
+)
 
 
 _REFERENT_PUNT_RE = re.compile(

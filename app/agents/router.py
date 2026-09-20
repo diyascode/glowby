@@ -93,6 +93,11 @@ VISUALLY SHOWS] section): "the Clean Water for All Life Act", "Senator X", \
 "Ozempic". If the video names it anywhere, every claim about it carries the \
 name. If the video truly never names it, say so in the claim itself ("an \
 unnamed Louisiana bill shown in the video") so the judge knows.
+NEVER ADD WHAT THE VIDEO DID NOT SAY: no invented timeframes, baselines, \
+parentheticals or hedges like "(during X's tenure or relevant period)". If \
+the video gives no period, the claim gives no period; the judge reads it \
+as of the posting date. The claim is the video's assertion, made \
+self-contained — not your guess at what it might have meant.
 LANGUAGE RULE: the content may be in any language. Write every claim in \
 English, keeping names and places as given, and note the original language \
 in the reason.

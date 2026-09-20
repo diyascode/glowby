@@ -2149,6 +2149,34 @@ _src110 = open("app/main.py").read()
 if 'c["video_context"] = _ctx' not in _src110: fails.append("m110 claims not given video context")
 if 'claim.get("video_context")' not in open("app/agents/judge.py").read(): fails.append("m110 judge ignores video context")
 
+# 111. 8% IS 7.9% (Sept 20, Inderpreet: "too harsh, I thought we corrected
+# it"): a CONTRADICTED verdict that itself cites the claim's figure is
+# re-judged with the rounding rule spelled out; a different statistic is
+# context, never a contradiction; the router adds no invented timeframes.
+import app.agents.judge as _J111, app.agents.router as _R111
+if "A MATCHING FIGURE IS NOT CONTRADICTED BY A DIFFERENT STATISTIC" not in _J111.PROMPT: fails.append("m111 judge rule missing")
+if "NEVER ADD WHAT THE VIDEO DID NOT SAY" not in _R111.build_prompt("x", "t", "tiktok", "u"): fails.append("m111 router rule missing")
+_c111 = "Street homelessness in Los Angeles has gone up by 8%"
+_v111 = {"verdict_state": "contradicted", "truth_score": 3.5, "verdict": "the Los Angeles Times reports street homelessness rose 7.9% citywide in one count, but a 17.5% drop over two years"}
+if _J111.matching_figure(_c111, _v111) != ("8%", "7.9%"): fails.append(f"m111 match: {_J111.matching_figure(_c111, _v111)}")
+if _J111.matching_figure("400 missing", {"verdict_state": "contradicted", "verdict": "only 4 were missing"}): fails.append("m111 order-of-magnitude is a real contradiction")
+if _J111.matching_figure("in 2024 it rose 8%", {"verdict_state": "contradicted", "verdict": "in 2025 it fell 12%"}): fails.append("m111 years must not match as figures")
+if _J111.matching_figure(_c111, dict(_v111, verdict_state="partly_supported")): fails.append("m111 only contradicted triggers")
+if _J111.matching_figure("costs $2,000", {"verdict_state": "contradicted", "verdict": "the price is $1,999, not $2,000"}) != ("2,000", "1,999"): fails.append("m111 price rounding")
+_calls111 = []
+_orig111 = _J111._judge_once
+def _fake111(claim, evidence, reminder=""):
+    _calls111.append(reminder)
+    if "ROUNDING IS NOT AN ERROR" in reminder:
+        return {"verdict_state": "partly_supported", "truth_score": 6.5, "verdict": "True for the 2025 count (7.9%); over the full term unsheltered homelessness fell 17.5%."}
+    return dict(_v111)
+_J111._judge_once = _fake111
+try:
+    _out111 = _J111.judge_with_rubric({"claim": _c111, "bucket": "politics"}, {})
+    if _out111.get("verdict_state") != "partly_supported" or len(_calls111) != 2 or "7.9%" not in _calls111[1]: fails.append(f"m111 backstop retry: {_out111} {_calls111}")
+finally:
+    _J111._judge_once = _orig111
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 110/110 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill")
+    "FINAL MATRIX PASS: 111/111 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine")
