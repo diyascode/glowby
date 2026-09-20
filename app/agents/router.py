@@ -74,6 +74,20 @@ the actual claim in the caption or on-screen text while the audio is just \
 music or vibes. If the title/caption asserts a checkable claim the spoken \
 transcript doesn't, extract it as a claim unit (use the caption text as the \
 quote). If the transcript is only lyrics or filler, rely on the title/caption.
+EVENT RULE: a video presented as footage of a real event — something that \
+happened, somewhere, to someone (a disaster, accident, fire, crash, protest, \
+arrest, attack, rescue, a public figure doing or saying something, "this just \
+happened in X", "live from Y") — asserts the FACTUAL claim that the event \
+happened as shown. Extract it as ONE central claim in the form "On or around \
+<date>, <event> happened at <place>" built from the caption, on-screen text \
+and any [WHAT THE VIDEO VISUALLY SHOWS] section; set developing_story true \
+when recent. Never park it as personal-experience or no-claim: whether a \
+shown event really happened, where and when, is exactly what news reports \
+confirm or refute. Only content with no event at all (scenery, dance, \
+cooking, vibes, a product demo) is no-claim.
+LANGUAGE RULE: the content may be in any language. Write every claim in \
+English, keeping names and places as given, and note the original language \
+in the reason.
 
 STEP 2 — GATE each unit with exactly one label:
 - "factual": a checkable assertion about the world → moves forward

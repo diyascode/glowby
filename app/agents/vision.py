@@ -42,6 +42,14 @@ numbers not shown. Don't judge truth; just state what is asserted. Write \
 2-6 plain sentences. If the frames genuinely assert nothing checkable \
 (pure scenery, vibes, abstract visuals), respond with exactly: {nothing}
 
+EVENT FOOTAGE: if the frames show something happening — a disaster, \
+accident, fire, flood, crash, crowd, protest, arrest, rescue, explosion, a \
+recognizable public figure doing or saying something — that is ALWAYS \
+reportable, never {nothing}. Say what event appears to happen, where (signs, \
+landmarks, flags, uniforms, the language on signs), when (on-screen dates, \
+weather, time-of-day cues) and who, in the form "the footage presents this \
+as: ...". Do not say whether it is real.
+
 SCREENSHOTS OF MESSAGES: if the image is a screenshot of a text message, \
 iMessage/WhatsApp/Telegram chat, email, voicemail transcript, DM, pop-up, \
 notification or social-media comment, it is ALWAYS reportable (never \

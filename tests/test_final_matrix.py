@@ -589,7 +589,7 @@ if "deepfake_available() and hive_detect.likely_has_person(" not in _d42:
 _m43 = open("app/main.py").read()
 if "detect_ai: bool = False" not in _m43: fails.append("m43 request flag missing")
 if "on_demand=detect_ai" not in _m43: fails.append("m43 gate not honoring flag")
-if 'req.detect_ai' not in _m43 or '_cau.get("stage") != 2' not in _m43:
+if 'req.detect_ai' not in _m43 or 'not _cached_ai_ran(cached)' not in _m43:  # v0.66.9: completed stage 2 only
     fails.append("m43 cache bypass missing")
 _h43 = open("app/templates/app.html").read()
 if 'id="modeSeg"' not in _h43: fails.append("m43 mode selector missing")
@@ -2098,6 +2098,24 @@ if _w108.status_code != 200: fails.append("m108 /how missing")
 for _need in ('id="tiktok"', 'id="instagram"', 'id="facebook"', 'id="youtube"', 'id="fav"', 'id="noapp"', 'href="/get"', "Copy link"):
     if _need not in _w108.text: fails.append(f"m108 /how missing: {_need}")
 
+# 109. "THIS HAPPENED" IS A CLAIM + AI-ONLY NEVER SERVES A FAILED DETECTOR
+# (Sept 20, Inderpreet): footage of an event asserts the event happened —
+# the router and the eyes both treat it as checkable; and a cached result
+# whose stage-2 detector FAILED must not be handed back to an "AI detect
+# only" request.
+import app.agents.router as _rt109, app.agents.vision as _vi109
+_p109 = _rt109.build_prompt("music only", "Massive flood hits Jakarta today", "instagram", "someone")
+for _need in ("EVENT RULE", "happened as shown", "LANGUAGE RULE", "Write every claim in English"):
+    if _need not in _p109: fails.append(f"m109 router rule missing: {_need}")
+if "EVENT FOOTAGE" not in _vi109.PROMPT or "never {nothing}" not in _vi109.PROMPT: fails.append("m109 eyes must report event footage")
+if m._cached_ai_ran({"authenticity": {"stage": 2, "stage2_status": "failed"}}): fails.append("m109 failed stage 2 counted as ran")
+if m._cached_ai_ran({"authenticity": {"stage": 1}}): fails.append("m109 stage 1 counted as ran")
+if not m._cached_ai_ran({"authenticity": {"stage": 2, "stage2_status": "completed"}}): fails.append("m109 completed stage 2 must count")
+if not m._cached_ai_ran({"authenticity": {"stage": 2, "stage2_status": "partial"}}): fails.append("m109 partial stage 2 must count")
+if m._cached_ai_ran({}): fails.append("m109 empty result counted as ran")
+_src109 = open("app/main.py").read()
+if 'if _cau.get("stage") != 2:' in _src109: fails.append("m109 old stage-only cache test still present")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 108/108 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card")
+    "FINAL MATRIX PASS: 109/109 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim")

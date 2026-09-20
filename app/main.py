@@ -85,7 +85,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.8"
+VERSION = "0.66.9"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1250,6 +1250,16 @@ def permalink_page(key: str, request: Request) -> str:
     return _page()
 
 
+def _cached_ai_ran(cached: dict) -> bool:
+    """Pure: did a stored result's AI media check actually finish? A
+    stage-2 attempt that FAILED used to count as "already ran", so "AI
+    detect only" got the old claims result back with a warning card
+    instead of a fresh detector run (Inderpreet, Sep 20). Only a
+    completed or partly-completed stage 2 is worth serving from cache."""
+    au = (cached or {}).get("authenticity") or {}
+    return au.get("stage") == 2 and au.get("stage2_status") in ("completed", "partial")
+
+
 class CheckRequest(BaseModel):
     url: str = ""
     force: bool = False  # true = ignore the cache and re-run (recheck)
@@ -1384,10 +1394,8 @@ def api_check(req: CheckRequest, request: Request):
     if cached is not None and cached.get("media_only") and not req.ai_only:
         # a stored "AI only" result has no claims — a full check must run
         cached = None
-    if cached is not None and (req.detect_ai or req.ai_only):
-        _cau = cached.get("authenticity") or {}
-        if _cau.get("stage") != 2:
-            cached = None
+    if cached is not None and (req.detect_ai or req.ai_only) and not _cached_ai_ran(cached):
+        cached = None
     if cached is not None and req.scam_check and cached.get("scam_shadow"):
         # a stored result whose scam finding was kept in the shadows: the
         # reader asked for it — reveal it, no re-run needed
