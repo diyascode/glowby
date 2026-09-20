@@ -85,7 +85,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.9"
+VERSION = "0.66.10"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -804,6 +804,13 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 )
         for c in claims:
             c["posted_date"] = posted
+        # VIDEO CONTEXT (v0.66.10): every claim carries the title and its
+        # sibling claims, so a judge reading "the bill" knows which bill —
+        # claims were judged blind to each other and punted (Sep 20)
+        _ctx = "Title: " + str(result.get("title") or "")[:160] + ". Claims from this video: " + " | ".join(
+            str(c.get("claim", ""))[:140] for c in claims[:6])
+        for c in claims:
+            c["video_context"] = _ctx
         # TWO LANES, ONE STORY: when the media lane already knows this
         # footage is AI (verified provenance or creator label), the
         # claims lane must not contradict it.

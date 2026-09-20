@@ -2116,6 +2116,39 @@ if m._cached_ai_ran({}): fails.append("m109 empty result counted as ran")
 _src109 = open("app/main.py").read()
 if 'if _cau.get("stage") != 2:' in _src109: fails.append("m109 old stage-only cache test still present")
 
+# 110. "WHICH BILL?" IS NOT AN EXCUSE (Sept 20, Inderpreet): claims from
+# one video are judged with the video's context; a claim that says "the
+# bill" is written with the bill's name; a judge that punts on "which
+# bill" is re-asked with the context and, failing that, rules unverified.
+import app.agents.judge as _J110, app.agents.router as _R110
+_pr110 = _R110.build_prompt("x", "t", "tiktok", "u")
+if "SELF-CONTAINED RULE" not in _pr110 or "the Clean Water for All Life Act" not in _pr110: fails.append("m110 router self-contained rule missing")
+if "AMBIGUOUS REFERENT IS NEVER not_scoreable" not in _J110.PROMPT: fails.append("m110 judge referent rule missing")
+_punt = {"verdict_state": "not_scoreable", "verdict": "The claim depends on which specific bill is referenced.", "why_unverifiable": "it depends"}
+if not _J110.referent_punt(_punt): fails.append("m110 punt not detected")
+if _J110.referent_punt({"verdict_state": "not_scoreable", "verdict": "This is a matter of taste."}): fails.append("m110 taste is a real not_scoreable")
+if _J110.referent_punt({"verdict_state": "insufficient", "verdict": "depends on which bill"}): fails.append("m110 only not_scoreable punts count")
+_calls110 = []
+_orig110 = _J110._judge_once
+def _fake110(claim, evidence, reminder=""):
+    _calls110.append(reminder)
+    if reminder:
+        return {"verdict_state": "partly_supported", "truth_score": 6.5, "verdict": "The Clean Water for All Life Act lists those drugs."}
+    return dict(_punt)
+_J110._judge_once = _fake110
+try:
+    _v110 = _J110.judge_with_rubric({"claim": "Women taking those drugs could face investigation because they are listed in the bill", "bucket": "law", "video_context": "Title: Clean Water for All Life Act. Claims: ..."}, {})
+    if _v110.get("verdict_state") != "partly_supported" or len(_calls110) != 2 or "Clean Water" not in _calls110[1]: fails.append(f"m110 retry with context failed: {_v110} {_calls110}")
+    _calls110.clear()
+    _J110._judge_once = lambda claim, evidence, reminder="": dict(_punt)
+    _v110b = _J110.judge_with_rubric({"claim": "x", "bucket": "law", "video_context": "ctx"}, {})
+    if _v110b.get("verdict_state") != "insufficient": fails.append(f"m110 a second punt must become unverified, got {_v110b.get('verdict_state')}")
+finally:
+    _J110._judge_once = _orig110
+_src110 = open("app/main.py").read()
+if 'c["video_context"] = _ctx' not in _src110: fails.append("m110 claims not given video context")
+if 'claim.get("video_context")' not in open("app/agents/judge.py").read(): fails.append("m110 judge ignores video context")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 109/109 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim")
+    "FINAL MATRIX PASS: 110/110 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill")

@@ -366,6 +366,14 @@ hierarchy, score bands, caps, and harm gates) ===
 {rubric}
 === END RUBRIC ===
 
+AMBIGUOUS REFERENT IS NEVER not_scoreable: if the claim says "the bill", \
+"this law", "the drug", "he", resolve it from the VIDEO CONTEXT line (the \
+video's title and its other claims name it). Judge the claim about THAT \
+named thing. If the evidence still does not settle it, rule insufficient \
+(unverified) — never not_scoreable. not_scoreable is only for claims that \
+cannot be true or false at all (taste, prophecy, a definition fight, a \
+guilt gate).
+
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}; \
 video posted: {posted_date}; evidence search rounds that ran: {search_rounds}): \
 "{claim}"
@@ -436,9 +444,50 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
                 claim["secondary_bucket"] = None
                 claim["rerouted_from"] = here
                 return v2
+    # a judge that punted on "which bill / which law" when the video names
+    # it (the miscarriage-bill check, Sep 20): one more pass with the
+    # context spelled out; if it still cannot decide, that is unverified,
+    # not "cannot be scored"
+    if isinstance(v, dict) and referent_punt(v) and not claim.get("_referent_retry"):
+        c2 = dict(claim)
+        c2["_referent_retry"] = True
+        v2 = _judge_once(c2, evidence, reminder=REFERENT_REMINDER.format(
+            context=str(claim.get("video_context") or claim.get("claim") or "")[:700]))
+        if isinstance(v2, dict) and v2.get("verdict_state") and not referent_punt(v2):
+            v = v2
+        elif isinstance(v, dict):
+            v = dict(v)
+            v["verdict_state"] = "insufficient"
+            v["why_unverifiable"] = v.get("why_unverifiable") or "the sources found don't settle this for the named bill"
     if isinstance(v, dict):
         v.pop("wrong_desk", None)
     return v
+
+
+_REFERENT_PUNT_RE = re.compile(
+    r"(depends on which (specific )?(bill|law|legislation|act|drug|company|person|statute)|"
+    r"(does not|doesn't|cannot|can't) (identify|determine|establish) which (specific )?"
+    r"(bill|law|legislation|act|drug|company|person|statute)|"
+    r"without (knowing|identifying) (what|which) (specific )?(bill|law|legislation|act|drug|company|statute)|"
+    r"unclear which (bill|law|legislation|act)|which specific bill)", re.I)
+
+
+def referent_punt(verdict: dict) -> bool:
+    """Pure: the judge ruled not_scoreable because it could not tell WHICH
+    bill/law/thing the claim means — a context failure, not a scoring one."""
+    if not isinstance(verdict, dict) or verdict.get("verdict_state") != "not_scoreable":
+        return False
+    text = " ".join(str(verdict.get(k) or "") for k in ("verdict", "why_unverifiable"))
+    return bool(_REFERENT_PUNT_RE.search(text))
+
+
+REFERENT_REMINDER = (
+    "REMINDER: you ruled this claim not_scoreable because you could not tell "
+    "which bill, law or thing it refers to. The video names it. VIDEO CONTEXT: "
+    "{context}. Judge the claim about THAT named thing from the evidence above "
+    "and give a truth_score; if the evidence does not settle it, rule "
+    "insufficient — not not_scoreable."
+)
 
 
 NO_REFUSAL_REMINDER = (
@@ -492,6 +541,9 @@ def _judge_once(claim: dict, evidence: dict, reminder: str = "") -> dict:
                "this video's footage is AI-generated (" 
                + str(claim.get("media_context")) + ").\n"
                if claim.get("media_context") else "")
+               + (("VIDEO CONTEXT (same video — use it to resolve 'the bill', "
+                   "'this law', 'he', 'it'): " + str(claim.get("video_context"))[:700] + "\n")
+                  if claim.get("video_context") else "")
                + str(claim.get("claim", ""))[:500]),
         fact_checks=_format_fact_checks(evidence),
         web_sources=_format_web_sources(evidence),

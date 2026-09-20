@@ -85,6 +85,14 @@ when recent. Never park it as personal-experience or no-claim: whether a \
 shown event really happened, where and when, is exactly what news reports \
 confirm or refute. Only content with no event at all (scenery, dance, \
 cooking, vibes, a product demo) is no-claim.
+SELF-CONTAINED RULE: every claim must make sense on its own, to a judge \
+who has NOT seen the video. Never write "the bill", "this law", "this \
+legislation", "he", "she", "it", "the company", "the drug" — write the name \
+the video gives (caption, on-screen text, speech, or the [WHAT THE VIDEO \
+VISUALLY SHOWS] section): "the Clean Water for All Life Act", "Senator X", \
+"Ozempic". If the video names it anywhere, every claim about it carries the \
+name. If the video truly never names it, say so in the claim itself ("an \
+unnamed Louisiana bill shown in the video") so the judge knows.
 LANGUAGE RULE: the content may be in any language. Write every claim in \
 English, keeping names and places as given, and note the original language \
 in the reason.
