@@ -85,7 +85,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.12"
+VERSION = "0.66.13"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -452,9 +452,9 @@ def _scam_lens_finish(result: dict, started) -> None:
         except Exception:
             pass
         if aud.get("model_extracted"):
-            add_usage(0.003)
+            add_usage(0.003, count=False)
         if aud.get("queries"):
-            add_usage(0.005 * aud["queries"])
+            add_usage(0.005 * aud["queries"], count=False)
         mode = "on" if asked else scam_mode()
         if rep.get("audit_trace_id"):
             try:
@@ -1040,7 +1040,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             try:
                 ans = answer_followup(user_question, _followup_context(result))
                 if ans:
-                    add_usage(0.02)
+                    add_usage(0.02, count=False)
                     result["user_question"] = user_question
                     result["user_answer"] = ans
             except Exception:
@@ -1426,7 +1426,7 @@ def api_check(req: CheckRequest, request: Request):
             if spent < DAILY_BUDGET_USD:
                 ans = answer_followup(question, _followup_context(cached))
                 if ans:
-                    add_usage(0.02)
+                    add_usage(0.02, count=False)
                     cached["user_question"] = question
                     cached["user_answer"] = ans
         return cached
@@ -1569,7 +1569,7 @@ def _ensure_one_line(result: dict, save_key: str = None) -> None:
             if _ok_line(rep["one_line"], result):
                 return
         rep["one_line"] = _one_line(result)
-        add_usage(0.002)
+        add_usage(0.002, count=False)
         if save_key:
             patch_result(save_key, result)
     except Exception:
@@ -1655,7 +1655,7 @@ def api_followup(req: FollowupRequest, request: Request):
         return JSONResponse(
             status_code=500,
             content={"detail": "Couldn't answer right now — try again."})
-    add_usage(0.02)  # small single-call cost
+    add_usage(0.02, count=False)  # small single-call cost
     return {"answer": text}
 
 
@@ -1895,7 +1895,7 @@ def api_scam(req: ScamRequest, request: Request):
     from app.agents import scamengine
     rep = scamengine.analyze(text, context=None)
     aud = rep.get("audit") or {}
-    add_usage(0.003 * bool(aud.get("model_extracted")) + 0.005 * (aud.get("queries") or 0))
+    add_usage(0.003 * bool(aud.get("model_extracted")) + 0.005 * (aud.get("queries") or 0), count=False)
     try:
         save_scam_audit(rep.get("audit_trace_id") or "", "api", rep, hashlib.sha256(text.encode()).hexdigest()[:32])
     except Exception:
@@ -2108,7 +2108,7 @@ def run_flag_review(reason: str = "scheduled") -> dict:
         rid = save_review(doc)
         doc["id"] = rid
         try:
-            add_usage(float(doc.get("est_cost") or 0))
+            add_usage(float(doc.get("est_cost") or 0), count=False)
         except Exception:
             pass
         _REVIEW_STATE["last"] = doc.get("created_at")
@@ -2183,7 +2183,7 @@ def api_admin_calibrate(req: CalibrateRequest):
             doc = run_calibration(items, progress=lambda d, t: _CAL_STATE.update({"done": d, "total": t}))
             save_calibration(doc)
             try:
-                add_usage(float(doc.get("est_cost") or 0))
+                add_usage(float(doc.get("est_cost") or 0), count=False)
             except Exception:
                 pass
         except Exception as e:
@@ -2260,7 +2260,7 @@ def api_admin_scamcal(req: ScamCalRequest):
             def _go():
                 try:
                     _SCAMCAL_STATE["learn"] = scamcal.learn(doc)
-                    add_usage(0.10)
+                    add_usage(0.10, count=False)
                 except Exception as e:
                     _SCAMCAL_STATE["learn"] = {"error": str(e)[:200], "proposals": []}
                 finally:

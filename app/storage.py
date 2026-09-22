@@ -589,8 +589,12 @@ def quality_stats() -> dict:
 # Armor: the cost kill-switch needs to know how much was spent today.
 
 
-def add_usage(est_cost: float) -> None:
-    """Record one fresh check's estimated cost. No-ops on failure."""
+def add_usage(est_cost: float, count: bool = True) -> None:
+    """Record estimated spend. count=True adds ONE to the day's fresh-check
+    tally; count=False adds spend only (a follow-up answer, a regenerated
+    one-line caption, the scam lens, the weekly review...). v0.66.13:
+    before this every billable event counted as a "check", so the admin
+    said 17 checks on a day with three (Inderpreet, Sep 22)."""
     conn = _get_conn()
     if conn is None:
         return
@@ -607,11 +611,11 @@ def add_usage(est_cost: float) -> None:
             )
             cur.execute(
                 "INSERT INTO daily_usage (day, checks, est_cost) "
-                "VALUES (CURRENT_DATE, 1, %s) "
+                "VALUES (CURRENT_DATE, %s, %s) "
                 "ON CONFLICT (day) DO UPDATE SET "
-                "checks = daily_usage.checks + 1, "
+                "checks = daily_usage.checks + EXCLUDED.checks, "
                 "est_cost = daily_usage.est_cost + EXCLUDED.est_cost",
-                (est_cost,),
+                (1 if count else 0, est_cost),
             )
     except Exception:
         pass
