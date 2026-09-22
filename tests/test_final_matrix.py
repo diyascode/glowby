@@ -1072,8 +1072,8 @@ _src73 = open("app/agents/judge.py").read()
 if 'os.environ.get("GLOWBY_JUDGE_TIERING", "0")' not in _src73: fails.append("m73 tiering default not 0")
 if "SECOND CHANCE" not in _src73 or _src73.count("parse_judge_response(raw2") != 1: fails.append("m73 unreadable retry missing")
 if "ROUNDING IS NOT AN ERROR" not in _src73 or "$1,999" not in _src73: fails.append("m73 rounding rule missing")
-_v = _j73.parse_judge_response('{"truth_score": "8.4", "verdict_state": "Partly Supported", "verdict": "x", "evidence_strength": "strong", "key_sources": []}')
-if not _v or _v["verdict_state"] != "partly_supported" or _v["truth_score"] != 8.4: fails.append(f"m73 tolerant parse failed: {_v}")
+_v = _j73.parse_judge_response('{"truth_score": "6.4", "verdict_state": "Partly Supported", "verdict": "x", "evidence_strength": "strong", "key_sources": []}')
+if not _v or _v["verdict_state"] != "partly_supported" or _v["truth_score"] != 6.4: fails.append(f"m73 tolerant parse failed: {_v}")  # 6.4 (an 8.4 would align to supported since v0.66.12)
 _v = _j73.parse_judge_response('Sure! Here is the verdict:\n```json\n{"truth_score": 9.0, "verdict_state": "supported", "verdict": "ok", "evidence_strength": "strong", "key_sources": []}\n```')
 if not _v or _v["verdict_state"] != "supported": fails.append("m73 fenced-with-preamble parse failed")
 
@@ -2177,6 +2177,21 @@ try:
 finally:
     _J111._judge_once = _orig111
 
+# 112. THE LABEL FOLLOWS THE NUMBER (Sept 22, Inderpreet: "it's green but
+# says partly supported — shouldn't it say supported?"): 7.5+ is
+# supported, below 7.5 is never "supported", a mid-score "contradicted"
+# is partly supported; the claim ring takes the chip's colour.
+import app.agents.judge as _J112
+for _st, _sc, _want in (("partly_supported", 7.8, "supported"), ("supported", 7.5, "supported"), ("supported", 6.9, "partly_supported"),
+                        ("contradicted", 5.0, "partly_supported"), ("contradicted", 2.0, "contradicted"), ("partly_supported", 6.5, "partly_supported"),
+                        ("provisional", 7.8, "provisional"), ("not_scoreable", None, "not_scoreable"), ("insufficient", 3.0, "insufficient"),
+                        ("partly_supported", 2.0, "contradicted")):
+    if _J112.align_state(_st, _sc) != _want: fails.append(f"m112 align {_st}/{_sc} -> {_J112.align_state(_st, _sc)}, wanted {_want}")
+_pj112 = _J112.parse_judge_response('{"truth_score": 7.8, "verdict_state": "partly_supported", "verdict": "Works, though hives still need opening for maintenance.", "evidence_strength": "moderate", "key_sources": []}')
+if not _pj112 or _pj112["verdict_state"] != "supported": fails.append(f"m112 parser did not align: {_pj112}")
+_h112 = open("app/templates/app.html").read()
+if "ringSVG(score,size,width,forceCol)" not in _h112 or "46,4,vColor[c.verdict.verdict_state]" not in _h112: fails.append("m112 claim ring not coloured by verdict")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 111/111 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine")
+    "FINAL MATRIX PASS: 112/112 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number")

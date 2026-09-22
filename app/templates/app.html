@@ -656,7 +656,7 @@ html.light .uq-q{color:#111114}
   </div>
 
   <div id="out"></div>
-  <footer>v0.66.11 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <footer>v0.66.12 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
   <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
 </div>
 
@@ -796,10 +796,10 @@ function verdictWord(rep){
 }
 function verdictPill(rep){const v=verdictWord(rep);return v?'<div><span class="vw" style="color:'+v[1]+';border-color:'+v[1]+';background:'+v[1]+'22">'+v[0]+'</span></div>':'';}
 function ncChip(nc,small){return '<span class="ncchip'+(small?' sm':'')+'">'+nc.icon+' '+esc(nc.word)+'</span>';}
-function ringSVG(score,size,width){
+function ringSVG(score,size,width,forceCol){
   const r=(size/2)-width-1, c=2*Math.PI*r;
   const frac=(score===null||score===undefined)?0:Math.max(.03,score/9.9);
-  const col=ringColor(score===undefined?null:score);
+  const col=forceCol||ringColor(score===undefined?null:score);
   return '<div class="ring"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+
     '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="var(--track)" stroke-width="'+width+'"/>'+
     '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+width+'" stroke-linecap="round" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+(c*(1-frac)).toFixed(1)+'"/></svg>'+
@@ -849,7 +849,7 @@ function claimCard(c,idx){
   if(c.verdict)detail+='<div class="vsum meta">Evidence strength: '+esc(c.verdict.evidence_strength)+'</div>';
   detail+=ev+'</div></details>';
   const circle=c.verdict
-    ?'<div style="flex:0 0 auto">'+ringSVG(c.verdict.truth_score===null?null:c.verdict.truth_score,46,4)+'</div>'
+    ?'<div style="flex:0 0 auto">'+ringSVG(c.verdict.truth_score===null?null:c.verdict.truth_score,46,4,vColor[c.verdict.verdict_state])+'</div>'
     :'<div class="score"'+(c.verifying?' style="animation:pulse 1s infinite alternate"':'')+'>···</div>';
   return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b class="claim-h">'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
 }

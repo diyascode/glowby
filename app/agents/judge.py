@@ -850,6 +850,14 @@ def parse_judge_response(raw: str, allowed_urls=None):
     else:
         why = None
 
+    # v0.66.12 — THE LABEL FOLLOWS THE NUMBER (Inderpreet, Sep 22: a 7.8
+    # ring was green while its chip said "partly supported"). One rule
+    # for every card: 7.5 and up is SUPPORTED (the caveat lives in the
+    # verdict sentence); below 7.5 is never "supported"; a "contradicted"
+    # with a mid score is partly_supported. Provisional keeps its own
+    # word (it is a cap, not a doubt).
+    state = align_state(state, score)
+
     out = {
         "truth_score": score,
         "verdict_state": state,
@@ -862,6 +870,22 @@ def parse_judge_response(raw: str, allowed_urls=None):
     if wd in BUCKETS_FOR_REROUTE:
         out["wrong_desk"] = wd
     return out
+
+
+def align_state(state: str, score) -> str:
+    """Pure: make the verdict word agree with the score band the reader
+    sees (ring colour: green >= 7.5, amber 4.0-7.4, red < 4.0)."""
+    if score is None or state in NULL_SCORE_STATES or state == "provisional":
+        return state
+    if score >= 7.5:
+        return "supported"
+    if state == "supported":
+        return "partly_supported"
+    if state == "contradicted" and score >= 4.0:
+        return "partly_supported"
+    if state in ("partly_supported", "insufficient") and score < 2.6:
+        return "contradicted" if state == "partly_supported" else state
+    return state
 
 
 BUCKETS_FOR_REROUTE = {
