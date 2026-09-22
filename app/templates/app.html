@@ -1678,7 +1678,8 @@ window.glowbyReceiveImage=function(dataUrl){
 (function(){try{
   let v=null;try{v=localStorage.getItem('gbVid');}catch(e){}
   if(!/^[a-f0-9]{32}$/.test(v||'')){v=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');try{localStorage.setItem('gbVid',v);}catch(e){}}
-  fetch('/api/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vid:v}),keepalive:true}).catch(()=>{});
+  const kind=/[?&]app=1(&|$)/.test(location.search)?'app':(/^\/r\//.test(location.pathname)?'result':(location.pathname==='/'||location.pathname==='/app')?'home':'other');
+  fetch('/api/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vid:v,kind}),keepalive:true}).catch(()=>{});
 }catch(e){}})();
 // A shared link (?u=...) lands in the box READY — it does not auto-run.
 // Auto-running fired before the person could choose "+ detect AI" /

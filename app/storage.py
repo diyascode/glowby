@@ -765,11 +765,18 @@ def admin_recent_checks(limit: int = 25) -> list:
 # tomorrow — counts exist, tracking is impossible, no IPs are stored.
 
 
-def record_visitor(visitor_hash: str) -> None:
-    """Count one visitor for today. No-ops on failure."""
+VISIT_KINDS = ("home", "result", "app", "other")
+
+
+def record_visitor(visitor_hash: str, kind: str = "other") -> None:
+    """Count one visitor for today, remembering WHERE the device first
+    landed (home page / a shared result link / inside the iOS app) so a
+    day's visitors can be told apart from scanners (v0.66.14 — 74
+    visitors against 3 checks, Sep 22). No-ops on failure."""
     conn = _get_conn()
     if conn is None:
         return
+    kind = kind if kind in VISIT_KINDS else "other"
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -781,13 +788,44 @@ def record_visitor(visitor_hash: str) -> None:
                 )
                 """
             )
+            cur.execute("ALTER TABLE daily_visitors ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'other'")
+            cur.execute("ALTER TABLE daily_visitors ADD COLUMN IF NOT EXISTS pages INTEGER NOT NULL DEFAULT 1")
+            # first landing wins for `kind`; every later page load bumps `pages`
             cur.execute(
-                "INSERT INTO daily_visitors (day, visitor) "
-                "VALUES (CURRENT_DATE, %s) ON CONFLICT DO NOTHING",
-                (visitor_hash[:64],),
+                "INSERT INTO daily_visitors (day, visitor, kind, pages) "
+                "VALUES (CURRENT_DATE, %s, %s, 1) "
+                "ON CONFLICT (day, visitor) DO UPDATE SET pages = daily_visitors.pages + 1",
+                (visitor_hash[:64], kind),
             )
     except Exception:
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def visitor_kinds(day: str) -> dict:
+    """One day's visitors by where they landed, plus how many loaded only
+    a single page (the bot-shaped ones). {} on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT kind, count(*), sum(CASE WHEN pages = 1 THEN 1 ELSE 0 END) "
+                        "FROM daily_visitors WHERE day = %s::date GROUP BY kind", (day,))
+            out = {"by_kind": {}, "one_page": 0, "total": 0}
+            for k, n, one in cur.fetchall():
+                out["by_kind"][k] = int(n)
+                out["one_page"] += int(one or 0)
+                out["total"] += int(n)
+            return out
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {}
 
 
 def record_event(kind: str) -> None:
@@ -993,6 +1031,7 @@ def day_detail(day: str) -> dict:
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM daily_visitors WHERE day = %s::date", (day,))
             out["visitors"] = int(cur.fetchone()[0])
+            out["visitor_kinds"] = visitor_kinds(day)
             cur.execute("SELECT checks, est_cost FROM daily_usage WHERE day = %s::date", (day,))
             r = cur.fetchone()
             if r:

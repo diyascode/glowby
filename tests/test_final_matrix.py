@@ -2032,7 +2032,7 @@ for _need in ('class="openreel"', "Watch the reel", "class=\"srcline\""):
 _vid106 = "a" * 32
 _calls106 = []
 _orig106 = (m.record_visitor, m.record_visitor_month)
-m.record_visitor = lambda h: _calls106.append(("day", h))
+m.record_visitor = lambda h, kind="other": _calls106.append(("day", h))
 m.record_visitor_month = lambda h: _calls106.append(("month", h))
 try:
     if not m._count_visitor(_vid106, "Mozilla/5.0 (iPhone) AppleWebKit"): fails.append("m106 a real browser must count")
@@ -2203,6 +2203,28 @@ if len(_counted113) != 1 or "COST_PER_CHECK_EST" not in _counted113[0]: fails.ap
 _st113 = open("app/storage.py").read()
 if "def add_usage(est_cost: float, count: bool = True)" not in _st113 or "(1 if count else 0, est_cost)" not in _st113: fails.append("m113 add_usage has no count flag")
 
+# 114. WHERE DID THEY LAND (Sept 22, Inderpreet: "74 visitors seems
+# excessive to the checks"): each visitor's first landing (home / shared
+# result / app) and page count are kept, so a day of home-page-only,
+# one-page visitors reads as scanners, not readers.
+_kinds114 = []
+_orig114 = m.record_visitor
+m.record_visitor = lambda h, kind="other": _kinds114.append(kind)
+try:
+    m._count_visitor("b" * 32, "Mozilla/5.0 (iPhone)", "result"); m._count_visitor("c" * 32, "Mozilla/5.0", "app"); m._count_visitor("d" * 32, "Mozilla/5.0", "bogus")
+    time.sleep(0.2)
+    if _kinds114 != ["result", "app", "bogus"]: fails.append(f"m114 kinds passed through: {_kinds114}")
+finally:
+    m.record_visitor = _orig114
+import app.storage as _st114
+if "def visitor_kinds" not in open("app/storage.py").read() or "ADD COLUMN IF NOT EXISTS kind" not in open("app/storage.py").read(): fails.append("m114 storage kinds missing")
+if _st114.VISIT_KINDS != ("home", "result", "app", "other"): fails.append("m114 kinds set")
+_h114 = open("app/templates/app.html").read()
+if "kind=/[?&]app=1" not in _h114 or "'result'" not in _h114 or "JSON.stringify({vid:v,kind})" not in _h114: fails.append("m114 beacon does not send the landing kind")
+if "Where visitors landed" not in open("app/templates/admin.html").read(): fails.append("m114 admin day detail missing")
+# v0.66.15: spend per day has its own card
+if 'id="spendWrap"' not in open("app/templates/admin.html").read() or 'x => x.est_cost' not in open("app/templates/admin.html").read(): fails.append("m114 spend-per-day card missing")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 113/113 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check")
+    "FINAL MATRIX PASS: 114/114 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed")

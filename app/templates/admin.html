@@ -157,6 +157,12 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="card">
+      <h2>Spend per day — last 14 days</h2>
+      <div class="s" style="margin:-4px 0 8px">Estimated dollars spent on AI calls each day (checks, follow-ups, captions, background jobs). The daily cap is $30.</div>
+      <div id="spendWrap"></div>
+    </div>
+
+    <div class="card">
       <h2>Speed &amp; cost per day — last 14 days</h2>
       <div class="s" style="margin:-4px 0 8px">Average video check time (seconds) and average cost per fresh check, each day. Hover a bar for the numbers.</div>
       <div class="s" style="margin-bottom:2px">Avg video check · seconds</div>
@@ -575,6 +581,12 @@ async function loadDay(day){
           `<div><b>${d.avg_seconds != null ? d.avg_seconds + "s" : "—"}</b><br><span>avg video check${d.video_checks ? " (" + d.video_checks + ")" : ""}</span></div>` +
           `<div><b>${d.avg_cost != null ? (d.avg_cost*100).toFixed(1) + "¢" : "—"}</b><br><span>avg cost per check</span></div>` +
           `<div><b>${(ev.copy_result||0)+(ev.copy_link||0)+(ev.share||0)}</b><br><span>results shared/copied</span></div></div>`;
+  const vk = d.visitor_kinds || {};
+  if (vk.total){
+    const bk = vk.by_kind || {};
+    h += `<div class="s" style="margin-bottom:6px">Where visitors landed: ${bk.result||0} on a shared result · ${bk.app||0} in the app · ${bk.home||0} on the home page · ${bk.other||0} elsewhere` +
+         ` &nbsp;·&nbsp; ${vk.one_page} of ${vk.total} loaded a single page and left${(bk.home||0) > 0 && (vk.one_page / vk.total) > 0.7 && (bk.home||0) / vk.total > 0.6 ? ' <span style="color:#fab219">(mostly home-page-only: looks like scanners)</span>' : ''}</div>`;
+  }
   const fb = d.feedback || {};
   if ((fb.fair||0)+(fb.harsh||0)+(fb.wrong||0))
     h += `<div class="s" style="margin-bottom:6px">Feedback that day: ${fb.fair||0} fair · ${fb.harsh||0} harsh · ${fb.wrong||0} wrong</div>`;
@@ -686,10 +698,11 @@ function render(d){
     return bars + "</div>" + labs + "</div>";
   }
   if (daily.length){
+    $("spendWrap").innerHTML = miniBars(daily, x => x.est_cost, v => "$" + v.toFixed(2), "#a78bfa");
     $("speedWrap").innerHTML = miniBars(daily, x => x.avg_seconds, v => v.toFixed(1) + "s", "#38bdf8");
     $("costWrap").innerHTML = miniBars(daily, x => x.avg_cost, v => (v * 100).toFixed(1) + "¢", "#fab219");
   } else {
-    $("speedWrap").innerHTML = $("costWrap").innerHTML = '<div class="empty">No daily data yet.</div>';
+    $("spendWrap").innerHTML = $("speedWrap").innerHTML = $("costWrap").innerHTML = '<div class="empty">No daily data yet.</div>';
   }
 
   // ---- calendar (click a day for its visitors / checks / spend) ----

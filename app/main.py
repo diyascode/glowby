@@ -85,7 +85,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.13"
+VERSION = "0.66.15"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1793,9 +1793,10 @@ _VID_RE = re.compile(r"^[a-f0-9]{32}$")
 
 class Visit(BaseModel):
     vid: str = ""
+    kind: str = "other"   # home | result | app — where this page load is
 
 
-def _count_visitor(vid: str, user_agent: str = "") -> bool:
+def _count_visitor(vid: str, user_agent: str = "", kind: str = "other") -> bool:
     """Pure-ish: True when the visit was counted."""
     if not _VID_RE.match(vid or "") or _BOT_UA.search(user_agent or ""):
         return False
@@ -1803,7 +1804,7 @@ def _count_visitor(vid: str, user_agent: str = "") -> bool:
         day = time.strftime("%Y-%m-%d")
         salt = ADMIN_KEY or "glowby"
         vh = hashlib.sha256(f"{salt}:{day}:{vid}".encode()).hexdigest()[:32]
-        threading.Thread(target=record_visitor, args=(vh,), daemon=True).start()
+        threading.Thread(target=record_visitor, args=(vh, kind), daemon=True).start()
         # monthly code: one count per device per calendar month, never
         # linkable across months (different salt input)
         month = time.strftime("%Y-%m")
@@ -1817,7 +1818,7 @@ def _count_visitor(vid: str, user_agent: str = "") -> bool:
 @app.post("/api/visit")
 def api_visit(v: Visit, request: Request):
     """The page's headcount beacon. Anonymous; nothing about who is stored."""
-    return {"ok": _count_visitor(v.vid, request.headers.get("user-agent", ""))}
+    return {"ok": _count_visitor(v.vid, request.headers.get("user-agent", ""), v.kind)}
 
 
 class ScoreFeedback(BaseModel):
