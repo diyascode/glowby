@@ -102,6 +102,7 @@
 .audet summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .audet-body{margin-top:8px}
 .audet-row{padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.audet-full{margin:2px 0 0;padding:0;border:0;background:none}.audet-full>summary{display:inline-block;cursor:pointer;font-size:12px;color:var(--brand);padding:0;border:0;background:none;list-style:none;text-decoration:underline dotted}.audet-full>summary::-webkit-details-marker{display:none}.audet-full>summary::marker{content:""}.audet-full>div{margin-top:4px}
 .audet-num{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px;margin-left:4px}
 .dial-state{font-size:12px;font-weight:600;margin-top:3px;max-width:160px;margin-left:auto;margin-right:auto}
   .aidisc{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--muted);text-align:center}
@@ -1128,17 +1129,30 @@ function renderList(d){
     const st={not_assessed:'not run',completed:'completed',partial:'partly completed',failed:'could not complete'};
     html+='<details class="audet"><summary>\ud83e\uddea AI check details ('+au.evidence.length+') \u2014 what the detectors actually reported</summary>';
     html+='<div class="audet-body">';
+    // v0.66.18: one plain line per detector; the full report opens on tap
+    const NAME={hive:'Forensic detector',claude_vision:'Frame-by-frame review',reverse_search:'Reverse image search',c2pa:'Content credentials',caption:'Creator label',transcript:'Creator label (spoken)'};
+    const SIG={forensic_video_frames:'video frames',forensic_audio_voice:'voice',consistency_review:'',provenance:'',declaration:''};
+    const brief=(e)=>{
+      const x=String(e.explanation||'').trim();
+      const first=x.split(/(?<=[.;])\s/)[0]||x;
+      const f=first.replace(/[;:,]$/,'');
+      return f.length>110?f.slice(0,107).replace(/\s+\S*$/,'')+'\u2026':f;
+    };
     for(const e of au.evidence){
       const num=(e.raw_score===0||e.raw_score)?('<span class="audet-num">confidence '+e.raw_score+'</span>'):'';
       const seen=(e.classes_seen===0||e.classes_seen)?('<span class="audet-num">'+e.classes_seen+' class scores read</span>'):'';
-      html+='<div class="audet-row"><b>'+esc(e.provider||'')+'</b> \u00b7 <span class="meta">'+esc(e.signal_type||'')+'</span> '+num+seen
-        +'<div class="meta">'+esc(e.explanation||'')+'</div>'
-        +(e.source_link?'<a href="'+esc(e.source_link)+'" target="_blank" rel="noopener" class="meta">source \u2197</a>':'')
+      const label=(NAME[e.provider]||esc(e.provider||''))+(SIG[e.signal_type]!==undefined?(SIG[e.signal_type]?' \u00b7 '+SIG[e.signal_type]:''):(' \u00b7 '+esc(e.signal_type||'')));
+      const full=esc(e.explanation||'');
+      const short=esc(brief(e));
+      html+='<div class="audet-row"><b>'+label+'</b> '+num+seen
+        +'<div class="meta">'+short+'</div>'
+        +((full.length>short.length+12||e.source_link)?('<details class="audet-full"><summary>full report</summary><div class="meta">'+full+'</div>'
+          +(e.source_link?'<a href="'+esc(e.source_link)+'" target="_blank" rel="noopener" class="meta">source \u2197</a>':'')+'</details>'):'')
         +'</div>';
     }
     html+='<div class="meta" style="margin-top:8px">Stage 1 '+esc(st[au.assessment_status]||au.assessment_status||'not run')
       +(au.stage2_status?(' \u00b7 forensic detector '+esc(st[au.stage2_status]||au.stage2_status)):'')
-      +'. Glowby only calls a result \u201cstrong synthetic signals\u201d at very high detector confidence, and \u201cauthenticity unclear\u201d in the middle band \u2014 anything lower is reported as no signal, which never means proven real. '
+      +'. Strong signals only at very high detector confidence; the middle band is \u201cunclear\u201d; anything lower is \u201cno signal\u201d, which never means proven real. '
       +'<a href="/about#aimedia" target="_blank">how this works \u2197</a></div>';
     html+='</div></details>';
   }

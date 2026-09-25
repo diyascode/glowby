@@ -2272,6 +2272,9 @@ _o116 = _V116.observations_only("This appears to be authentic phone camera foota
 if "authentic" in _o116.lower() or "camera-consistent" not in _o116: fails.append(f"m116 observations: {_o116}")
 if "never call the" not in _V116.FORENSIC_PROMPT or '"authentic"' not in _V116.FORENSIC_PROMPT: fails.append("m116 forensic prompt rule")
 if _V116.observations_only("Two generation tells seen: text drifts between frames.") != "Two generation tells seen: text drifts between frames.": fails.append("m116 must not touch a tells summary")
+# v0.66.18: one plain line per detector, full report on tap
+for _need in ("class=\"audet-full\"", "<summary>full report</summary>", "Frame-by-frame review", "never means proven real"):
+    if _need not in _h116: fails.append(f"m116 drawer: {_need}")
 
 print("MATRIX FAILURES:", fails) if fails else print(
     "FINAL MATRIX PASS: 116/116 — captions/thin/whisper/silent/blind/blocked/too-long, "
