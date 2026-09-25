@@ -40,7 +40,7 @@ reads at a glance, that says what the reader most wants to know: is the \
 main thing in the video true, and is the video itself real. Start with \
 exactly this word, which is the score band shown on the card: "{lead}" — \
 then a dash and the rest: what is actually true or false here, in plain \
-words (e.g. "Misleading — diesel is near record highs at $6–8, but nowhere \
+words (e.g. "Inaccurate — diesel is near record highs at $6–8, but nowhere \
 near needing gold to buy"). If the main claim is false or only \
 partly true and the verdict says what is actually true, put the correction \
 in the same sentence ("No — X did not …; in fact …"), taken from the \
@@ -179,7 +179,7 @@ def clean(line: str) -> str:
     return s[:220]
 
 
-_LEADS = ("accurate", "mostly accurate", "mixed", "misleading", "unverified",
+_LEADS = ("accurate", "mostly accurate", "mixed", "inaccurate", "misleading", "unverified",
           "yes", "no", "partly", "mostly", "unclear", "nothing", "do not", "don't")
 # THE LEAD WORD IS THE BAND (Sept 15, Diya: "Partly" over a "Mostly accurate"
 # pill). Accurate → Yes · Mostly accurate → Mostly · Mixed → Partly ·
@@ -187,8 +187,8 @@ _LEADS = ("accurate", "mostly accurate", "mixed", "misleading", "unverified",
 # v0.66.3: the lead word IS the pill word, letter for letter (Diya: "No and
 # Misleading should match").
 LEAD_FOR_BAND = {"true": "Accurate", "mostly true": "Mostly accurate", "partly true": "Mixed",
-                 "false": "Misleading", "unverified": "Unverified"}
-_LEAD_RE = re.compile(r"^(mostly accurate|accurate|mixed|misleading|unverified|mostly yes|mostly no|mostly true|mostly|yes|no|partly true|partly|unclear|true|false)\b[\s,:—–-]*", re.I)
+                 "false": "Inaccurate", "unverified": "Unverified"}  # v0.66.17: "Misleading" implies intent
+_LEAD_RE = re.compile(r"^(mostly accurate|accurate|mixed|inaccurate|misleading|unverified|mostly yes|mostly no|mostly true|mostly|yes|no|partly true|partly|unclear|true|false)\b[\s,:—–-]*", re.I)
 
 
 def canonical_lead(result: dict):

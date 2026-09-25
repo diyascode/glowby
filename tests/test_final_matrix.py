@@ -2017,10 +2017,10 @@ _r105 = {"report": {"headline_score": 7.5, "headline_state": "mostly_accurate"}}
 if _S105.force_lead("Partly — Alibaba's AI attempted mining.", _r105) != "Mostly accurate — Alibaba's AI attempted mining.": fails.append(f"m105 force_lead: {_S105.force_lead('Partly — Alibaba AI attempted mining.', _r105)}")
 if _S105.consistent("Partly — Alibaba's AI attempted mining.", _r105): fails.append("m105 a mismatched lead must be rejected")
 if not _S105.consistent("Mostly accurate — Alibaba's AI attempted mining.", _r105): fails.append("m105 the band lead must pass")
-for _sc, _ld in ((8.6, "Accurate"), (7.7, "Mostly accurate"), (5.2, "Mixed"), (2.0, "Misleading"), (None, "Unverified")):
+for _sc, _ld in ((8.6, "Accurate"), (7.7, "Mostly accurate"), (5.2, "Mixed"), (2.0, "Inaccurate"), (None, "Unverified")):
     if _S105.canonical_lead({"report": {"headline_score": _sc}}) != _ld: fails.append(f"m105 lead for {_sc}")
 if not _S105.fallback_line(_r105).startswith("Mostly accurate — "): fails.append("m105 fallback lead")
-if _S105.force_lead("No — diesel is expensive but needs no gold.", {"report": {"headline_score": 3.4}}) != "Misleading — diesel is expensive but needs no gold.": fails.append("m105 the diesel case")
+if _S105.force_lead("No — diesel is expensive but needs no gold.", {"report": {"headline_score": 3.4}}) != "Inaccurate — diesel is expensive but needs no gold.": fails.append("m105 the diesel case")
 _h105 = open("app/templates/app.html").read()
 for _need in ('class="openreel"', "Watch the reel", "class=\"srcline\""):
     if _need not in _h105: fails.append(f"m105 source line missing: {_need}")
@@ -2257,6 +2257,22 @@ _ref115 = {"web_sources": [{"stance": "refutes", "source": "AP", "url": "https:/
 if _J115.verdict_from_stances(_ref115, {})["verdict_state"] != "contradicted": fails.append("m115 refuting sources -> contradicted")
 if _J115.verdict_from_stances({"web_sources": []}, {})["verdict_state"] != "insufficient": fails.append("m115 no sources -> insufficient")
 
+# 116. SPEC-TRUE CARD (Sept 25 review): the big "AI" mark only when AI is
+# confirmed or labeled ("?" for unclear, a dash for no signal); the red
+# pill says Inaccurate, never Misleading (intent language); the forensic
+# reasoner's summary is observations only, never "authentic".
+import app.agents.vision as _V116, app.agents.summary as _S116
+_h116 = open("app/templates/app.html").read()
+if "function auMark(au)" not in _h116 or _h116.count("auMark(au)") < 3: fails.append("m116 AI mark not gated")
+if "if(o==='inconclusive')return '?';" not in _h116: fails.append("m116 unclear must show ?")
+if "return ['Misleading','#f87171']" in _h116 or "return ['Inaccurate','#f87171']" not in _h116: fails.append("m116 pill word")
+if _S116.LEAD_FOR_BAND["false"] != "Inaccurate" or _S116.canonical_lead({"report": {"headline_score": 1.5}}) != "Inaccurate": fails.append("m116 lead word")
+if "Inaccurate" not in open("app/templates/trust.html").read(): fails.append("m116 trust page band word")
+_o116 = _V116.observations_only("This appears to be authentic phone camera footage with natural lighting and motion blur.")
+if "authentic" in _o116.lower() or "camera-consistent" not in _o116: fails.append(f"m116 observations: {_o116}")
+if "never call the" not in _V116.FORENSIC_PROMPT or '"authentic"' not in _V116.FORENSIC_PROMPT: fails.append("m116 forensic prompt rule")
+if _V116.observations_only("Two generation tells seen: text drifts between frames.") != "Two generation tells seen: text drifts between frames.": fails.append("m116 must not touch a tells summary")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 115/115 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory")
+    "FINAL MATRIX PASS: 116/116 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card")

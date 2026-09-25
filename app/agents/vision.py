@@ -13,6 +13,7 @@ to the judges.
 """
 
 import os
+import re
 
 # COST: the eyes describe on-screen text and scenes; the small model does
 # this well at a fifth of the price. Override with GLOWBY_VISION_MODEL.
@@ -134,7 +135,25 @@ Respond with ONLY a JSON object (no prose, no code fences):
 "summary": "one plain sentence"}}
 "high" means at least two clear tells that real footage would not show. "low" \
 means the frames look like ordinary camera footage. Be specific; never guess \
-beyond what is visible."""
+beyond what is visible. The summary is OBSERVATIONS ONLY: never call the \
+footage "authentic", "genuine", "real", "legitimate" or "fake" — write "no \
+visible generation artifacts; camera-consistent characteristics: sensor \
+noise, motion blur" or "two generation tells seen: ...". A reasoner cannot \
+prove footage real, and Glowby never renders anything as genuine."""
+
+
+_VERDICT_PHRASE = re.compile(
+    r"\b(appears? to be|looks? like|looks?|seems? to be|seems?|is|are)\s+(authentic|genuine|real|legitimate)"
+    r"(\s+(phone\s+)?(camera\s+)?(footage|video|recording))?", re.I)
+_VERDICT_WORD = re.compile(r"\b(authentic|genuine|legitimate)\b|\breal (footage|video|recording)\b", re.I)
+
+
+def observations_only(text: str) -> str:
+    """Pure: strip verdict words from the reasoner's summary — it reports
+    what it saw, never that footage is real (nothing renders as genuine)."""
+    out = _VERDICT_PHRASE.sub(lambda m: ("show" if re.match(r"(look|seem|appear|are)$", m.group(1).split()[0].lower()) else "shows") + " camera-consistent characteristics", text or "")
+    out = _VERDICT_WORD.sub(lambda m: "camera-consistent " + (m.group(2) or "").strip() if m.group(2) else "camera-consistent", out)
+    return re.sub(r"\s{2,}", " ", out).strip()
 
 
 def parse_forensic(raw: str) -> dict | None:
@@ -167,7 +186,7 @@ def parse_forensic(raw: str) -> dict | None:
     if lk == "high" and len(tells) < 2 and not wm:
         lk = "medium"  # "high" needs two concrete tells (or a watermark)
     return {"likelihood": lk, "tells": tells, "real_tells": real,
-            "generator_watermark": wm, "summary": str(d.get("summary") or "")[:240]}
+            "generator_watermark": wm, "summary": observations_only(str(d.get("summary") or ""))[:240]}
 
 
 def forensic_opinion(frames: list, client=None):
