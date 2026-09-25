@@ -2225,6 +2225,38 @@ if "Where visitors landed" not in open("app/templates/admin.html").read(): fails
 # v0.66.15: spend per day has its own card
 if 'id="spendWrap"' not in open("app/templates/admin.html").read() or 'x => x.est_cost' not in open("app/templates/admin.html").read(): fails.append("m114 spend-per-day card missing")
 
+# 115. THE EVIDENCE OUTRANKS THE JUDGE'S MEMORY (Sept 24, the Charlie Kirk
+# check: Wikipedia, ABC and BBC in the evidence; the judge ruled him
+# alive and called the sources "fabricated"). The rule is in every judge
+# and both evidence taggers; a judge that dismisses its evidence is
+# re-asked once, then the sources' own stances decide.
+import app.agents.judge as _J115, app.agents.evidence as _E115
+if "THE EVIDENCE OUTRANKS YOUR MEMORY" not in _J115.PROMPT or "today: {today}" not in _J115.PROMPT: fails.append("m115 judge rule/date missing")
+for _pr in (_E115.PROMPT, _E115.BRAVE_READ_PROMPT):
+    if "THE SOURCE OUTRANKS YOUR MEMORY" not in _pr: fails.append("m115 evidence tagger rule missing")
+_deny = {"verdict_state": "unverifiable", "truth_score": None, "verdict": "The evidence consists entirely of Wikipedia articles and news reports that do not exist in reality — Charlie Kirk is alive.", "why_unverifiable": "no_sources_found"}
+_deny2 = {"verdict_state": "contradicted", "truth_score": 1.5, "verdict": "Charlie Kirk is alive and active in public life; the shoes went viral in April 2025, but he is not deceased."}
+for _d in (_deny, _deny2):
+    if not _J115.evidence_denied(_d): fails.append(f"m115 denial not detected: {_d['verdict'][:40]}")
+if _J115.evidence_denied({"verdict_state": "supported", "verdict": "Multiple outlets confirm the bill was signed."}): fails.append("m115 false positive on a normal verdict")
+_ev115 = {"web_sources": [{"stance": "supports", "source": "Wikipedia", "url": "https://en.wikipedia.org/wiki/Charlie_Kirk"}, {"stance": "supports", "source": "ABC News", "url": "https://abcnews.go.com/a"}, {"stance": "supports", "source": "BBC", "url": "https://www.bbc.com/b"}], "fact_checks": []}
+_calls115 = []
+_orig115 = _J115._judge_once
+_J115._judge_once = lambda claim, evidence, reminder="": (_calls115.append(reminder), dict(_deny))[1]
+try:
+    _out115 = _J115.judge_with_rubric({"claim": "Erika Kirk's husband Charlie Kirk is deceased.", "bucket": "politics"}, _ev115)
+    if _out115.get("verdict_state") != "supported" or _out115.get("truth_score") != 8.0 or not _out115.get("memory_override"): fails.append(f"m115 sources must decide when the judge keeps denying: {_out115}")
+    if len(_calls115) != 2 or "OUTRANKS YOUR MEMORY" not in _calls115[1]: fails.append(f"m115 retry reminder: {_calls115}")
+    _calls115.clear()
+    _J115._judge_once = lambda claim, evidence, reminder="": ({"verdict_state": "supported", "truth_score": 8.4, "verdict": "Wikipedia, ABC and BBC report his death on Sept 10, 2025."} if reminder else dict(_deny2))
+    _out115b = _J115.judge_with_rubric({"claim": "x", "bucket": "politics"}, _ev115)
+    if _out115b.get("verdict_state") != "supported" or _out115b.get("truth_score") != 8.4: fails.append(f"m115 corrected retry must stand: {_out115b}")
+finally:
+    _J115._judge_once = _orig115
+_ref115 = {"web_sources": [{"stance": "refutes", "source": "AP", "url": "https://apnews.com/x"}], "fact_checks": []}
+if _J115.verdict_from_stances(_ref115, {})["verdict_state"] != "contradicted": fails.append("m115 refuting sources -> contradicted")
+if _J115.verdict_from_stances({"web_sources": []}, {})["verdict_state"] != "insufficient": fails.append("m115 no sources -> insufficient")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 114/114 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed")
+    "FINAL MATRIX PASS: 115/115 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory")

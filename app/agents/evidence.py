@@ -148,7 +148,12 @@ quote or finding from that source", "stance": "supports|refutes|mixed|context"}}
 "stance" is the source's relationship TO THE CLAIM: supports = source agrees \
 claim is true; refutes = source contradicts the claim; mixed = partially \
 true; context = background that helps judge it. Use only URLs that appeared \
-in your search results. If you find no relevant sources, return []."""
+in your search results. If you find no relevant sources, return [].
+THE SOURCE OUTRANKS YOUR MEMORY: tag the stance by what the source SAYS, \
+never by what you remember. Your training has a cutoff; a death, election, \
+verdict or law reported by a reputable source after it is real. Never skip, \
+downgrade or tag "context" a source because its report surprises you.
+"""
 
 
 SEARCH_TOOLS_FULL = [
@@ -283,7 +288,12 @@ quote or finding from that source", "stance": "supports|refutes|mixed|context"}}
 "stance" is the source's relationship TO THE CLAIM: supports = source agrees \
 claim is true; refutes = source contradicts the claim; mixed = partially \
 true; context = background that helps judge it. Use ONLY URLs that appear in \
-the results above — never invent one. If nothing is relevant, return []."""
+the results above — never invent one. If nothing is relevant, return [].
+THE SOURCE OUTRANKS YOUR MEMORY: tag the stance by what the source SAYS, \
+never by what you remember. Your training has a cutoff; a death, election, \
+verdict or law reported by a reputable source after it is real. Never skip, \
+downgrade or tag "context" a source because its report surprises you.
+"""
 
 
 _STOP = set("""a an the and or but nor so yet of in on at to for from by with without

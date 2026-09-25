@@ -30,6 +30,7 @@ Hard rules enforced in CODE (not trusted to the model):
 import json
 import os
 import re
+import time
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
 # COST TIERING: a cheaper judge for low-stakes buckets; the strong model
@@ -64,7 +65,7 @@ def cached_system_blocks(bucket: str) -> list:
     prompt = PROMPT.format(
         bucket=bucket, rubric=load_rubric(bucket), secondary_note="",
         risk_level="low", claim="", fact_checks="", web_sources="",
-        max_sources=MAX_KEY_SOURCES, search_rounds=1, posted_date="unknown")
+        max_sources=MAX_KEY_SOURCES, search_rounds=1, posted_date="unknown", today="")
     rub_at = prompt.index("=== YOUR CATEGORY: ")
     claim_at = prompt.index("Claim (routed to ")
     return [_cache_block(prompt[:rub_at]), _cache_block(prompt[rub_at:claim_at])]
@@ -168,6 +169,18 @@ would, applying whatever rubric caps still make sense — and set \
 "wrong_desk" to the better category so Glowby can learn. "not_scoreable" \
 exists ONLY for: depends on a definition, a guilt gate, a matter of taste. \
 "Not within this category's scope" is never a verdict.
+- THE EVIDENCE OUTRANKS YOUR MEMORY. Your training stopped on a date; the \
+world did not. Today's date is in the claim block. When reputable sources \
+in the evidence (Wikipedia, AP, Reuters, BBC, ABC, NPR, major newspapers, \
+official records) report an event you do not remember — a death, an \
+election result, a verdict, a law, a disaster, a resignation — the \
+sources are right and your memory is out of date. NEVER call evidence \
+"fabricated", "not real", "does not exist" or "hallucinated" because it \
+conflicts with what you remember. NEVER rule a claim contradicted, or a \
+person alive, or an event un-happened, on your own knowledge: \
+"contradicted" requires a source IN THE EVIDENCE that says the opposite. \
+If the evidence supports a claim you find surprising, rule supported and \
+say what the sources report.
 - TRUTH SCORE is 0.0-9.9, one decimal. Higher = better supported by \
 evidence. 9.9 is the ceiling; never award 10.0.
 - Apply every relevant cap from the rubric (single-study caps, provisional \
@@ -386,7 +399,7 @@ cannot be true or false at all (taste, prophecy, a definition fight, a \
 guilt gate).
 
 Claim (routed to {bucket}{secondary_note}, risk level {risk_level}; \
-video posted: {posted_date}; evidence search rounds that ran: {search_rounds}): \
+video posted: {posted_date}; today: {today}; evidence search rounds that ran: {search_rounds}): \
 "{claim}"
 
 Evidence — professional fact-checker reviews:
@@ -470,6 +483,19 @@ def judge_with_rubric(claim: dict, evidence: dict) -> dict:
             v = dict(v)
             v["verdict_state"] = "insufficient"
             v["why_unverifiable"] = v.get("why_unverifiable") or "the sources found don't settle this for the named bill"
+    # MEMORY BACKSTOP (Sep 24, the Charlie Kirk check): a judge that calls
+    # its own evidence "fabricated" / "does not exist" is judging from
+    # memory. One more pass with the rule spelled out; if it still refuses
+    # the evidence, the evidence's own stances decide, not the judge.
+    if isinstance(v, dict) and evidence_denied(v) and not claim.get("_memory_retry"):
+        c2 = dict(claim)
+        c2["_memory_retry"] = True
+        v2 = _judge_once(c2, evidence, reminder=MEMORY_REMINDER)
+        if isinstance(v2, dict) and v2.get("verdict_state") and not evidence_denied(v2):
+            v = v2
+        else:
+            v = verdict_from_stances(evidence, claim)
+        v["memory_override"] = True
     # ROUNDING BACKSTOP (Sep 20, "8% vs 7.9% — too harsh"): a judge that
     # rules CONTRADICTED while its own verdict cites a figure that matches
     # the claim's (within 3%) has broken the rounding rule — one more pass
@@ -532,6 +558,60 @@ ROUNDING_REMINDER = (
     "statistic (another period, measure or baseline) changes the picture, "
     "say so and rule partly_supported (6.0-7.5), naming both figures. "
     "Never rule contradicted on a figure that matches."
+)
+
+
+_DENIAL_RE = re.compile(
+    r"(fabricat|do(es)? not exist|don't exist|not exist in reality|no such (person|event|article|report)|"
+    r"hallucinat|fake (sources?|articles?|reports?)|(sources?|articles?|reports?) (that )?(are|is) (not real|invented|made up)|"
+    r"(is|are|remains?) (alive|still alive|living)\b[^.]{0,80}(not deceased|not dead|has not died)|"
+    r"(has|have) not (died|passed away|been (elected|convicted|signed)))", re.I)
+
+
+def evidence_denied(verdict: dict) -> bool:
+    """Pure: the judge dismissed the evidence in front of it as unreal, or
+    asserted from memory that a reported event did not happen."""
+    if not isinstance(verdict, dict):
+        return False
+    text = " ".join(str(verdict.get(k) or "") for k in ("verdict", "why_unverifiable"))
+    return bool(_DENIAL_RE.search(text))
+
+
+_TRUSTED = ("wikipedia.org", "apnews.com", "reuters.com", "bbc.co", "bbc.com", "abcnews", "nbcnews", "cbsnews",
+            "npr.org", "nytimes.com", "washingtonpost.com", "wsj.com", "theguardian.com", "cnn.com", "politico.com",
+            "axios.com", "bloomberg.com", "latimes.com", ".gov", "usatoday.com", "pbs.org", "time.com", "forbes.com")
+
+
+def verdict_from_stances(evidence: dict, claim: dict) -> dict:
+    """Pure: when the judge will not accept its evidence, let the evidence
+    speak — a plain verdict from the sources' own stances."""
+    rows = (evidence or {}).get("web_sources") or []
+    fcs = (evidence or {}).get("fact_checks") or []
+    sup = [r for r in rows if r.get("stance") == "supports"]
+    ref = [r for r in rows if r.get("stance") == "refutes"]
+    trusted_sup = [r for r in sup if any(t in str(r.get("url") or "") for t in _TRUSTED)]
+    names = lambda rs: ", ".join(dict.fromkeys(str(r.get("source") or r.get("url") or "")[:40] for r in rs[:3]))
+    base = {"evidence_strength": "moderate", "key_sources": [r["url"] for r in (sup or ref)[:3] if r.get("url")], "why_unverifiable": None}
+    if (len(sup) >= 2 or trusted_sup) and not ref:
+        return dict(base, truth_score=8.0 if trusted_sup else 7.5, verdict_state="supported",
+                    verdict=f"Reported by {names(sup)}; see the sources.")
+    if ref and not sup:
+        return dict(base, truth_score=2.5, verdict_state="contradicted",
+                    verdict=f"{names(ref)} report the opposite of this claim.")
+    if sup and ref:
+        return dict(base, truth_score=5.0, verdict_state="partly_supported",
+                    verdict=f"Sources disagree: {names(sup)} support it, {names(ref)} dispute it.")
+    return dict(base, truth_score=None, verdict_state="insufficient", evidence_strength="thin",
+                verdict="The sources found don't settle this claim.", why_unverifiable="sources_dont_address_claim")
+
+
+MEMORY_REMINDER = (
+    "REMINDER — THE EVIDENCE OUTRANKS YOUR MEMORY: you dismissed the sources "
+    "above as fabricated or nonexistent, or asserted from memory that a "
+    "reported event did not happen. Your training has a cutoff date; the "
+    "sources are dated after it. Judge ONLY from the evidence: if reputable "
+    "sources report the event, it happened. Rule supported/contradicted "
+    "strictly by what the sources say."
 )
 
 
@@ -621,6 +701,7 @@ def _judge_once(claim: dict, evidence: dict, reminder: str = "") -> dict:
         max_sources=MAX_KEY_SOURCES,
         search_rounds=evidence.get("search_rounds", 1) if isinstance(evidence, dict) else 1,
         posted_date=claim.get("posted_date") or "unknown",
+        today=time.strftime("%Y-%m-%d"),
     )
 
     # PROMPT CACHING: everything before the claim block is identical for
