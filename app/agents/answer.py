@@ -12,6 +12,7 @@ memory; missing evidence is said out loud, never papered over.
 
 import json
 import os
+from app.agents import llm as _llm
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
 
@@ -74,7 +75,7 @@ def answer_followup(question: str, context: str):
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
+        message = _llm.create(client, 
             model=MODEL,
             max_tokens=400,
             temperature=0,
@@ -104,7 +105,7 @@ def answer_question(question: str, evidence: dict):
     }, indent=1)[:12000]
     try:
         client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
+        message = _llm.create(client, 
             model=MODEL,
             max_tokens=500,
             temperature=0,

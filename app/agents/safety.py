@@ -27,6 +27,7 @@ is treated as mature (never in Trending), otherwise general.
 import json
 import os
 import re
+from app.agents import llm as _llm
 
 MODEL = os.environ.get("GLOWBY_SAFETY_MODEL", "claude-haiku-4-5")
 RATINGS = ("general", "mature", "explicit")
@@ -124,7 +125,7 @@ def rate_content(title: str = "", transcript: str = "", uploader: str = "",
             client = None
     if client is not None:
         try:
-            msg = client.messages.create(
+            msg = _llm.create(client, 
                 model=MODEL, max_tokens=200, temperature=0,
                 messages=[{"role": "user", "content": PROMPT.format(
                     title=(title or "")[:300], uploader=(uploader or "")[:100],

@@ -48,6 +48,7 @@ import uuid
 import unicodedata
 import urllib.parse
 import urllib.request
+from app.agents import llm as _llm
 
 EXTRACT_MODEL = os.environ.get("GLOWBY_SCAM_MODEL", "claude-haiku-4-5")
 MAX_VERIFY_QUERIES = int(os.environ.get("GLOWBY_SCAM_MAX_QUERIES", "5"))
@@ -545,7 +546,7 @@ def extract_model(text: str, client=None) -> dict | None:
     if client is None:
         return None
     try:
-        msg = client.messages.create(
+        msg = _llm.create(client, 
             model=EXTRACT_MODEL, max_tokens=600, temperature=0,
             messages=[{"role": "user", "content": EXTRACT_PROMPT.format(text=text[:7000])}])
         raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")

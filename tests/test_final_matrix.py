@@ -2047,7 +2047,8 @@ finally:
     m.record_visitor, m.record_visitor_month = _orig106
 _src106 = open("app/main.py").read()
 for _route in ('def home(request: Request)', 'def checker(request: Request)', 'def permalink_page(key: str, request: Request)'):
-    _body = _src106[_src106.index(_route):_src106.index("return _page()", _src106.index(_route))]
+    _end = min(i for i in (_src106.find("return _page()", _src106.index(_route)), _src106.find("return page", _src106.index(_route))) if i != -1)
+    _body = _src106[_src106.index(_route):_end]
     if "_count_visitor" in _body: fails.append(f"m106 server-side counting still on: {_route}")
 if '@app.post("/api/visit")' not in _src106: fails.append("m106 beacon route missing")
 _h106 = open("app/templates/app.html").read()
@@ -2276,6 +2277,69 @@ if _V116.observations_only("Two generation tells seen: text drifts between frame
 for _need in ("class=\"audet-full\"", "<summary>full report</summary>", "Frame-by-frame review", "never means proven real"):
     if _need not in _h116: fails.append(f"m116 drawer: {_need}")
 
+# 117. A SHARED LINK PREVIEWS THE VERDICT (Sept 27 product note): the
+# report page is drawn by script, which previewers never run — so the
+# server writes the score, word and one-line into the preview tags and
+# serves a small score image; the previewer's fetch counts no view.
+from fastapi.testclient import TestClient as _TC117
+_res117 = {"title": "Test reel", "report": {"headline_score": 7.8, "headline_state": "mostly_accurate", "one_line": "Mostly accurate — the thing mostly happened.", "headline_label": "x"}, "claims": []}
+_orig117 = m.peek_result
+m.peek_result = lambda k: _res117 if k == "tiktok:t1" else None
+try:
+    _c117 = _TC117(m.app)
+    _h117 = _c117.get("/r/tiktok:t1").text
+    if 'property="og:title" content="Mostly accurate 7.8/10 — Test reel"' not in _h117: fails.append("m117 og:title")
+    if "Mostly accurate — the thing mostly happened." not in _h117 or 'content="https://glowby.io/og/tiktok:t1.png"' not in _h117: fails.append("m117 og description/image")
+    if _h117.count("<!--OG-->") != 1 or 'twitter:card" content="summary"' not in _h117: fails.append("m117 tag block")
+    _i117 = _c117.get("/og/tiktok:t1.png")
+    if _i117.status_code != 200 or not _i117.content.startswith(b"\x89PNG"): fails.append("m117 score image")
+    _i117b = _c117.get("/og/nope.png")
+    if _i117b.status_code != 200: fails.append("m117 unknown key must fall back to the icon")
+    if 'og:title" content="Glowby"' not in _c117.get("/r/nope").text: fails.append("m117 unknown key keeps the generic card")
+    _og = m.og_for_result({"report": {"headline_score": None, "nothing_to_check": "opinion", "one_line": "Nothing here can be true or false — it's an opinion."}, "title": "Rant"}, "k")
+    if not _og["title"].startswith("Nothing to fact-check") or _og["image"].endswith("/og/k.png"): fails.append(f"m117 nothing-to-check preview: {_og}")
+finally:
+    m.peek_result = _orig117
+if "def peek_result" not in open("app/storage.py").read() or "hits + 1" in open("app/storage.py").read().split("def peek_result")[1].split("def get_cached")[0]: fails.append("m117 peek must not count a view")
+if "Pillow" not in open("requirements.txt").read(): fails.append("m117 Pillow not in requirements")
+
+# 118. READY FOR SONNET 5.5 (Sept 29): the 5.x models reject a non-default
+# temperature; every Claude call goes through one wrapper that drops it
+# for that family and retries once without it on a "temperature" 400.
+# The switch itself is a Railway variable (GLOWBY_CLAUDE_MODEL), so it
+# can be reverted without a deploy.
+from app.agents import llm as _L118
+if not _L118.accepts_temperature("claude-sonnet-4-5") or _L118.accepts_temperature("claude-sonnet-5-5") or _L118.accepts_temperature("claude-opus-5-5-20260601") or not _L118.accepts_temperature("claude-haiku-4-5"): fails.append("m118 family detection")
+class _C118:
+    def __init__(self, reject_temp=False): self.calls=[]; self.reject=reject_temp
+    class messages:
+        pass
+    def __getattr__(self, n): raise AttributeError(n)
+class _M118:
+    def __init__(self, reject): self.calls=[]; self.reject=reject
+    def create(self, **kw):
+        self.calls.append(dict(kw))
+        if self.reject and "temperature" in kw: raise ValueError("400: `temperature` may only be set to 1 for this model")
+        return "ok"
+class _Cl118:
+    def __init__(self, reject=False): self.messages=_M118(reject)
+_c = _Cl118(); _L118.create(_c, model="claude-sonnet-5-5", max_tokens=5, temperature=0, messages=[])
+if "temperature" in _c.messages.calls[0]: fails.append("m118 temperature not stripped for 5.5")
+_c = _Cl118(); _L118.create(_c, model="claude-sonnet-4-5", max_tokens=5, temperature=0, messages=[])
+if _c.messages.calls[0].get("temperature") != 0: fails.append("m118 temperature must stay for 4.5")
+_c = _Cl118(reject=True); _r = _L118.create(_c, model="claude-mystery-9", max_tokens=5, temperature=0, messages=[])
+if _r != "ok" or len(_c.messages.calls) != 2 or "temperature" in _c.messages.calls[1]: fails.append(f"m118 retry without temperature: {_c.messages.calls}")
+import glob as _g118, re as _re118
+for _p in _g118.glob("app/agents/*.py"):
+    _s = open(_p).read()
+    for _m in _re118.finditer(r"client\.messages\.create\(", _s):
+        _j = _m.end(); _d = 1
+        while _d:
+            if _s[_j] == "(": _d += 1
+            elif _s[_j] == ")": _d -= 1
+            _j += 1
+        if "temperature" in _s[_m.start():_j]: fails.append(f"m118 raw temperature call in {_p}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 116/116 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card")
+    "FINAL MATRIX PASS: 118/118 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready")

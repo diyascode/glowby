@@ -22,7 +22,7 @@ from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from app.agents.answer import answer_followup, answer_question
@@ -52,6 +52,7 @@ from app.storage import (
     cache_available,
     canonical_key,
     patch_result,
+    peek_result,
     is_short_link,
     legacy_key,
     resolve_short_link,
@@ -85,7 +86,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.18"
+VERSION = "0.66.20"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1251,10 +1252,132 @@ def how_page() -> str:
     return _HOW_HTML
 
 
+# ---- share-link previews (v0.66.19) ----
+# The report page is drawn by JavaScript, which iMessage, WhatsApp and
+# Facebook never run — so a shared verdict used to preview as the generic
+# Glowby card. The server now writes the verdict into the page's preview
+# tags and serves a small score image, so the card says what the check
+# found before anyone taps it.
+_OG_RE = re.compile(r"<!--OG-->.*?<!--/OG-->", re.S)
+_OG_PNG: dict = {}          # key -> PNG bytes (bounded)
+_OG_PNG_MAX = 500
+
+
+def _html_attr(s: str) -> str:
+    return (str(s or "").replace("&", "&amp;").replace('"', "&quot;")
+            .replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def og_for_result(result: dict, key: str) -> dict:
+    """Pure: the preview title / description / image for a stored result.
+    Never calls a model — a previewer's fetch must cost nothing."""
+    rep = (result or {}).get("report") or {}
+    au = (result or {}).get("authenticity") or {}
+    title = str((result or {}).get("title") or "").strip()[:90]
+    hs = rep.get("headline_score")
+    from app.agents.summary import canonical_lead
+    word = canonical_lead(result or {})
+    if rep.get("safety_notice"):
+        head = "Safety alert"
+    elif rep.get("nothing_to_check"):
+        head = "Nothing to fact-check"
+    elif (result or {}).get("media_only") or hs is None and au.get("origin_result"):
+        head = {"likely_synthetic": "AI check: strong synthetic signals", "verified_ai_provenance": "AI check: verified AI",
+                "declared_ai": "AI check: creator-labeled AI", "inconclusive": "AI check: authenticity unclear"}.get(au.get("origin_result"), "AI check: no synthetic signal")
+    elif hs is not None:
+        head = f"{word} {float(hs):.1f}/10"
+    else:
+        head = word
+    line = str(rep.get("one_line") or rep.get("headline_label") or "").strip()
+    desc = (line + " · Checked by Glowby — sources on every claim.")[:290] if line else "Fact-checked by Glowby — sources on every claim."
+    return {"title": (head + (" — " + title if title else "")), "description": desc,
+            "image": f"https://glowby.io/og/{key}.png" if hs is not None else "https://glowby.io/og-icon.png",
+            "url": f"https://glowby.io/r/{key}"}
+
+
+def _og_tags(og: dict) -> str:
+    t, d, i, u = _html_attr(og["title"]), _html_attr(og["description"]), _html_attr(og["image"]), _html_attr(og["url"])
+    return ('<!--OG--><meta property="og:type" content="article">'
+            '<meta property="og:site_name" content="Glowby">'
+            f'<meta property="og:title" content="{t}">'
+            f'<meta property="og:description" content="{d}">'
+            f'<meta property="og:url" content="{u}">'
+            f'<meta property="og:image" content="{i}">'
+            '<meta property="og:image:width" content="300"><meta property="og:image:height" content="300">'
+            '<meta name="twitter:card" content="summary">'
+            f'<meta name="twitter:title" content="{t}">'
+            f'<meta name="twitter:description" content="{d}">'
+            f'<meta name="twitter:image" content="{i}"><!--/OG-->')
+
+
+def og_png(result: dict) -> bytes:
+    """Pure: a 300×300 card — score, verdict word, Glowby — for the share
+    preview. Built with Pillow's bundled font (no system fonts needed)."""
+    from io import BytesIO
+    from PIL import Image, ImageDraw, ImageFont
+    rep = (result or {}).get("report") or {}
+    hs = rep.get("headline_score")
+    from app.agents.summary import canonical_lead
+    word = canonical_lead(result or {})
+    col = {"Accurate": (74, 222, 128), "Mostly accurate": (74, 222, 128), "Mixed": (250, 178, 25),
+           "Inaccurate": (248, 113, 113)}.get(word, (154, 160, 176))
+    im = Image.new("RGB", (300, 300), (8, 7, 15))
+    dr = ImageDraw.Draw(im)
+    dr.ellipse((40, 30, 260, 250), outline=(34, 33, 48), width=14)
+    if hs is not None:
+        frac = max(0.03, float(hs) / 9.9)
+        dr.arc((40, 30, 260, 250), start=-90, end=-90 + 360 * frac, fill=col, width=14)
+    def font(sz):
+        try:
+            return ImageFont.load_default(size=sz)
+        except Exception:
+            return ImageFont.load_default()
+    num = "—" if hs is None else f"{float(hs):.1f}"
+    f1 = font(64)
+    w = dr.textlength(num, font=f1)
+    dr.text((150 - w / 2, 100), num, fill=col, font=f1)
+    f2 = font(22)
+    w = dr.textlength(word.upper(), font=f2)
+    dr.text((150 - w / 2, 258), word.upper(), fill=col, font=f2)
+    f3 = font(16)
+    w = dr.textlength("glowby.io", font=f3)
+    dr.text((150 - w / 2, 282), "glowby.io", fill=(154, 160, 176), font=f3)
+    out = BytesIO()
+    im.save(out, "PNG", optimize=True)
+    return out.getvalue()
+
+
+@app.get("/og/{key:path}.png", include_in_schema=False)
+def og_image(key: str):
+    png = _OG_PNG.get(key)
+    if png is None:
+        result = peek_result(key)
+        if result is None:
+            return _pwa_file("og-icon.png")
+        try:
+            png = og_png(result)
+        except Exception:
+            return _pwa_file("og-icon.png")
+        if len(_OG_PNG) >= _OG_PNG_MAX:
+            _OG_PNG.clear()
+        _OG_PNG[key] = png
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/r/{key:path}", response_class=HTMLResponse)
 def permalink_page(key: str, request: Request) -> str:
-    # same single-page app; its JS loads /api/result/<key>
-    return _page()
+    # same single-page app; its JS loads /api/result/<key>. The preview
+    # tags carry the verdict so a shared link shows it before the tap.
+    page = _page()
+    try:
+        result = peek_result(key)
+        if result is not None:
+            if "report" not in result:
+                build_report(result)
+            page = _OG_RE.sub(lambda _m: _og_tags(og_for_result(result, key)), page, count=1)
+    except Exception:
+        pass
+    return page
 
 
 def _cached_ai_ran(cached: dict) -> bool:

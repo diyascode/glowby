@@ -31,6 +31,7 @@ import json
 import os
 import re
 import time
+from app.agents import llm as _llm
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
 # COST TIERING: a cheaper judge for low-stakes buckets; the strong model
@@ -718,7 +719,7 @@ def _judge_once(claim: dict, evidence: dict, reminder: str = "") -> dict:
 
     client = anthropic.Anthropic(api_key=api_key)
     try:
-        message = client.messages.create(
+        message = _llm.create(client, 
             model=model,
             max_tokens=1200,
             temperature=0,  # same claim + same evidence -> same verdict
@@ -732,7 +733,7 @@ def _judge_once(claim: dict, evidence: dict, reminder: str = "") -> dict:
         if _ttl_supported["ok"] and "ttl" in str(_e).lower():
             _ttl_supported["ok"] = False
             try:
-                message = client.messages.create(
+                message = _llm.create(client, 
                     model=model, max_tokens=1200, temperature=0,
                     system=[_cache_block(rules_part), _cache_block(rubric_part)],
                     messages=[{"role": "user", "content": dynamic_part}],
@@ -759,7 +760,7 @@ def _judge_once(claim: dict, evidence: dict, reminder: str = "") -> dict:
         # reader. Ask once more — on the strong model, with a firmer
         # format reminder — before admitting defeat.
         try:
-            message2 = client.messages.create(
+            message2 = _llm.create(client, 
                 model=MODEL, max_tokens=1500, temperature=0,
                 system=[_cache_block(rules_part), _cache_block(rubric_part)],
                 messages=[{"role": "user", "content": dynamic_part

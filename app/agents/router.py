@@ -25,6 +25,7 @@ with the bucket cards. Known-satire list still runs first (cheap).
 import json
 import os
 import re
+from app.agents import llm as _llm
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
 # routing is sorting, not judging — a faster model cuts this stage from
@@ -269,7 +270,7 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
     got_unreadable = False
     for mdl in dict.fromkeys([FAST_MODEL, MODEL]):  # fast first, then main
         try:
-            message = client.messages.create(
+            message = _llm.create(client, 
                 model=mdl,
                 max_tokens=4000,
                 temperature=0,  # same input -> same gate/routing decision

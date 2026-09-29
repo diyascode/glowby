@@ -14,6 +14,7 @@ to the judges.
 
 import os
 import re
+from app.agents import llm as _llm
 
 # COST: the eyes describe on-screen text and scenes; the small model does
 # this well at a fifth of the price. Override with GLOWBY_VISION_MODEL.
@@ -88,7 +89,7 @@ def describe_frames(frames: list, title: str = "", uploader: str = ""):
     )})
     try:
         client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
+        message = _llm.create(client, 
             model=MODEL,
             max_tokens=1000,
             temperature=0,  # same frames -> same description (re-check
@@ -204,7 +205,7 @@ def forensic_opinion(frames: list, client=None):
                for b in use]
     content.append({"type": "text", "text": FORENSIC_PROMPT.format(n=len(use))})
     try:
-        msg = client.messages.create(model=FORENSIC_MODEL, max_tokens=500, temperature=0,
+        msg = _llm.create(client, model=FORENSIC_MODEL, max_tokens=500, temperature=0,
                                      messages=[{"role": "user", "content": content}])
         raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
         return parse_forensic(raw)

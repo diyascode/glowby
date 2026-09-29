@@ -28,6 +28,7 @@ import json
 import os
 import re
 import time
+from app.agents import llm as _llm
 
 REVIEW_MODEL = os.environ.get("GLOWBY_REVIEW_MODEL", "claude-fable-5-1")
 FALLBACK_MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
@@ -213,7 +214,7 @@ def review_one(flag: dict, result: dict, client=None, model=None) -> dict:
     used = model
     for attempt, m in enumerate((model, FALLBACK_MODEL)):
         try:
-            msg = client.messages.create(model=m, max_tokens=900, temperature=0,
+            msg = _llm.create(client, model=m, max_tokens=900, temperature=0,
                                          messages=[{"role": "user", "content": prompt}])
             raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
             parsed = parse_review(raw)

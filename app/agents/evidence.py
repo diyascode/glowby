@@ -22,6 +22,7 @@ import os
 import re
 import urllib.parse
 import urllib.request
+from app.agents import llm as _llm
 
 # The evidence agent SEARCHES AND QUOTES — it does not judge. Set
 # GLOWBY_EVIDENCE_MODEL=claude-haiku-4-5 (Railway Variables) to run the
@@ -376,7 +377,7 @@ def _search_web_brave(claim: str, deep: bool = False):
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
     try:
-        msg = client.messages.create(model=MODEL, max_tokens=1500,
+        msg = _llm.create(client, model=MODEL, max_tokens=1500,
                                      temperature=0,
                                      messages=[{"role": "user", "content": prompt}])
     except Exception:

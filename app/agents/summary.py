@@ -19,6 +19,7 @@ Rules (enforced, not just intended):
 
 import os
 import re
+from app.agents import llm as _llm
 
 FAST_MODEL = os.environ.get("GLOWBY_ROUTER_MODEL", "claude-haiku-4-5")
 MAX_WORDS = 32
@@ -251,7 +252,7 @@ def one_line(result: dict, client=None) -> str:
         if client is None:
             import anthropic
             client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
+        msg = _llm.create(client, 
             model=FAST_MODEL, max_tokens=80, temperature=0,
             messages=[{"role": "user", "content": PROMPT.format(
                 facts=facts_for(result), max_words=MAX_WORDS,

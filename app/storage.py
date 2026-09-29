@@ -269,6 +269,28 @@ def cache_available() -> bool:
     return _get_conn() is not None
 
 
+def peek_result(url_key: str):
+    """Return the stored result WITHOUT counting a view — for link
+    previews (v0.66.19): iMessage/WhatsApp/Facebook fetch a share link
+    to build a card, and that fetch is not a reader."""
+    conn = _get_conn()
+    if conn is None:
+        return None
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT result FROM checks WHERE url_key = %s", (url_key,))
+            row = cur.fetchone()
+        if not row:
+            return None
+        return row[0] if isinstance(row[0], dict) else json.loads(row[0])
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+
+
 def get_cached(url_key: str, max_age_days: int = 0):
     """Return the stored result dict for this key, or None. Counts the hit.
 

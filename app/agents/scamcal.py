@@ -30,6 +30,7 @@ import re
 import time
 
 from app.agents import scamengine as E
+from app.agents import llm as _llm
 
 CORPUS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "scam_corpus.json")
 MAX_ITEMS = 2000
@@ -249,7 +250,7 @@ def learn(doc: dict, client=None, model=None) -> dict:
     used = model or REVIEW_MODEL
     for attempt, m in enumerate((used, FALLBACK_MODEL)):
         try:
-            msg = client.messages.create(model=m, max_tokens=2000, temperature=0,
+            msg = _llm.create(client, model=m, max_tokens=2000, temperature=0,
                                          messages=[{"role": "user", "content": prompt}])
             raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
             props = check_proposals(parse_proposals(raw), doc)
