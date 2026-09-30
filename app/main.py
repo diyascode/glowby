@@ -86,7 +86,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.20"
+VERSION = "0.66.21"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -193,6 +193,11 @@ def _page() -> str:
         with open(_TEMPLATE_PATH, encoding="utf-8") as f:
             _template_cache = f.read().replace(
                 "__TURNSTILE_SITE_KEY__", TURNSTILE_SITE_KEY
+            ).replace(
+                # v0.66.21: the footer version comes from VERSION, never
+                # from a hand-edited string (it read "v0.66.13 v0.66.12
+                # —mdash;" for a week)
+                "__VERSION__", VERSION
             ).replace(
                 # SCAM CHECK BUTTON (built Sept 15, parked by Diya the same
                 # day: "save it for the future"). GLOWBY_SCAM_BUTTON=1 in
