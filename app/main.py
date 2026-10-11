@@ -93,7 +93,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.30"
+VERSION = "0.66.31"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -227,6 +227,7 @@ MAX_JOBS_KEPT = 500
 # Pure: the user-facing error line -> one of storage.FAILURE_KINDS.
 _FAIL_RULES = (
     ("timeout", r"took too long"),
+    ("geo_blocked", r"isn't available in the country|available in your country"),
     ("fetch_service", r"temporarily unavailable on Glowby's side|fetch service"),
     ("blocked", r"wouldn't hand over|blocked this video|challenging our server|login wall|locked behind"),
     ("too_long", r"minutes long"),
@@ -3097,7 +3098,8 @@ from app.precheck import start_precheck  # noqa: E402
 
 @app.on_event("startup")
 def _startup_precheck() -> None:
-    start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST)
+    start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST,
+                   job_status=lambda jid: (_jobs.get(jid) or {}).get("status"))
     _mkt.start()  # daily clip → TikTok drafts; weekly LinkedIn queue
     threading.Thread(target=_sec.record_deploy, args=(VERSION,), daemon=True).start()  # security ledger
     # CACHE KEEP-ALIVE: re-read the judges' shared rulebook every 50 min

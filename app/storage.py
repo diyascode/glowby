@@ -1861,7 +1861,7 @@ def reader_labelled_media(limit: int = 200) -> list:
 # an IP); the message is the user-facing one.
 
 
-FAILURE_KINDS = ("blocked", "private_or_deleted", "fetch_service", "no_speech", "too_long",
+FAILURE_KINDS = ("blocked", "geo_blocked", "private_or_deleted", "fetch_service", "no_speech", "too_long",
                  "transcription", "timeout", "unexpected", "router", "rate_limited", "budget",
                  "bot_check", "bad_input", "other")
 
@@ -1944,6 +1944,21 @@ def list_failures(day: str = "", kind: str = "", limit: int = 100) -> list:
                  "url": r[4], "url_key": r[5], "message": r[6], "status": r[7]} for r in rows]
     except Exception:
         return []
+
+
+def recent_failed_urls(days: int = 7) -> set:
+    """URLs that failed in the last N days — the trending crawler skips
+    them instead of knocking on the same locked door every run."""
+    conn = _get_conn()
+    if conn is None:
+        return set()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT url FROM check_failures WHERE url <> '' "
+                        "AND at > now() - make_interval(days => %s)", (days,))
+            return {r[0] for r in cur.fetchall()}
+    except Exception:
+        return set()
 
 
 def failures_today() -> dict:

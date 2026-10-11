@@ -2578,6 +2578,42 @@ if _adm125.count('data-pane="overview"') < 4 or "Checks that didn’t run" not i
 for _need in ("_sec.record_deploy", "/api/admin/security/signout_all", "_mkt.WEEKLY_HOOKS.append", "record_access"):
     if _need not in open("app/main.py").read(): fails.append(f"m125 main {_need}")
 
+# 126. YOUTUBE "NOT AVAILABLE IN YOUR COUNTRY" (Oct 11): the rotating
+# proxy exits from a random country unless pinned (Webshare's
+# username-US-rotate); a geo-blocked video gets its own honest message
+# and kind; the trending crawler never retries a URL that failed this
+# week and counts/charges a check only when the pipeline finished.
+import app.agents.ingest as _IN126, app.precheck as _PC126
+_os.environ["WEBSHARE_PROXY_USERNAME"] = "abc"; _os.environ["WEBSHARE_PROXY_PASSWORD"] = "pw"; _os.environ.pop("WEBSHARE_PROXY_COUNTRY", None)
+if _IN126._proxy_url() != "http://abc-US-rotate:pw@p.webshare.io:80": fails.append(f"m126 proxy pinned to US by default: {_IN126._proxy_url()}")
+_os.environ["WEBSHARE_PROXY_COUNTRY"] = ""
+if _IN126._proxy_url() != "http://abc-rotate:pw@p.webshare.io:80": fails.append("m126 empty country keeps random")
+_os.environ.pop("WEBSHARE_PROXY_USERNAME"); _os.environ.pop("WEBSHARE_PROXY_PASSWORD"); _os.environ.pop("WEBSHARE_PROXY_COUNTRY")
+if not _IN126.GEO_RE.search("ERROR: [youtube] xQjJobM1RNs: The uploader has not made this video available in your country"): fails.append("m126 geo regex")
+if m.classify_failure("This video isn't available in the country Glowby's servers fetch from") != "geo_blocked": fails.append("m126 geo kind")
+_vids = [{"url": "https://youtu.be/bad", "duration_seconds": 60}, {"url": "https://youtu.be/ok", "duration_seconds": 60}]
+if [v["url"] for v in _PC126.pick_candidates(_vids, 5, lambda u: False, failed={"https://youtu.be/bad"})] != ["https://youtu.be/ok"]: fails.append("m126 crawler skips last week's failures")
+_PC126._FAILED.clear(); _PC126._FAILED["https://youtu.be/bad"] = time.time()
+if [v["url"] for v in _PC126.pick_candidates(_vids, 5, lambda u: False)] != ["https://youtu.be/ok"]: fails.append("m126 crawler remembers its own failures")
+_PC126._FAILED.clear()
+_charged = []
+_orig_au = _PC126.add_usage; _PC126.add_usage = lambda c, count=True: _charged.append(c)
+_orig_ft = _PC126.fetch_trending; _PC126.fetch_trending = lambda k, max_results=25: _vids
+_orig_gc = _PC126.get_cached; _PC126.get_cached = lambda k: None
+_orig_rf = _PC126.recent_failed_urls; _PC126.recent_failed_urls = lambda d=7: set()
+_orig_tu = _PC126.today_usage; _PC126.today_usage = lambda: (0, 0.0)
+_os.environ["YOUTUBE_API_KEY"] = "x"
+try:
+    _n = _PC126.crawl_once(lambda jid, url, key: None, 30.0, 0.05, job_status=lambda jid: "done" if jid else None)
+    if _n != 2 or len(_charged) != 2: fails.append(f"m126 finished checks counted: {_n} {_charged}")
+    _charged.clear(); _PC126._FAILED.clear()
+    _n = _PC126.crawl_once(lambda jid, url, key: None, 30.0, 0.05, job_status=lambda jid: "error")
+    if _n != 0 or _charged or len(_PC126._FAILED) != 2: fails.append(f"m126 failed checks must not be counted or charged: {_n} {_charged} {_PC126._FAILED}")
+finally:
+    _PC126.add_usage = _orig_au; _PC126.fetch_trending = _orig_ft; _PC126.get_cached = _orig_gc; _PC126.recent_failed_urls = _orig_rf; _PC126.today_usage = _orig_tu
+    _os.environ.pop("YOUTUBE_API_KEY", None); _PC126._FAILED.clear()
+if "job_status=lambda jid" not in open("app/main.py").read() or "geo_blocked" not in open("app/templates/admin.html").read(): fails.append("m126 wiring")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 125/125 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler")
+    "FINAL MATRIX PASS: 126/126 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country")

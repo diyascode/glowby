@@ -27,7 +27,7 @@ import urllib.parse
 import urllib.request
 import uuid
 
-from app.storage import add_usage, canonical_key, get_cached, today_usage
+from app.storage import add_usage, canonical_key, get_cached, recent_failed_urls, today_usage
 
 ENABLED = os.environ.get("GLOWBY_PRECHECK", "on").lower() in (
     "on", "true", "1", "yes")
@@ -80,13 +80,22 @@ def parse_trending(data: dict) -> list:
     return out
 
 
-def pick_candidates(videos: list, limit: int, is_cached) -> list:
-    """Short, not-yet-checked videos, up to `limit`."""
+_FAILED: dict = {}  # url -> when it last failed (this process)
+SKIP_FAILED_DAYS = 7
+
+
+def pick_candidates(videos: list, limit: int, is_cached, failed: set | None = None) -> list:
+    """Short, not-yet-checked videos, up to `limit` — never one that
+    failed in the last week (a geo-blocked trending video used to be
+    retried every run, each time counted and charged as a check)."""
     picks = []
+    failed = failed or set()
     for v in videos:
         if v["duration_seconds"] > MAX_DURATION_SECONDS:
             continue
         if is_cached(v["url"]):
+            continue
+        if v["url"] in failed or time.time() - _FAILED.get(v["url"], 0) < SKIP_FAILED_DAYS * 86400:
             continue
         picks.append(v)
         if len(picks) >= limit:
@@ -94,8 +103,9 @@ def pick_candidates(videos: list, limit: int, is_cached) -> list:
     return picks
 
 
-def crawl_once(run_pipeline, daily_budget: float, cost_per_check: float) -> int:
-    """One crawl pass. Returns how many videos were pre-checked."""
+def crawl_once(run_pipeline, daily_budget: float, cost_per_check: float, job_status=None) -> int:
+    """One crawl pass. Returns how many videos were pre-checked (a check
+    is counted and charged only when the pipeline actually finished)."""
     api_key = os.environ.get("YOUTUBE_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         return 0
@@ -105,7 +115,8 @@ def crawl_once(run_pipeline, daily_budget: float, cost_per_check: float) -> int:
         return 0
     picks = pick_candidates(
         videos, PER_RUN,
-        lambda u: get_cached(canonical_key(u)) is not None)
+        lambda u: get_cached(canonical_key(u)) is not None,
+        failed=recent_failed_urls(SKIP_FAILED_DAYS))
     done = 0
     for v in picks:
         try:
@@ -116,17 +127,22 @@ def crawl_once(run_pipeline, daily_budget: float, cost_per_check: float) -> int:
         # visitors always keep the rest
         if spent + cost_per_check > daily_budget * BUDGET_SHARE:
             break
-        add_usage(cost_per_check)
         job_id = "pre-" + uuid.uuid4().hex[:8]
         try:
             run_pipeline(job_id, v["url"], canonical_key(v["url"]))
-            done += 1
         except Exception:
-            pass
+            _FAILED[v["url"]] = time.time()
+            continue
+        status = job_status(job_id) if job_status else "done"
+        if status == "done":
+            add_usage(cost_per_check)  # counted + charged only when it ran
+            done += 1
+        else:
+            _FAILED[v["url"]] = time.time()
     return done
 
 
-def start_precheck(run_pipeline, daily_budget: float, cost_per_check: float) -> None:
+def start_precheck(run_pipeline, daily_budget: float, cost_per_check: float, job_status=None) -> None:
     """Start the background crawler thread (no-op when disabled)."""
     if not ENABLED or PER_RUN <= 0:
         return
@@ -135,7 +151,7 @@ def start_precheck(run_pipeline, daily_budget: float, cost_per_check: float) -> 
         time.sleep(STARTUP_DELAY_SECONDS)
         while True:
             try:
-                crawl_once(run_pipeline, daily_budget, cost_per_check)
+                crawl_once(run_pipeline, daily_budget, cost_per_check, job_status)
             except Exception:
                 pass
             time.sleep(max(60.0, INTERVAL_HOURS * 3600))

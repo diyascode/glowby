@@ -33,6 +33,9 @@ class IngestError(Exception):
     """Raised when a URL cannot be ingested. Message is user-facing."""
 
 
+GEO_RE = re.compile(r"not made this video available in your country|not available in your country|geo.?restrict|blocked it in your country", re.I)
+
+
 # ---------------------------------------------------------------- proxy
 # YouTube bot-challenges datacenter IPs. A residential proxy makes our
 # requests come from a normal-home address. Two config options:
@@ -46,7 +49,13 @@ def _proxy_url():
     user = os.environ.get("WEBSHARE_PROXY_USERNAME")
     pw = os.environ.get("WEBSHARE_PROXY_PASSWORD")
     if user and pw:
-        return f"http://{user}-rotate:{pw}@p.webshare.io:80"
+        # v0.66.31: pin the exit COUNTRY. "username-rotate" hands out a
+        # random country each request, and a US-only YouTube video then
+        # fails with "not made available in your country" (Oct 11).
+        # Webshare's format is username-XX-rotate; "" keeps it random.
+        cc = os.environ.get("WEBSHARE_PROXY_COUNTRY", "US").strip().upper()
+        tag = f"-{cc}-rotate" if cc else "-rotate"
+        return f"http://{user}{tag}:{pw}@p.webshare.io:80"
     return os.environ.get("PROXY_URL") or None
 
 
@@ -234,6 +243,12 @@ def ingest(url: str) -> dict:
             article = _article_ingest(url)
             if article is not None:
                 return article
+        if GEO_RE.search(err_text or ""):
+            raise IngestError(
+                "This video isn't available in the country Glowby's servers "
+                "fetch from (the uploader limited where it can be watched). "
+                "Paste the claim as text instead, or try a different upload "
+                "of the same clip.")
         raise IngestError(
             f"Could not read this {platform} link. It may be private, deleted, "
             f"age-restricted, or an unsupported URL. (Details: {err_text[:200]})"
