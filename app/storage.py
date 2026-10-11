@@ -920,6 +920,28 @@ def visitor_total() -> int:
         return 0
 
 
+def visitor_kind_series(days: int = 14) -> dict:
+    """{'YYYY-MM-DD': {'result': n, 'home': n, 'app': n, 'other': n}} —
+    where each day's visitors landed (v0.66.33: the Overview shows the
+    share that arrived on a result page, i.e. through a share link)."""
+    conn = _get_conn()
+    if conn is None:
+        return {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT day::text, kind, count(*) FROM daily_visitors "
+                "WHERE day >= CURRENT_DATE - %s::int + 1 GROUP BY day, kind",
+                (days,),
+            )
+            out: dict = {}
+            for d, k, n in cur.fetchall():
+                out.setdefault(d, {})[k or "other"] = int(n)
+            return out
+    except Exception:
+        return {}
+
+
 def visitor_series(days: int = 14) -> dict:
     """{'YYYY-MM-DD': count} unique visitors per day. {} on failure."""
     conn = _get_conn()

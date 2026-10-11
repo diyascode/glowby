@@ -73,6 +73,7 @@ from app.storage import (
     month_calendar,
     day_detail,
     visitor_series,
+    visitor_kind_series,
     visitor_total,
     list_mistake_reports,
     list_recent_checks,
@@ -93,7 +94,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.32"
+VERSION = "0.66.33"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2645,9 +2646,11 @@ def api_admin_dashboard(key: str = ""):
     daily = daily_usage_series(14)
     visitors = visitor_series(14)
     failed_by_day = {f["day"]: f["total"] for f in failure_series(14)}
+    kinds = visitor_kind_series(14)
     for d in daily:
         d["visitors"] = visitors.get(d["day"], 0)
         d["failed"] = failed_by_day.get(str(d["day"])[:10], 0)
+        d["landed"] = kinds.get(str(d["day"])[:10], {})
     today_key = time.strftime("%Y-%m-%d")
     return {
         "version": VERSION,

@@ -197,6 +197,12 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="card" data-pane="overview">
+      <h2>Where visitors landed — last 14 days</h2>
+      <div class="s" style="margin:-4px 0 8px">Each day's visitors by first page: <span style="color:#4ade80">■ result page</span> (came through a share link) · <span style="color:#a78bfa">■ app</span> · <span style="color:#fab219">■ home</span> · <span style="color:#9aa0b0">■ other</span>. The number under each bar is the share that arrived on a result page — the share-link funnel.</div>
+      <div id="landWrap"></div>
+    </div>
+
+    <div class="card" data-pane="overview">
       <h2>Spend per day — last 14 days</h2>
       <div class="s" style="margin:-4px 0 8px">Estimated dollars spent on AI calls each day (checks, follow-ups, captions, background jobs). The daily cap is $30.</div>
       <div id="spendWrap"></div>
@@ -902,7 +908,7 @@ function render(d){
     let bars = '<div class="chart">', labs = '<div class="xlab">';
     daily.forEach(x => {
       const h = Math.round(x.checks / max * 100);
-      bars += `<div class="bar"><span class="tip"><b>${x.checks}</b> checks · ${x.visitors ?? 0} visitors · $${x.est_cost.toFixed(2)}${x.failed ? ` · <span style="color:#fab219">${x.failed} didn’t run</span>` : ""}<br>${esc(x.day)}</span>` +
+      bars += `<div class="bar"><span class="tip"><b>${x.checks}</b> checks · ${x.visitors ?? 0} visitors${(() => { const L = x.landed || {}, r = L.result || 0, v = x.visitors || 0; return v ? ` (${Math.round(r / v * 100)}% on result pages)` : ""; })()} · $${x.est_cost.toFixed(2)}${x.failed ? ` · <span style="color:#fab219">${x.failed} didn’t run</span>` : ""}<br>${esc(x.day)}</span>` +
               `<i style="height:${h}%"></i></div>`;
       labs += `<span>${fmtDay(x.day)}</span>`;
     });
@@ -924,11 +930,20 @@ function render(d){
     return bars + "</div>" + labs + "</div>";
   }
   if (daily.length){
+    (() => {
+      const KC = {result: "#4ade80", app: "#a78bfa", home: "#fab219", other: "#9aa0b0"};
+      const mx = Math.max(1, ...daily.map(x => x.visitors || 0));
+      $("landWrap").innerHTML = '<div style="display:flex;gap:4px;align-items:flex-end;height:112px">' + daily.map(x => {
+        const L = x.landed || {}, v = x.visitors || 0, r = L.result || 0;
+        const segs = ["other", "home", "app", "result"].filter(k => L[k]).map(k => `<i title="${k}: ${L[k]}" style="display:block;height:${Math.max(2, L[k] / mx * 80)}px;background:${KC[k]};border-radius:2px;margin-top:1px"></i>`).join("");
+        return `<div style="flex:1;text-align:center" title="${x.day}: ${v} visitors · ${r} on result pages"><div style="display:flex;flex-direction:column-reverse;height:82px;justify-content:flex-start">${segs}</div><div class="s" style="font-size:.62rem;color:${v ? "#4ade80" : "var(--muted)"}">${v ? Math.round(r / v * 100) + "%" : "–"}</div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`;
+      }).join("") + '</div>';
+    })();
     $("spendWrap").innerHTML = miniBars(daily, x => x.est_cost, v => "$" + v.toFixed(2), "#a78bfa");
     $("speedWrap").innerHTML = miniBars(daily, x => x.avg_seconds, v => v.toFixed(1) + "s", "#38bdf8");
     $("costWrap").innerHTML = miniBars(daily, x => x.avg_cost, v => (v * 100).toFixed(1) + "¢", "#fab219");
   } else {
-    $("spendWrap").innerHTML = $("speedWrap").innerHTML = $("costWrap").innerHTML = '<div class="empty">No daily data yet.</div>';
+    $("spendWrap").innerHTML = $("speedWrap").innerHTML = $("costWrap").innerHTML = $("landWrap").innerHTML = '<div class="empty">No daily data yet.</div>';
   }
 
   // ---- calendar (click a day for its visitors / checks / spend) ----
