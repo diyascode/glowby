@@ -2542,6 +2542,42 @@ _fx = _AD.sfx_track(_AD.sfx_events({"dm": 0, "verdict": 5, "end": 9}, 11.0), 11.
 if _os.path.getsize(_fx) < 44100 * 2 * 2 * 10 or "import numpy" in open("app/ads.py").read(): fails.append("m124 sfx track")
 if not _os.path.exists("app/static/fonts/Poppins-Bold.ttf") or not _os.path.exists("app/static/fonts/LICENSE.txt"): fails.append("m124 bundled font + license")
 
+# 125. ADMIN, SIMPLER (Oct 12): one pane at a time behind a side menu
+# (Overview · Checks · Marketing · Money · Scam · Security); the graphs
+# live on Overview; Money and Security are WEEKLY snapshots. Security is
+# a ledger of what the app can actually know: when the judging code and
+# settings changed (fingerprints at boot), who logged in (device family
+# + one-way network fingerprint, never an address, never a secret).
+from app import security as _SE, money as _MO
+_fp = _SE.fingerprint()
+if "agents/judge.py" not in _fp or not _SE.is_judging("agents/judge.py") or _SE.is_judging("templates/admin.html") or not _SE.is_judging("health.md"): fails.append("m125 fingerprint")
+_d = _SE.diff({"agents/judge.py": "a", "main.py": "b"}, {"agents/judge.py": "a2", "main.py": "b2"})
+if _d != {"judging": ["agents/judge.py"], "app": ["main.py"]}: fails.append(f"m125 diff {_d}")
+_cd = _SE.config_diff({"models": {"GLOWBY_CLAUDE_MODEL": "claude-sonnet-4-5"}, "flags": {}, "secrets": {"BRAVE_SEARCH_KEY": False}}, {"models": {"GLOWBY_CLAUDE_MODEL": "claude-sonnet-5-5"}, "flags": {}, "secrets": {"BRAVE_SEARCH_KEY": True}})
+if _cd != ["GLOWBY_CLAUDE_MODEL: claude-sonnet-4-5 → claude-sonnet-5-5", "BRAVE_SEARCH_KEY: set"]: fails.append(f"m125 config diff {_cd}")
+_snap = _SE.config_snapshot()
+if any(not isinstance(v, bool) for v in _snap["secrets"].values()) or "GLOWBY_ADMIN_KEY" not in _snap["secrets"]: fails.append("m125 secrets must be set/unset only")
+if _SE.device_family("Mozilla/5.0 (iPhone; CPU iPhone OS 19_0 like Mac OS X) AppleWebKit/605.1.15 Version/19.0 Mobile/15E148 Safari/604.1") != "iPhone · Safari" or "Mac" not in _SE.device_family("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) Chrome/130.0 Safari/537.36"): fails.append("m125 device family")
+if len(_SE.net_fingerprint("1.2.3.4")) != 8 or _SE.net_fingerprint("1.2.3.4") == _SE.net_fingerprint("1.2.3.5") or "1.2.3.4" in _SE.net_fingerprint("1.2.3.4"): fails.append("m125 net fingerprint")
+_h = _SE.health(12, 25, 0)
+if not any(x["label"] == "Admin sessions alive" and not x["ok"] for x in _h) or any("k" * 10 in x["note"] for x in _h): fails.append("m125 health")
+if _MO.monthly_equiv({"amount": 120, "cadence": "yearly"}) != 10 or _MO.monthly_equiv({"amount": 18, "cadence": "monthly"}) != 18: fails.append("m125 monthly equiv")
+_ms = _MO.summary()
+for _k in ("months", "recurring", "entries", "ceiling", "run_rate_fixed", "this_month"):
+    if _k not in _ms: fails.append(f"m125 money summary {_k}")
+if not _os.path.exists("app/data/money_seed.json") or any(e.get("cat", "").startswith("AI") for e in _j95.load(open("app/data/money_seed.json"))["entries"]): fails.append("m125 seed must not carry AI estimates (AI is actual now)")
+_c125 = _TC121(m.app)
+if _c125.get("/api/admin/security").status_code != 403 or _c125.get("/api/admin/money").status_code != 403: fails.append("m125 admin-only")
+_adm125 = open("app/templates/admin.html").read()
+import re as _re125
+_cards = _re125.findall(r'<div class="card"([^>]*)>', _adm125)
+if not _cards or any('data-pane=' not in c for c in _cards): fails.append("m125 every card belongs to a pane")
+for _need in ('data-nav="overview"', 'data-nav="checks"', 'data-nav="marketing"', 'data-nav="money"', 'data-nav="scam"', 'data-nav="security"', "function showPane", "Sign out everywhere", "async function getJSON"):
+    if _need not in _adm125: fails.append(f"m125 admin shell {_need}")
+if _adm125.count('data-pane="overview"') < 4 or "Checks that didn’t run" not in _adm125.split('data-pane="checks"')[1][:400] and 'id="tiles2" data-pane="checks"' not in _adm125: fails.append("m125 pane assignment")
+for _need in ("_sec.record_deploy", "/api/admin/security/signout_all", "_mkt.WEEKLY_HOOKS.append", "record_access"):
+    if _need not in open("app/main.py").read(): fails.append(f"m125 main {_need}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 124/124 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting")
+    "FINAL MATRIX PASS: 125/125 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler")

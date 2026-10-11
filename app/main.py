@@ -12,6 +12,7 @@ reel toggle, shareable permalinks (/r/<key>), report-a-mistake.
 
 import hashlib
 import hmac
+import json
 import re
 import os
 import secrets
@@ -92,7 +93,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.29"
+VERSION = "0.66.30"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1941,7 +1942,7 @@ class AdminLogin(BaseModel):
 
 
 @app.post("/api/admin/login")
-def api_admin_login(req: AdminLogin):
+def api_admin_login(req: AdminLogin, request: Request):
     """Username+password login. Falls back to the master key as the
     password when no GLOWBY_ADMIN_USER is configured yet."""
     ok = False
@@ -1950,6 +1951,10 @@ def api_admin_login(req: AdminLogin):
               and hmac.compare_digest(req.password, ADMIN_PASSWORD))
     if not ok and bool(ADMIN_KEY) and hmac.compare_digest(req.password, ADMIN_KEY):
         ok = True  # master key always unlocks, username ignored
+    _method = "password" if (ADMIN_USER and ADMIN_PASSWORD and hmac.compare_digest(req.username.strip(), ADMIN_USER)
+                             and hmac.compare_digest(req.password, ADMIN_PASSWORD)) else "master-key"
+    threading.Thread(target=_sec.record_access, args=(ok, _method if ok else "failed-login",
+                                                      request.headers.get("user-agent", ""), _client_ip(request)), daemon=True).start()
     if not ok:
         time.sleep(1)  # slow down guessing
         return JSONResponse(status_code=403, content={"detail": "Wrong login."})
@@ -2886,6 +2891,124 @@ def api_admin_failures_resolve(req: FailureResolve):
     return {"ok": resolve_failure(req.failure_id, req.status)}
 
 
+# ------------------------------------------------------- money & security
+# v0.66.30: two WEEKLY pages. Each shows the Monday snapshot (stored by
+# the marketing scheduler's weekly hook) and recomputes on "refresh".
+from app import money as _money  # noqa: E402
+from app import security as _sec  # noqa: E402
+
+
+def _snapshot(name: str, compute):
+    try:
+        raw = _mkt.setting(f"snap:{name}", "")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    return _store_snapshot(name, compute)
+
+
+def _store_snapshot(name: str, compute):
+    data = compute()
+    try:
+        _mkt.set_setting(f"snap:{name}", json.dumps(data, default=str))
+    except Exception:
+        pass
+    return data
+
+
+def _security_report() -> dict:
+    partners = [k for k in (os.environ.get("GLOWBY_PARTNER_KEYS") or "").split(",") if k.strip()]
+    return _sec.report(VERSION, len(_admin_sessions), RATE_LIMIT_PER_HOUR, len(partners))
+
+
+def _weekly_admin_snapshots() -> None:
+    _store_snapshot("money", _money.summary)
+    _store_snapshot("security", _security_report)
+
+
+_mkt.WEEKLY_HOOKS.append(_weekly_admin_snapshots)
+
+
+@app.get("/api/admin/money")
+def api_admin_money(key: str = "", live: int = 0):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return _store_snapshot("money", _money.summary) if live else _snapshot("money", _money.summary)
+
+
+class MoneyEntry(BaseModel):
+    key: str
+    date: str = ""
+    cat: str = ""
+    amount: float = 0.0
+    note: str = ""
+    kind: str = "actual"
+
+
+@app.post("/api/admin/money/entry")
+def api_admin_money_entry(req: MoneyEntry):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    ok = _money.add_entry(req.date, req.cat, req.amount, req.note, req.kind)
+    if ok:
+        _store_snapshot("money", _money.summary)
+    return {"ok": ok}
+
+
+class MoneyDelete(BaseModel):
+    key: str
+    id: str
+
+
+@app.post("/api/admin/money/entry/delete")
+def api_admin_money_delete(req: MoneyDelete):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    ok = _money.delete_entry(req.id)
+    if ok:
+        _store_snapshot("money", _money.summary)
+    return {"ok": ok}
+
+
+class MoneyRecurring(BaseModel):
+    key: str
+    id: str
+    amount: float | None = None
+    status: str | None = None
+
+
+@app.post("/api/admin/money/recurring")
+def api_admin_money_recurring(req: MoneyRecurring):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    ok = _money.update_recurring(req.id, req.amount, req.status)
+    if ok:
+        _store_snapshot("money", _money.summary)
+    return {"ok": ok}
+
+
+@app.get("/api/admin/security")
+def api_admin_security(key: str = "", live: int = 0):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return _store_snapshot("security", _security_report) if live else _snapshot("security", _security_report)
+
+
+class KeyOnly(BaseModel):
+    key: str
+
+
+@app.post("/api/admin/security/signout_all")
+def api_admin_signout_all(req: KeyOnly):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    n = len(_admin_sessions)
+    _admin_sessions.clear()
+    _sec.record_access(True, "sign-out-everywhere")
+    return {"ok": True, "signed_out": n}
+
+
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 def admin_page() -> str:
     """Admin dashboard shell. Renders nothing sensitive until the admin
@@ -2976,6 +3099,7 @@ from app.precheck import start_precheck  # noqa: E402
 def _startup_precheck() -> None:
     start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST)
     _mkt.start()  # daily clip → TikTok drafts; weekly LinkedIn queue
+    threading.Thread(target=_sec.record_deploy, args=(VERSION,), daemon=True).start()  # security ledger
     # CACHE KEEP-ALIVE: re-read the judges' shared rulebook every 50 min
     # so its 1-hour cache never lapses — the rulebook is then billed at
     # 10% on every real judge call, all day, every category. Cost: pennies.

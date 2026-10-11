@@ -1182,6 +1182,9 @@ def due(now_pt: datetime, last: dict) -> list:
     return jobs
 
 
+WEEKLY_HOOKS: list = []  # main.py adds the Monday admin snapshots (money, security)
+
+
 def _tick():
     now = datetime.now(_PT)
     last = {"daily": setting("last:daily"), "weekly": setting("last:weekly")}
@@ -1191,6 +1194,12 @@ def _tick():
             run_daily() if job == "daily" else run_weekly()
         except Exception as e:
             _insert_post("tiktok" if job == "daily" else "linkedin", job, None, "", "failed", {"error": str(e)[:200]})
+        if job == "weekly":
+            for fn in WEEKLY_HOOKS:
+                try:
+                    fn()
+                except Exception:
+                    pass
     # LinkedIn autopost: queued + scheduled_for passed
     conn = _ensure()
     if conn is not None and AUTOPOST_LINKEDIN:

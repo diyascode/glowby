@@ -127,6 +127,24 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .rmeta{font-size:.7rem;color:var(--muted)}
 .foot{color:var(--muted);font-size:.72rem;text-align:center;margin-top:24px}
 @media(max-width:640px){.hidesm{display:none}}
+
+/* v0.66.30 shell: side menu on desktop, bottom bar on phones */
+#dash.on{display:grid !important;grid-template-columns:168px 1fr;gap:18px;align-items:start}
+#nav{position:sticky;top:14px;display:flex;flex-direction:column;gap:4px}
+#nav button{text-align:left;background:none;border:1px solid transparent;color:var(--ink2);font-family:inherit;font-size:.86rem;
+  padding:9px 12px;border-radius:10px;cursor:pointer}
+#nav button:hover{background:var(--surface)}
+#nav button.on{background:var(--surface2);border-color:var(--border);color:var(--ink);font-weight:600}
+#panes{min-width:0}
+[data-pane]{display:none}
+[data-pane].show{display:block}
+.tiles[data-pane].show{display:grid}
+@media(max-width:760px){
+  #dash.on{display:block !important}
+  #nav{position:fixed;left:0;right:0;bottom:0;top:auto;flex-direction:row;gap:0;background:#0b0a16;border-top:1px solid var(--border);z-index:9;padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
+  #nav button{flex:1;text-align:center;font-size:.68rem;padding:8px 2px;border-radius:8px}
+  .shell{padding-bottom:84px}
+}
 </style>
 </head>
 <body>
@@ -149,14 +167,25 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
   </div>
 
   <div id="dash">
-    <div class="tiles" id="tiles"></div>
+    <nav id="nav">
+      <button data-nav="overview" class="on">Overview</button>
+      <button data-nav="checks">Checks</button>
+      <button data-nav="marketing">Marketing</button>
+      <button data-nav="money">Money</button>
+      <button data-nav="scam">Scam</button>
+      <button data-nav="security">Security</button>
+    </nav>
+    <div id="panes">
+    <div class="tiles" id="tiles" data-pane="overview"></div>
 
-    <div class="card">
+    <div class="card" data-pane="overview">
       <h2>Fresh checks — last 14 days</h2>
       <div id="chartWrap"></div>
     </div>
 
-    <div class="card">
+    <div class="tiles" id="tiles2" data-pane="checks"></div>
+
+    <div class="card" data-pane="checks">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Checks that didn’t run — last 14 days</h2>
         <span class="s">filter: <select id="flDay" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px"><option value="">all days</option></select> <select id="flKind" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px"><option value="">all reasons</option></select></span>
@@ -167,13 +196,13 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="flList"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="overview">
       <h2>Spend per day — last 14 days</h2>
       <div class="s" style="margin:-4px 0 8px">Estimated dollars spent on AI calls each day (checks, follow-ups, captions, background jobs). The daily cap is $30.</div>
       <div id="spendWrap"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="overview">
       <h2>Speed &amp; cost per day — last 14 days</h2>
       <div class="s" style="margin:-4px 0 8px">Average video check time (seconds) and average cost per fresh check, each day. Hover a bar for the numbers.</div>
       <div class="s" style="margin-bottom:2px">Avg video check · seconds</div>
@@ -182,7 +211,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="costWrap"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="checks">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Calendar — tap a day</h2>
         <div class="calnav"><button id="calPrev" type="button">‹</button><span id="calTitle"></span><button id="calNext" type="button">›</button></div>
@@ -191,13 +220,13 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="dayDetail" class="daydetail"></div>
     </div>
 
-    <div class="card"><h2>Unique visitors by month</h2><div id="monthly" class="dist"></div></div>
-<div class="card">
+    <div class="card" data-pane="overview"><h2>Unique visitors by month</h2><div id="monthly" class="dist"></div></div>
+<div class="card" data-pane="checks">
       <h2>Verdict distribution (all stored checks)</h2>
       <div class="dist" id="dist"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="checks">
       <h2>Score feedback — Fair / Harsh / Wrong</h2>
       <div id="fbTiles" class="tiles" style="margin-bottom:10px"></div>
       <div class="s" style="margin-bottom:4px">Last 14 days · <span style="color:#4ade80">■ fair</span> <span style="color:#fab219">■ harsh</span> <span style="color:#f87171">■ wrong</span></div>
@@ -208,7 +237,50 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="flags"></div>
     </div>
 
-    <div class="card">
+
+    <div class="card" data-pane="money">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Money — what Glowby costs to run</h2>
+        <span class="s" id="moAsOf"></span>
+      </div>
+      <div class="s" style="margin:6px 0 10px">AI spend is actual (the same per-call estimates the daily cap uses). Everything else is a bill you log once or a recurring amount. Weekly snapshot every Monday; <a href="#" onclick="loadMoney(true);return false">refresh now</a>. Ceiling: $<span id="moCeil"></span>/month.</div>
+      <div id="moTiles" class="tiles" style="margin-bottom:10px"></div>
+      <div class="s" style="margin-bottom:2px">Per month · <span style="color:#a78bfa">■ AI (actual)</span> <span style="color:#38bdf8">■ logged bills</span></div>
+      <div id="moBars"></div>
+      <h3 style="font-size:.85rem;margin:16px 0 6px">Recurring services</h3>
+      <div id="moRec"></div>
+      <h3 style="font-size:.85rem;margin:16px 0 6px">Log a bill</h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+        <input type="date" id="moDate" style="background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:6px;font-family:inherit">
+        <select id="moCat" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:6px"></select>
+        <input type="number" id="moAmt" placeholder="0.00" step="0.01" min="0" style="width:100px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:6px;font-family:inherit">
+        <input type="text" id="moNote" placeholder="note (invoice #…)" style="flex:1;min-width:140px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:6px;font-family:inherit">
+        <select id="moKind" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:6px"><option value="actual">actual</option><option value="estimate">estimate</option></select>
+        <button id="moAdd" class="fbf" style="font-size:.78rem;padding:6px 12px">Add</button>
+      </div>
+      <div id="moLog"></div>
+    </div>
+
+    <div class="card" data-pane="security">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Security — what changed, who got in</h2>
+        <span><span class="s" id="seAsOf"></span> <button id="seSignout" class="fbf" style="font-size:.78rem;padding:6px 12px;border-color:#f87171">Sign out everywhere</button></span>
+      </div>
+      <div class="s" style="margin:6px 0 10px">Weekly snapshot every Monday; <a href="#" onclick="loadSecurity(true);return false">refresh now</a>. The app fingerprints its own judging code and settings at every boot, so this ledger says when the scoring logic moved and when it didn’t. Logins are kept with the device family and a one-way network fingerprint — never an address, never a secret.</div>
+      <div id="seHealth" class="tiles" style="margin-bottom:10px"></div>
+      <h3 style="font-size:.85rem;margin:14px 0 6px">Judging logic</h3>
+      <div id="seJudging" class="s"></div>
+      <h3 style="font-size:.85rem;margin:14px 0 6px">Deploy ledger</h3>
+      <div id="seLedger"></div>
+      <h3 style="font-size:.85rem;margin:14px 0 6px">Admin access — logins per day · <span style="color:#f87171">■ failed</span> <span style="color:#4ade80">■ ok</span></h3>
+      <div id="seFailed"></div>
+      <div id="seDevices" style="margin-top:8px"></div>
+      <div id="seRecent" style="margin-top:8px"></div>
+      <h3 style="font-size:.85rem;margin:14px 0 6px">Settings in force (secrets by name only)</h3>
+      <div id="seConfig" class="dist"></div>
+    </div>
+
+    <div class="card" data-pane="marketing">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Marketing on autopilot — TikTok drafts &amp; LinkedIn</h2>
         <span><button id="mkDaily" class="fbf" style="font-size:.78rem;padding:6px 12px">Make today’s clip now</button> <button id="mkWeekly" class="fbf" style="font-size:.78rem;padding:6px 12px">Compose this week’s LinkedIn post</button></span>
@@ -221,7 +293,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="mkPosts"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="checks">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Weekly flag review — the judge of the judges</h2>
         <button id="runReview" class="fbf" style="font-size:.78rem;padding:6px 12px">Run review now</button>
@@ -230,7 +302,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="review"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="scam">
       <h2>Scam lens — verdicts and audit traces</h2>
       <div id="scamTiles" class="tiles" style="margin-bottom:10px"></div>
       <div id="scamMode" class="s" style="margin-bottom:8px"></div>
@@ -240,7 +312,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <pre id="traceOut" class="s" style="white-space:pre-wrap;margin:0"></pre>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="scam">
       <h2>The scam-engine exam — dev, validation, hidden</h2>
       <div class="s" style="margin-bottom:6px">Testing, not training. Every case has an answer key (verdict bands, required red flags). <b>Dev</b> ships with the code and lists every failure. <b>Validation</b> and <b>hidden</b> are uploaded here and live only in the database; the hidden split reports rates only — its texts are never shown, so nobody can tune to it. Launch goals: ≥97% of dangerous cases high/critical · &lt;5% of legitimate flagged · 0 actions that point at the sender's own number or link · ≥99% valid output. Robustness re-runs the scams with typos, leet, slang and injected instructions.</div>
       <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap"><button class="fbf exr" data-split="dev">Run dev</button><button class="fbf exr" data-split="validation">Run validation</button><button class="fbf exr" data-split="hidden">Run hidden</button><span class="s" id="exMeta"></span></div>
@@ -253,7 +325,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       </details>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="scam">
       <h2>Scam engine calibration — run the corpus, learn from the misses</h2>
       <div class="s" style="margin-bottom:6px">Runs the labelled corpus through the same rules readers get (no model, no lookups: free and instant). The shipped seed corpus has 70 scam shapes and 70 legitimate messages (25 of them hard negatives — real alerts that look like scams); add your own below — one per line, <code>scam: &lt;text&gt;</code> / <code>ok: &lt;text&gt;</code>, or paste the UCI SMS Spam Collection as-is (<code>spam&lt;TAB&gt;text</code> / <code>ham&lt;TAB&gt;text</code>). "Learn" sends the misses and false alarms to the review model, which proposes new pattern shapes — proposals only, you decide (≈10¢).</div>
       <textarea id="scText" rows="4" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem" placeholder="scam: Your account is locked, verify at chase-secure-alerts.com&#10;ok: Your Chase statement is ready, sign in at chase.com"></textarea>
@@ -262,7 +334,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="scOut"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="scam">
       <h2>Glowby's scam dataset — redacted, consented, human-reviewed</h2>
       <div class="s" style="margin-bottom:6px">Reader flags on pasted messages ("It's a scam" / "Not a scam") land here as <b>pending</b> samples — already redacted (codes, cards, SSNs, emails, addresses, phones → placeholders), with source and consent recorded. Nothing counts as truth until you verify it. Verified samples join the calibration corpus (checkbox above) and can be exported. Add hand-written or licensed examples with <code>scam: …</code> / <code>ok: …</code> lines; they go in as verified.</div>
       <div id="smTiles" class="tiles" style="margin-bottom:8px"></div>
@@ -274,7 +346,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div style="display:flex;gap:8px;align-items:center;margin:8px 0"><button id="smAdd" class="fbf" style="font-size:.78rem;padding:6px 12px">Add as verified</button><span class="s" id="smMeta"></span></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="checks">
       <h2>Detector calibration — measure, don't guess</h2>
       <div class="s" style="margin-bottom:6px">One per line: <code>ai https://…</code> or <code>real https://…</code> (up to 40). Runs the real lane — labels, Hive frames + second pass, audio, forensic opinion — and reports detection and false-alarm rates at the live thresholds and alternatives. ≈ 4–5¢ per item; nothing is stored as a result.</div>
       <textarea id="calText" rows="5" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem" placeholder="ai https://www.tiktok.com/@…/video/…&#10;real https://youtube.com/shorts/…"></textarea>
@@ -282,17 +354,18 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="calOut"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="checks">
       <h2>Mistake reports</h2>
       <div id="reports"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-pane="checks">
       <h2>Recent checks</h2>
       <div style="overflow-x:auto"><table id="recent"></table></div>
     </div>
 
-    <div class="foot">Auto-refreshes every 60s · <a href="/">back to Glowby</a></div>
+    </div>
+    <div class="foot" style="grid-column:1/-1">Auto-refreshes every 60s · <a href="/">back to Glowby</a></div>
   </div>
 </div>
 
@@ -550,10 +623,18 @@ async function loadScam(){
 const FL_LABEL = {blocked:"platform blocked the fetch", private_or_deleted:"private / deleted / unsupported", fetch_service:"fetch service down", no_speech:"nothing to check (no speech)", too_long:"video too long", transcription:"transcription failed", timeout:"timed out", unexpected:"crash (see last errors)", router:"router refused", rate_limited:"hourly limit", budget:"daily budget", bot_check:"bot check", bad_input:"unreadable upload", other:"other"};
 const FL_COLOR = {blocked:"#f87171", private_or_deleted:"#fb923c", fetch_service:"#f87171", no_speech:"#9aa0b0", too_long:"#9aa0b0", transcription:"#fab219", timeout:"#fab219", unexpected:"#e879f9", router:"#e879f9", rate_limited:"#38bdf8", budget:"#38bdf8", bot_check:"#38bdf8", bad_input:"#9aa0b0", other:"#9aa0b0"};
 window.__flDay = ""; window.__flKind = "";
+async function getJSON(url, tries){
+  // one retry after a short wait: a flaky connection used to wipe a loaded card with "Could not load"
+  for (let i = 0; i < (tries || 2); i++){
+    try { const r = await fetch(url); if (r.ok) return await r.json(); if (r.status === 403) return null; } catch(e){}
+    await new Promise(res => setTimeout(res, 1500));
+  }
+  return null;
+}
 async function loadFailures(){
-  let d = null;
-  try { const r = await fetch("/api/admin/failures?key=" + encodeURIComponent(KEY) + "&day=" + encodeURIComponent(window.__flDay) + "&kind=" + encodeURIComponent(window.__flKind) + "&limit=150"); if (r.ok) d = await r.json(); } catch(e){}
-  if (!d) { $("flList").innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const d = await getJSON("/api/admin/failures?key=" + encodeURIComponent(KEY) + "&day=" + encodeURIComponent(window.__flDay) + "&kind=" + encodeURIComponent(window.__flKind) + "&limit=150");
+  if (!d) { if (!window.__flLoaded) $("flList").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
+  window.__flLoaded = true;
   const ser = d.series || [], max = Math.max(1, ...ser.map(x => x.total));
   // stacked bars, one per day, segments by reason
   $("flChart").innerHTML = '<div style="display:flex;gap:4px;align-items:flex-end;height:90px">' + ser.map(x => {
@@ -588,9 +669,9 @@ async function flResolve(id, status){
 }
 
 async function loadMarketing(){
-  let d = null;
-  try { const r = await fetch("/api/admin/marketing?key=" + encodeURIComponent(KEY)); if (r.ok) d = await r.json(); } catch(e){}
-  if (!d) { $("mkTiles").innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const d = await getJSON("/api/admin/marketing?key=" + encodeURIComponent(KEY));
+  if (!d) { if (!window.__mkLoaded) $("mkTiles").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
+  window.__mkLoaded = true;
   const tk = d.tiktok || {}, li = d.linkedin || {};
   const lane = (name, p, who) => {
     const state = !p.configured ? "keys not set" : !p.connected ? "not connected" : (p.paused ? "paused" : "on");
@@ -758,7 +839,7 @@ async function load(){
 
 function render(d){
   $("login").style.display = "none";
-  $("dash").style.display = "block";
+  $("dash").style.display = ""; $("dash").classList.add("on"); showPane(window.__pane || (location.hash || "#overview").slice(1));
   $("logout").style.display = "inline-block";
   $("refresh").style.display = "inline-block";
   $("ver").textContent = "v" + (d.version || "?");
@@ -769,9 +850,25 @@ function render(d){
   const pendNew = (s.reports_by_status || {}).new || 0;
   const barCls = pct >= 90 ? "crit" : pct >= 60 ? "hot" : "";
 
+  // Overview: the six numbers worth a glance every morning
   $("tiles").innerHTML =
     tile("Visitors today", t.visitors ?? 0, "unique devices · bots & link previews excluded") +
-    tile("Didn’t run today", (t.failed||{}).total ?? 0, (t.failed||{}).total ? ("mostly: " + (FL_LABEL[(t.failed||{}).top] || (t.failed||{}).top) + " · review below") : "every request became a check", (t.failed||{}).total ? "warn" : "good") +
+    tile("Checks today", t.fresh_checks ?? 0, "fresh (not cached views)") +
+    tile("Didn’t run today", (t.failed||{}).total ?? 0, (t.failed||{}).total ? ("mostly: " + (FL_LABEL[(t.failed||{}).top] || (t.failed||{}).top) + " · see Checks") : "every request became a check", (t.failed||{}).total ? "warn" : "good") +
+    `<div class="tile"><div class="k">Spend today</div>` +
+      `<div class="v">$${spend.toFixed(2)}</div>` +
+      `<div class="s">of $${budget} daily budget</div>` +
+      `<div class="budget"><i class="${barCls}" style="width:${pct}%"></i></div></div>` +
+    (() => {
+      const st = s.avg_stages || {};
+      const sub = st.n ? `last 7 days · ${st.n} checks · median ${st.median_s}s` : "no fresh video checks in the last 7 days";
+      const slow = d.evidence_backend === "claude_web_search";
+      return tile("Avg video check", s.avg_check_seconds != null ? s.avg_check_seconds + "s" : "—",
+                  sub + (slow ? " · evidence: Claude web search (slow — add BRAVE_SEARCH_KEY)" : " · evidence: Brave"), slow ? "warn" : undefined);
+    })() +
+    tile("New reports", pendNew, "awaiting your review", pendNew > 0 ? "warn" : "good");
+  // Checks: the totals and the slower-moving numbers
+  $("tiles2").innerHTML =
     (() => {
       const mo = d.visitors_monthly || [];
       const thisMo = mo.length ? mo[0].unique : 0;
@@ -780,19 +877,11 @@ function render(d){
              tile("Visitors all-time", grand || (d.visitors_total ?? 0), grand ? "sum of monthly uniques" : "daily counts added up (monthly count starts today)");
     })() +
     tile("Total checks", d.total_checks ?? 0, "all-time, fresh checks run") +
-    tile("Checks today", t.fresh_checks ?? 0, "fresh (not cached views)") +
-    `<div class="tile"><div class="k">Spend today</div>` +
-      `<div class="v">$${spend.toFixed(2)}</div>` +
-      `<div class="s">of $${budget} daily budget</div>` +
-      `<div class="budget"><i class="${barCls}" style="width:${pct}%"></i></div></div>` +
     tile("Checks stored", s.checks_stored ?? 0, "all-time, cached + shareable") +
     tile("Total views", s.total_views ?? 0, "incl. cache hits + share links") +
     (() => {
       const st = s.avg_stages || {};
-      const sub = st.n ? `last 7 days · ${st.n} checks · median ${st.median_s}s · fetch ${st.fetch_s}s / claims ${st.route_s}s / verify ${st.verify_s}s` : "no fresh video checks in the last 7 days";
-      const slow = d.evidence_backend === "claude_web_search";
-      return tile("Avg video check", s.avg_check_seconds != null ? s.avg_check_seconds + "s" : "—",
-                  sub + (slow ? " · evidence: Claude web search (slow — add BRAVE_SEARCH_KEY)" : " · evidence: Brave"), slow ? "warn" : undefined);
+      return tile("Check stages", st.n ? `${st.fetch_s}s / ${st.route_s}s / ${st.verify_s}s` : "—", "fetch / claims / verify · last 7 days");
     })() +
     (() => {
       const views = s.total_views ?? 0, stored = s.checks_stored ?? 0;
@@ -800,8 +889,7 @@ function render(d){
       return tile("Cache hit rate", hitPct + "%", "views answered free from cache · resets after " + (d.cache_ttl_days ?? 7) + " days");
     })() +
     tile("Results copied", (d.events?.copy_result?.total ?? 0), ((d.events?.copy_result?.today ?? 0) + " today")) +
-    tile("Links copied", (d.events?.copy_link?.total ?? 0), ((d.events?.copy_link?.today ?? 0) + " today")) +
-    tile("New reports", pendNew, "awaiting your review", pendNew > 0 ? "warn" : "good");
+    tile("Links copied", (d.events?.copy_link?.total ?? 0), ((d.events?.copy_link?.today ?? 0) + " today"));
 
   // ---- 14-day bar chart (single series: checks; spend in tooltip) ----
   const daily = d.daily || [];
@@ -1011,6 +1099,89 @@ $("logout").onclick = () => {
   location.reload();
 };
 $("refresh").onclick = () => load();
+
+// ---- v0.66.30 shell: one pane at a time ----
+const PANES = ["overview","checks","marketing","money","scam","security"];
+function showPane(name){
+  if (!PANES.includes(name)) name = "overview";
+  window.__pane = name;
+  document.querySelectorAll("[data-pane]").forEach(el => el.classList.toggle("show", el.dataset.pane === name));
+  document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("on", b.dataset.nav === name));
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  if (name === "money" && !window.__moLoaded) loadMoney(false);
+  if (name === "security" && !window.__seLoaded) loadSecurity(false);
+}
+document.querySelectorAll("#nav button").forEach(b => b.onclick = () => showPane(b.dataset.nav));
+window.addEventListener("hashchange", () => showPane((location.hash || "#overview").slice(1)));
+
+// ---- Money (weekly snapshot) ----
+const money = n => "$" + (Math.round((+n || 0) * 100) / 100).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+async function loadMoney(live){
+  const d = await getJSON("/api/admin/money?key=" + encodeURIComponent(KEY) + (live ? "&live=1" : ""));
+  if (!d) { if (!window.__moLoaded) $("moTiles").innerHTML = '<div class="empty">Could not load — tap Money again to retry.</div>'; return; }
+  window.__moLoaded = true;
+  $("moAsOf").textContent = "snapshot " + String(d.as_of || "").slice(0, 16).replace("T", " ") + " UTC";
+  $("moCeil").textContent = d.ceiling;
+  const tm = d.this_month || {};
+  $("moTiles").innerHTML =
+    tile("This month so far", money(tm.total), `AI ${money(tm.ai)} · bills ${money(tm.logged)}`, tm.over ? "bad" : "good") +
+    tile("Run rate", money(d.run_rate_total) + "/mo", `fixed ${money(d.run_rate_fixed)} + last month's AI ${money(d.last_month_ai)}`) +
+    tile("Cost per check", d.cost_per_check != null ? (d.cost_per_check * 100).toFixed(1) + "¢" : "—", `${tm.checks || 0} fresh checks this month`) +
+    tile("Year to date", money(d.ytd), `${d.estimates_outstanding} estimate(s) still to replace with real bills`, d.estimates_outstanding ? "warn" : "good");
+  const ms = d.months || [], mx = Math.max(1, ...ms.map(x => x.total));
+  $("moBars").innerHTML = '<div style="display:flex;gap:6px;align-items:flex-end;height:110px">' + ms.map(x => `<div style="flex:1;text-align:center" title="${x.month}: AI ${money(x.ai)} + bills ${money(x.logged)}"><div style="display:flex;flex-direction:column-reverse;height:84px;justify-content:flex-start"><i style="display:block;height:${Math.max(1, x.ai / mx * 80)}px;background:#a78bfa;border-radius:2px"></i><i style="display:block;height:${Math.max(1, x.logged / mx * 80)}px;background:#38bdf8;border-radius:2px;margin-bottom:1px"></i></div><div class="s" style="font-size:.64rem;${x.over ? "color:#f87171" : ""}">${money(x.total)}</div><div class="s" style="font-size:.6rem">${x.month.slice(2)}</div></div>`).join("") + '</div>';
+  $("moRec").innerHTML = (d.recurring || []).map(r => `<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05);flex-wrap:wrap">
+      <b style="min-width:140px">${esc(r.name)}</b><span class="s" style="flex:1;min-width:160px">${esc(r.purpose)}</span>
+      ${r.status === "free" ? '<span class="s">free</span>' : `<input type="number" step="0.01" min="0" value="${r.amount}" onchange="moRec('${esc(r.id)}', this.value, null)" style="width:84px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:8px;padding:4px;font-family:inherit;text-align:right"><span class="s">/${r.cadence === "yearly" ? "yr" : "mo"}</span>
+      <button class="fbf" onclick="moRec('${esc(r.id)}', null, '${r.status === "actual" ? "estimate" : "actual"}')" style="font-size:.7rem;padding:3px 9px;color:${r.status === "actual" ? "#4ade80" : "#fab219"}">${esc(r.status)}</button>`}
+    </div>`).join("");
+  const sel = $("moCat"); if (!sel.options.length) (d.cats || []).forEach(c => { const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o); });
+  if (!$("moDate").value) $("moDate").value = new Date().toISOString().slice(0, 10);
+  const en = d.entries || [];
+  $("moLog").innerHTML = !en.length ? '<div class="empty">No bills logged yet.</div>' : en.map(e => `<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)"><span class="s" style="min-width:78px">${esc(e.date)}</span><span style="min-width:150px">${esc(e.cat)}</span><span class="s" style="flex:1">${esc(e.note || "")}</span><span class="s" style="color:${e.kind === "actual" ? "#4ade80" : "#fab219"}">${esc(e.kind)}</span><b>${money(e.amount)}</b><button class="fbf" onclick="moDel('${esc(e.id)}')" style="font-size:.7rem;padding:2px 8px">×</button></div>`).join("");
+}
+async function moRec(id, amount, status){
+  const body = {key: KEY, id}; if (amount !== null) body.amount = +amount; if (status) body.status = status;
+  try { await fetch("/api/admin/money/recurring", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)}); } catch(e){}
+  loadMoney(true);
+}
+async function moDel(id){
+  try { await fetch("/api/admin/money/entry/delete", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, id})}); } catch(e){}
+  loadMoney(true);
+}
+$("moAdd").onclick = async () => {
+  const body = {key: KEY, date: $("moDate").value, cat: $("moCat").value, amount: +$("moAmt").value, note: $("moNote").value, kind: $("moKind").value};
+  if (!body.date || !(body.amount >= 0)) return;
+  try { await fetch("/api/admin/money/entry", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)}); } catch(e){}
+  $("moAmt").value = ""; $("moNote").value = ""; loadMoney(true);
+};
+
+// ---- Security (weekly snapshot) ----
+async function loadSecurity(live){
+  const d = await getJSON("/api/admin/security?key=" + encodeURIComponent(KEY) + (live ? "&live=1" : ""));
+  if (!d) { if (!window.__seLoaded) $("seHealth").innerHTML = '<div class="empty">Could not load — tap Security again to retry.</div>'; return; }
+  window.__seLoaded = true;
+  $("seAsOf").textContent = "snapshot " + String(d.as_of || "").slice(0, 16).replace("T", " ") + " UTC · v" + (d.version || "");
+  $("seHealth").innerHTML = (d.health || []).map(h => tile(h.label, h.ok ? "ok" : "look", h.note, h.ok ? "good" : "warn")).join("");
+  const j = d.judging_last_changed;
+  $("seJudging").innerHTML = j ? `Scoring logic last changed in <b>v${esc(j.version)}</b> on ${esc(String(j.at).slice(0, 10))} — files: ${esc(j.files.join(", "))}.` : "No change to the scoring logic recorded since the ledger began.";
+  const led = d.ledger || [];
+  $("seLedger").innerHTML = !led.length ? '<div class="empty">The ledger starts with this version’s first boot.</div>' : led.map(r => `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)"><b>v${esc(r.version)}</b> <span class="s">${esc(String(r.at || "").slice(0, 16).replace("T", " "))}</span>
+      ${r.first ? '<div class="s">ledger began here</div>' : `<div class="s">${r.judging_changed.length ? `<span style="color:#fab219">judging changed:</span> ${esc(r.judging_changed.join(", "))}` : '<span style="color:#4ade80">judging unchanged</span>'}${r.app_changed.length ? ` · app: ${esc(r.app_changed.slice(0, 6).join(", "))}${r.app_changed.length > 6 ? " +" + (r.app_changed.length - 6) : ""}` : ""}${r.config_changed.length ? ` · settings: ${esc(r.config_changed.join("; "))}` : ""}</div>`}
+    </div>`).join("");
+  const ac = d.access || {}, fb = ac.failed_by_day || [], fmx = Math.max(1, ...fb.map(x => x.failed + x.ok));
+  $("seFailed").innerHTML = !fb.length ? '<div class="empty">No logins recorded yet (counting starts with this version).</div>' : '<div style="display:flex;gap:4px;align-items:flex-end;height:70px">' + fb.map(x => `<div style="flex:1;text-align:center" title="${x.day}: ${x.failed} failed · ${x.ok} ok"><div style="display:flex;flex-direction:column-reverse;height:52px"><i style="display:block;height:${Math.max(1, x.ok / fmx * 50)}px;background:#4ade80;border-radius:2px"></i><i style="display:block;height:${x.failed ? Math.max(2, x.failed / fmx * 50) : 0}px;background:#f87171;border-radius:2px"></i></div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`).join("") + '</div>';
+  $("seDevices").innerHTML = (ac.devices || []).length ? '<div class="s" style="margin-bottom:4px">Devices that signed in (30 days)</div>' + ac.devices.map(v => `<div class="s"><b style="color:var(--ink)">${esc(v.device)}</b> · network ${esc(v.net)} · ${v.logins} login(s) · last ${esc(String(v.last || "").slice(0, 16).replace("T", " "))}</div>`).join("") : "";
+  $("seRecent").innerHTML = (ac.recent || []).length ? '<details><summary class="s" style="cursor:pointer">every login attempt ↓</summary>' + ac.recent.map(v => `<div class="s" style="color:${v.ok ? "var(--ink2)" : "#f87171"}">${esc(String(v.at || "").slice(0, 16).replace("T", " "))} · ${v.ok ? "ok" : "FAILED"} · ${esc(v.method)} · ${esc(v.device)} · ${esc(v.net)}</div>`).join("") + '</details>' : "";
+  const cf = d.config || {};
+  $("seConfig").innerHTML = Object.entries(cf.models || {}).map(([k, v]) => `<span>${esc(k.replace("GLOWBY_", ""))} <b>${esc(v || "default")}</b></span>`).join("") +
+    Object.entries(cf.flags || {}).filter(([k, v]) => v).map(([k, v]) => `<span>${esc(k.replace("GLOWBY_", ""))} <b>${esc(v)}</b></span>`).join("") +
+    Object.entries(cf.secrets || {}).map(([k, v]) => `<span style="${v ? "" : "opacity:.5"}">${esc(k)} <b>${v ? "set" : "unset"}</b></span>`).join("");
+}
+$("seSignout").onclick = async () => {
+  try { await fetch("/api/admin/security/signout_all", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
+  loadSecurity(true);
+};
 
 function startTimer(){
   if (timer) clearInterval(timer);
