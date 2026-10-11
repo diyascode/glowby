@@ -199,6 +199,17 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Marketing on autopilot — TikTok drafts &amp; LinkedIn</h2>
+        <span><button id="mkDaily" class="fbf" style="font-size:.78rem;padding:6px 12px">Make today’s clip now</button> <button id="mkWeekly" class="fbf" style="font-size:.78rem;padding:6px 12px">Compose this week’s LinkedIn post</button></span>
+      </div>
+      <div class="s" style="margin:6px 0 8px">Every morning Glowby turns yesterday’s most-shared real check into a 20-second clip and drops it into Diya’s <b>TikTok drafts</b> — she adds her voice and posts; nothing is ever auto-posted to TikTok. Every Monday it writes the LinkedIn post and waits here for <b>Approve</b>. Only stored checks, never a made-up one, never “fake”.</div>
+      <div id="mkTiles" class="tiles" style="margin-bottom:10px"></div>
+      <div id="mkMeta" class="s" style="margin-bottom:8px"></div>
+      <div id="mkPosts"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Weekly flag review — the judge of the judges</h2>
         <button id="runReview" class="fbf" style="font-size:.78rem;padding:6px 12px">Run review now</button>
       </div>
@@ -523,6 +534,68 @@ async function loadScam(){
     tile("High or critical", crit, "suspicious " + (bv.suspicious||0) + " · caution " + (bv.use_caution||0), crit ? "warn" : "") +
     tile("Low / not enough info", (bv.low_detected_risk||0) + " / " + (bv.not_enough_information||0), "");
 }
+async function loadMarketing(){
+  let d = null;
+  try { const r = await fetch("/api/admin/marketing?key=" + encodeURIComponent(KEY)); if (r.ok) d = await r.json(); } catch(e){}
+  if (!d) { $("mkTiles").innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const tk = d.tiktok || {}, li = d.linkedin || {};
+  const lane = (name, p, who) => {
+    const state = !p.configured ? "keys not set" : !p.connected ? "not connected" : (p.paused ? "paused" : "on");
+    const cls = state === "on" ? "good" : (state === "paused" ? "warn" : "bad");
+    let sub = !p.configured ? `add GLOWBY_${name.toUpperCase()}_CLIENT_${name==="tiktok"?"KEY":"ID"} / _SECRET in Railway`
+      : !p.connected ? `<a href="/api/admin/marketing/connect?key=${encodeURIComponent(KEY)}&platform=${name}" target="_blank">connect ${who} ↗</a>`
+      : (name === "linkedin" ? `as ${esc(p.name||"member")} · token until ${esc(p.expires||"?")}` : `drafts land in the connected account · reconnect by ${esc(p.refresh_until||"?")}`);
+    sub += ` · <a href="#" onclick="mkPause('${name}',${p.paused?0:1});return false">${p.paused?"resume":"pause"}</a>`;
+    if (p.connected) sub += ` · <a href="#" onclick="mkDisconnect('${name}');return false">disconnect</a>`;
+    return tile(name === "tiktok" ? "TikTok lane (drafts)" : "LinkedIn lane (posts)", state, sub, cls);
+  };
+  $("mkTiles").innerHTML = lane("tiktok", tk, "Diya’s TikTok") + lane("linkedin", li, "Dad’s LinkedIn") +
+    tile("Daily clip", (d.last||{}).daily || "never", `runs at ${d.daily_hour_pt}:00 Pacific`) +
+    tile("Weekly post", (d.last||{}).weekly || "never", `Mondays ${d.weekly_hour_pt}:00 Pacific · ${d.autopost_linkedin ? "auto-posts 24h after composing unless skipped" : "posts only after Approve"}`);
+  $("mkMeta").innerHTML = `Redirect URLs to register in the developer apps: <code>${esc((d.redirect_uris||{}).tiktok)}</code> · <code>${esc((d.redirect_uris||{}).linkedin)}</code>`;
+  const posts = d.posts || [];
+  $("mkPosts").innerHTML = !posts.length ? '<div class="empty">Nothing made yet — press “Make today’s clip now”.</div>' : posts.map(p => {
+    const dt = p.detail || {};
+    const col = {in_tiktok_drafts:"#4ade80", posted:"#4ade80", rendered:"#38bdf8", queued:"#fab219", upload_failed:"#f87171", post_failed:"#f87171", failed:"#f87171", skipped:"#9aa0b0"}[p.status] || "#9aa0b0";
+    const when = (p.created_at||"").slice(0,16).replace("T"," ");
+    let acts = "";
+    if (p.platform === "linkedin" && p.status === "queued") acts = `<button onclick="mkAct(${p.id},'approve')" style="border-color:#4ade80">Approve &amp; post</button> <button onclick="mkAct(${p.id},'skip')">Skip</button>`;
+    if (p.platform === "tiktok" && p.has_media) acts += ` <a href="/api/admin/marketing/clip?key=${encodeURIComponent(KEY)}&id=${p.id}">download clip ↓</a>`;
+    if (p.platform === "tiktok" && p.status === "upload_failed" && p.has_media) acts += ` <button onclick="mkAct(${p.id},'retry')">retry upload</button>`;
+    if (p.platform === "linkedin" && p.status === "post_failed") acts += ` <button onclick="mkAct(${p.id},'approve')">retry post</button>`;
+    const cards = p.platform === "linkedin" ? (dt.keys||[]).slice(0,3).map(k => `<img src="/api/admin/marketing/card?key=${encodeURIComponent(KEY)}&url_key=${encodeURIComponent(k)}" style="width:96px;height:96px;border-radius:8px;margin:4px 4px 0 0">`).join("") : "";
+    const link = p.url_key ? ` · <a href="/r/${encodeURIComponent(p.url_key)}" target="_blank">open check ↗</a>` : "";
+    const err = dt.error || dt.tiktok || dt.linkedin || dt.reason || "";
+    return `<div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div><b style="color:${col}">${esc(p.status.replace(/_/g," "))}</b> · ${esc(p.platform)} ${esc(p.kind)} · ${esc(when)}${link}</div>
+      ${dt.title ? `<div class="s">“${esc(dt.title)}” · ${esc(dt.word||"")} ${dt.score!=null?esc(dt.score)+"/10":""}</div>` : ""}
+      ${p.caption ? `<div class="s" style="white-space:pre-wrap;margin-top:4px">${esc(p.caption)}</div>` : ""}
+      ${cards}
+      ${err ? `<div class="s" style="color:#fab219">${esc(err)}</div>` : ""}
+      ${p.platform === "tiktok" && p.status !== "skipped" && p.status !== "failed" ? `<div class="s">${esc(dt.note||"")}</div>` : ""}
+      ${acts ? `<div class="racts">${acts}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+async function mkAct(id, action){
+  try { await fetch("/api/admin/marketing/action", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, id, action})}); } catch(e){}
+  loadMarketing();
+}
+async function mkPause(platform, paused){
+  try { await fetch("/api/admin/marketing/pause", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, platform, paused: !!paused})}); } catch(e){}
+  loadMarketing();
+}
+async function mkDisconnect(platform){
+  try { await fetch("/api/admin/marketing/disconnect", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, platform})}); } catch(e){}
+  loadMarketing();
+}
+async function mkRun(kind, btn){
+  btn.disabled = true; const was = btn.textContent; btn.textContent = kind === "daily" ? "Rendering (about a minute)…" : "Composing…";
+  try { await fetch("/api/admin/marketing/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, kind})}); } catch(e){}
+  setTimeout(() => { btn.disabled = false; btn.textContent = was; loadMarketing(); }, kind === "daily" ? 45000 : 4000);
+  setTimeout(loadMarketing, 3000);
+}
+
 async function loadReview(){
   let d = null;
   try {
@@ -710,6 +783,7 @@ function render(d){
   loadCalendar(window.__calMonth);
   loadFeedback();
   loadReview();
+  loadMarketing();
   loadCalibration();
   loadScam();
   loadScamCal();
@@ -761,6 +835,8 @@ function render(d){
       const j = await r.json(); $("calMeta").textContent = j.ok ? `started ${j.started} item(s) · est. $${j.est_cost}` : ("Could not start: " + (j.detail||"")); } catch(e){}
     $("calRun").disabled = false; setTimeout(loadCalibration, 3000);
   };
+  $("mkDaily").onclick = () => mkRun("daily", $("mkDaily"));
+  $("mkWeekly").onclick = () => mkRun("weekly", $("mkWeekly"));
   $("runReview").onclick = async () => {
     $("runReview").disabled = true; $("runReview").textContent = "Reviewing…";
     try { const r = await fetch("/api/admin/review/run?key=" + encodeURIComponent(KEY), {method:"POST"}); const j = await r.json();

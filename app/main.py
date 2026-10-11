@@ -22,7 +22,7 @@ from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 from app.agents.answer import answer_followup, answer_question
@@ -86,7 +86,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.21"
+VERSION = "0.66.22"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2647,6 +2647,124 @@ _ADMIN_TEMPLATE_PATH = os.path.join(
 _admin_template_cache = None
 
 
+# ------------------------------------------------------------ marketing
+# v0.66.22: production on autopilot, publishing by a person. See
+# app/marketing.py — daily clip to TikTok drafts, weekly LinkedIn post
+# queued for approval. Admin only; the OAuth callbacks are public but
+# signed (state) and store nothing without a valid exchange.
+from app import marketing as _mkt  # noqa: E402
+
+
+@app.get("/api/admin/marketing")
+def api_admin_marketing(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return _mkt.status()
+
+
+class MarketingRun(BaseModel):
+    key: str
+    kind: str = "daily"  # daily | weekly
+
+
+_MKT_BUSY = {"daily": False, "weekly": False}
+
+
+@app.post("/api/admin/marketing/run")
+def api_admin_marketing_run(req: MarketingRun):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    kind = req.kind if req.kind in ("daily", "weekly") else "daily"
+    if _MKT_BUSY[kind]:
+        return {"ok": False, "detail": "already running"}
+
+    def _go():
+        _MKT_BUSY[kind] = True
+        try:
+            _mkt.run_daily(force=True) if kind == "daily" else _mkt.run_weekly(force=True)
+        finally:
+            _MKT_BUSY[kind] = False
+    threading.Thread(target=_go, daemon=True).start()
+    return {"ok": True, "started": kind}
+
+
+class MarketingAction(BaseModel):
+    key: str
+    id: int
+    action: str  # approve | skip | retry
+
+
+@app.post("/api/admin/marketing/action")
+def api_admin_marketing_action(req: MarketingAction):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return _mkt.post_action(req.id, req.action)
+
+
+class MarketingPause(BaseModel):
+    key: str
+    platform: str
+    paused: bool = True
+
+
+@app.post("/api/admin/marketing/pause")
+def api_admin_marketing_pause(req: MarketingPause):
+    if not _admin_ok(req.key) or req.platform not in ("tiktok", "linkedin"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": _mkt.set_setting(f"paused:{req.platform}", "1" if req.paused else "0")}
+
+
+@app.post("/api/admin/marketing/disconnect")
+def api_admin_marketing_disconnect(req: MarketingPause):
+    if not _admin_ok(req.key) or req.platform not in ("tiktok", "linkedin"):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": _mkt.forget_token(req.platform)}
+
+
+@app.get("/api/admin/marketing/clip", include_in_schema=False)
+def api_admin_marketing_clip(key: str = "", id: int = 0):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    p = _mkt.get_post(id, with_media=True)
+    if not p or not p.get("media"):
+        return JSONResponse(status_code=404, content={"detail": "clip not stored"})
+    return Response(content=p["media"], media_type="video/mp4",
+                    headers={"Content-Disposition": f'attachment; filename="glowby-clip-{id}.mp4"'})
+
+
+@app.get("/api/admin/marketing/card", include_in_schema=False)
+def api_admin_marketing_card(key: str = "", url_key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    r = peek_result(url_key)
+    if not r:
+        return JSONResponse(status_code=404, content={"detail": "no such check"})
+    return Response(content=_mkt.share_card(r, url_key), media_type="image/png")
+
+
+@app.get("/api/admin/marketing/connect", include_in_schema=False)
+def api_admin_marketing_connect(key: str = "", platform: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    url = _mkt.connect_url(platform)
+    if not url:
+        return PlainTextResponse("That platform's client key/secret are not set in Railway Variables yet.", status_code=400)
+    return RedirectResponse(url, status_code=302)
+
+
+@app.get("/api/marketing/{platform}/callback", response_class=HTMLResponse, include_in_schema=False)
+def api_marketing_callback(platform: str, code: str = "", state: str = "", error: str = "", error_description: str = ""):
+    if platform not in ("tiktok", "linkedin"):
+        return HTMLResponse("<p>Unknown platform.</p>", status_code=404)
+    if error or not code:
+        msg = _html_attr(error_description or error or "no code returned")
+        return HTMLResponse(f"<p style='font:16px system-ui;padding:2em'>Not connected: {msg}. Close this tab and try again from admin.</p>")
+    res = _mkt.finish_connect(platform, code, state)
+    msg = _html_attr(res.get("detail", ""))
+    return HTMLResponse(f"<p style='font:16px system-ui;padding:2em'>{'✓ ' if res.get('ok') else 'Not connected: '}{msg}. You can close this tab.</p>",
+                        status_code=200 if res.get("ok") else 400)
+
+
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
 def admin_page() -> str:
     """Admin dashboard shell. Renders nothing sensitive until the admin
@@ -2736,6 +2854,7 @@ from app.precheck import start_precheck  # noqa: E402
 @app.on_event("startup")
 def _startup_precheck() -> None:
     start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST)
+    _mkt.start()  # daily clip → TikTok drafts; weekly LinkedIn queue
     # CACHE KEEP-ALIVE: re-read the judges' shared rulebook every 50 min
     # so its 1-hour cache never lapses — the rulebook is then billed at
     # 10% on every real judge call, all day, every category. Cost: pennies.

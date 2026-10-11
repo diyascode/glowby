@@ -2347,6 +2347,56 @@ _pg119 = m._page()
 if f"v{m.VERSION} &mdash;" not in _pg119 or "__VERSION__" in _pg119 or "mdash;mdash" in _pg119: fails.append("m119 footer version")
 if "__VERSION__" not in open("app/templates/app.html").read(): fails.append("m119 template must use the placeholder")
 
+# 120. MARKETING ON AUTOPILOT (Oct 10): production is automatic, publishing
+# is a person. Picker takes only real, general, scoreable, un-scam checks;
+# caption carries the band word and never a forbidden word; the clip
+# renders to a real MP4; TikTok goes to DRAFTS (inbox endpoint, never
+# /direct post); LinkedIn waits for approval; OAuth state is signed.
+from app import marketing as _MK
+_ok120 = {"title": "Reel", "report": {"headline_score": 7.8, "one_line": "Mostly accurate — it mostly happened."}, "claims": []}
+if not _MK.eligible(_ok120): fails.append("m120 eligible")
+for _bad in ({**_ok120, "content_rating": "mature"}, {**_ok120, "scam": {"risk": "high"}}, {**_ok120, "report": {"headline_score": None, "one_line": "x"}},
+             {**_ok120, "report": {"headline_score": 2.0, "one_line": "x", "safety_notice": True}}, {**_ok120, "title": ""}):
+    if _MK.eligible(_bad): fails.append(f"m120 must not market {list(_bad)[-1]}")
+_cap = _MK.tiktok_caption({"title": "R", "report": {"headline_score": 1.5, "one_line": "Inaccurate — this creator is lying, it's fake."}, "claims": []})
+if _MK.FORBIDDEN.search(_cap) or "Inaccurate" not in _cap or "glowby.io/get" not in _cap or "%" in _cap: fails.append(f"m120 caption: {_cap}")
+_cap2 = _MK.tiktok_caption({"title": "R", "report": {"headline_score": 8.1, "one_line": "Accurate — it happened, 95% accuracy claims aside."}, "claims": []})
+if "95% accura" in _cap2: fails.append("m120 caption percentages")
+_pk = _MK.pick(set(), fetch=lambda days: [("used", 9, _ok120), ("bad", 8, {**_ok120, "scam": {"risk": "high"}}), ("good", 7, _ok120)] if days == 1 else [])
+if not _pk or _pk[0] != "used": fails.append("m120 pick most viewed")
+_pk = _MK.pick({"used"}, fetch=lambda days: [("used", 9, _ok120), ("bad", 8, {**_ok120, "scam": {"risk": "high"}}), ("good", 7, _ok120)] if days == 1 else [])
+if not _pk or _pk[0] != "good": fails.append("m120 pick skips used and scam")
+_li = _MK.linkedin_text([("k1", 5, _ok120)], 12)
+if "Mostly accurate (7.8/10). It mostly happened." not in _li or "glowby.io/r/k1" not in _li or "Diya" not in _li: fails.append(f"m120 linkedin text: {_li}")
+if _MK._li_escape("a (b) #c") != "a \\(b\\) \\#c": fails.append("m120 linkedin escaping")
+_st = _MK.make_state("tiktok", now=1000)
+if not _MK.check_state(_st, "tiktok", now=1200) or _MK.check_state(_st, "linkedin", now=1200) or _MK.check_state(_st, "tiktok", now=9000) or _MK.check_state(_st[:-1] + "0", "tiktok", now=1200): fails.append("m120 state")
+if _MK.chunk_plan(3_000_000) != {"video_size": 3_000_000, "chunk_size": 3_000_000, "total_chunk_count": 1}: fails.append("m120 chunk plan")
+import tempfile as _tf120
+_mp4 = _os.path.join(_tf120.gettempdir(), "m120.mp4")
+_MK.render_clip({**_ok120, "claims": [{"evidence": {"web_sources": [{"url": "https://www.reuters.com/a"}]}}]}, _mp4, fps=5, total=20.0, scale=1)
+if not _os.path.exists(_mp4) or _os.path.getsize(_mp4) < 20_000 or open(_mp4, "rb").read(12)[4:8] != b"ftyp": fails.append("m120 clip is not an mp4")
+_calls120 = []
+def _http120(method, url, headers=None, data=None, timeout=60):
+    _calls120.append((method, url))
+    if "inbox/video/init" in url: return 200, b'{"data":{"publish_id":"p1","upload_url":"https://up.tiktok/x"}}', {}
+    if url.startswith("https://up.tiktok/"): return 201, b"", {}
+    if "images?action=initializeUpload" in url: return 200, b'{"value":{"uploadUrl":"https://up.li/x","image":"urn:li:image:1"}}', {}
+    if url.startswith("https://up.li/"): return 201, b"", {}
+    if url.endswith("/rest/posts"): return 201, b"", {"x-restli-id": "urn:li:share:9"}
+    return 500, b"{}", {}
+_MK.get_token = lambda platform: {"access_token": "t", "expires_at": time.time() + 999, "person_urn": "urn:li:person:me", "refresh_token": "r"}
+_up = _MK.tiktok_upload_to_drafts(b"x" * 1000, http=_http120)
+if not _up.get("ok") or _up.get("publish_id") != "p1" or any("direct" in u for _, u in _calls120): fails.append(f"m120 tiktok must upload to DRAFTS only: {_up} {_calls120}")
+_po = _MK.linkedin_post("hi (there)", [b"png"], http=_http120)
+if not _po.get("ok") or _po.get("post_urn") != "urn:li:share:9": fails.append(f"m120 linkedin post: {_po}")
+if _MK.due(_MK.datetime(2026, 10, 12, 7, 0, tzinfo=_MK._PT), {}) != ["daily"] or _MK.due(_MK.datetime(2026, 10, 12, 9, 0, tzinfo=_MK._PT), {"daily": "2026-10-12"}) != ["weekly"] or _MK.due(_MK.datetime(2026, 10, 13, 9, 0, tzinfo=_MK._PT), {"daily": "2026-10-13"}) != []: fails.append("m120 schedule")
+_s120 = open("app/marketing.py").read()
+if "/post/publish/video/init" in _s120 or "video.publish" in _s120: fails.append("m120 code must never carry TikTok direct-post")
+for _need in ("/api/admin/marketing/run", "/api/marketing/{platform}/callback", "_mkt.start()"):
+    if _need not in open("app/main.py").read(): fails.append(f"m120 route {_need}")
+if "Make today’s clip now" not in open("app/templates/admin.html").read() or "Approve &amp; post" not in open("app/templates/admin.html").read(): fails.append("m120 admin card")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 119/119 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version")
+    "FINAL MATRIX PASS: 120/120 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot")
