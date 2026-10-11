@@ -215,6 +215,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       </div>
       <div class="s" style="margin:6px 0 8px">Every morning Glowby turns yesterday’s most-shared real check into a finished 20–35 second video — pictures, captions and a synthetic narrator (never presented as Diya) — and drops it into Diya’s <b>TikTok drafts</b>. She can post it as is, or mute it and talk over it. Nothing is ever auto-posted to TikTok. Every Monday it writes the LinkedIn post and waits here for <b>Approve</b>. Only stored checks, never a made-up one, never “fake”.</div>
       <div id="mkTiles" class="tiles" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;align-items:center;margin:4px 0 8px;flex-wrap:wrap"><span class="s">Ad style:</span><select id="mkStyle" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:5px"><option value="rotate">rotate daily (facebook → friend → group chat → caught)</option><option value="facebook">Facebook reel — false news, all over Facebook, checked (dramatic voice)</option><option value="friend">Friend — a political reel in a DM; reply with the check and sources (dramatic voice)</option><option value="caught">Caught — cold open, verdict slams in, receipts</option><option value="groupchat">Group chat — before anyone replies, the receipt</option><option value="guess">Guess — true or false? 3-2-1, reveal</option><option value="receipts">Receipts — verdict first, then who says so</option><option value="classic">Classic — the share-and-wait walkthrough</option></select><span class="s" id="mkStyleToday"></span></div>
       <div style="display:flex;gap:8px;align-items:center;margin:4px 0 8px;flex-wrap:wrap"><input id="mkPick" placeholder="pick the story yourself: paste a glowby.io/r/… link" style="flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem"><button id="mkPickGo" class="fbf" style="font-size:.78rem;padding:6px 12px">Make a clip from it</button><span class="s">· otherwise the picker chooses: clear verdicts over Mixed, everyday topics over niche, plain titles over jargon (reasons shown on each row)</span></div>
       <div id="mkMeta" class="s" style="margin-bottom:8px"></div>
       <div id="mkPosts"></div>
@@ -606,6 +607,8 @@ async function loadMarketing(){
     tile("Narrator voice", !nr.available ? "no key" : (nr.on ? "on" : "off"), (!nr.available ? "needs OPENAI_API_KEY (same key Whisper uses)" : `expressive voice “${esc(nr.voice||"")}” (${esc(nr.model||"")}), never presented as Diya · <a href="#" onclick="mkNarration(${nr.on?0:1});return false">${nr.on?"turn off (silent clips)":"turn on"}</a>`), !nr.available ? "bad" : (nr.on ? "good" : "warn")) +
     tile("Daily clip", (d.last||{}).daily || "never", `runs at ${d.daily_hour_pt}:00 Pacific`) +
     tile("Weekly post", (d.last||{}).weekly || "never", `Mondays ${d.weekly_hour_pt}:00 Pacific · ${d.autopost_linkedin ? "auto-posts 24h after composing unless skipped" : "posts only after Approve"}`);
+  if ($("mkStyle").value !== (d.ad_style || "rotate")) $("mkStyle").value = d.ad_style || "rotate";
+  $("mkStyleToday").textContent = d.ad_style === "rotate" ? `· today: ${d.ad_style_today}` : "";
   $("mkMeta").innerHTML = `Redirect URLs to register in the developer apps: <code>${esc((d.redirect_uris||{}).tiktok)}</code> · <code>${esc((d.redirect_uris||{}).linkedin)}</code>`;
   const posts = d.posts || [];
   $("mkPosts").innerHTML = !posts.length ? '<div class="empty">Nothing made yet — press “Make today’s clip now”.</div>' : posts.map(p => {
@@ -622,7 +625,7 @@ async function loadMarketing(){
     const err = dt.error || dt.tiktok || dt.linkedin || dt.reason || "";
     return `<div style="padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05)">
       <div><b style="color:${col}">${esc(p.status.replace(/_/g," "))}</b> · ${esc(p.platform)} ${esc(p.kind)} · ${esc(when)}${link}</div>
-      ${dt.title ? `<div class="s">“${esc(dt.title)}” · ${esc(dt.word||"")} ${dt.score!=null?esc(dt.score)+"/10":""}${p.platform==="tiktok" ? (dt.narrated ? ` · <span style="color:#4ade80">voiced · ${Math.round(dt.seconds||0)}s</span>` : ` · silent${dt.voice_error ? " (voice failed: " + esc(dt.voice_error) + ")" : ""}`) : ""}</div>` : ""}
+      ${dt.title ? `<div class="s">“${esc(dt.title)}” · ${esc(dt.word||"")} ${dt.score!=null?esc(dt.score)+"/10":""}${p.platform==="tiktok" ? (dt.narrated ? ` · <span style="color:#4ade80">voiced · ${Math.round(dt.seconds||0)}s · ${esc(dt.style||"")}</span>` : ` · silent${dt.voice_error ? " (voice failed: " + esc(dt.voice_error) + ")" : ""}`) : ""}</div>` : ""}
       ${(dt.why||[]).length ? `<div class="s" style="color:#9aa0b0">why this story: ${esc((dt.why||[]).join(" · "))}${dt.story_score!=null ? " · score " + esc(dt.story_score) : ""}</div>` : ""}
       ${p.caption ? `<div class="s" style="white-space:pre-wrap;margin-top:4px">${esc(p.caption)}</div>` : ""}
       ${cards}
@@ -899,6 +902,7 @@ function render(d){
   $("flDay").onchange = e => { window.__flDay = e.target.value; loadFailures(); };
   $("flKind").onchange = e => { window.__flKind = e.target.value; loadFailures(); };
   $("mkDaily").onclick = () => mkRun("daily", $("mkDaily"));
+  $("mkStyle").onchange = async e => { try { await fetch("/api/admin/marketing/style", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, style: e.target.value})}); } catch(_){} loadMarketing(); };
   $("mkPickGo").onclick = () => { const v = $("mkPick").value.trim(); if (v) mkRun("daily", $("mkPickGo"), v); };
   $("mkWeekly").onclick = () => mkRun("weekly", $("mkWeekly"));
   $("runReview").onclick = async () => {

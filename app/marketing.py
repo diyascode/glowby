@@ -605,7 +605,7 @@ def frame(result: dict, t: float, total: float = 20.0, bounds: dict | None = Non
 
 
 def render_clip(result: dict, out_path: str, fps: int = 30, total: float = 20.0, scale: int = 2, ffmpeg: str = "ffmpeg",
-                bounds: dict | None = None, audio_path: str | None = None) -> str:
+                bounds: dict | None = None, audio_path: str | None = None, frame_fn=None) -> str:
     """Render the clip to an MP4 (H.264, yuv420p). With `audio_path` the
     voice track is muxed in; without it a silent AAC track is added so
     every platform accepts the file. Frames are piped — nothing hits the
@@ -614,12 +614,13 @@ def render_clip(result: dict, out_path: str, fps: int = 30, total: float = 20.0,
     audio_in = ["-i", audio_path] if audio_path else ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
     cmd = [ffmpeg, "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-", *audio_in,
-           "-vf", f"scale={W * scale}:{H * scale}:flags=lanczos", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+           "-vf", f"scale={W * scale}:{H * scale}:flags=lanczos", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", "6M", "-bufsize", "12M",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", out_path]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(n):
-            p.stdin.write(frame(result, i / fps, total, bounds).convert("RGB").tobytes())
+            im = frame_fn(result, i / fps, total, bounds) if frame_fn else frame(result, i / fps, total, bounds)
+            p.stdin.write(im.convert("RGB").tobytes())
     finally:
         p.stdin.close()
     err = p.stderr.read().decode("utf-8", "ignore")
@@ -676,8 +677,8 @@ def spoken_line(line: str, limit: int = 140) -> str:
     return t[:1].upper() + t[1:]
 
 
-VOICE_STYLE = ("You are a warm, curious 17-year-old explaining something to a friend on TikTok. Natural and conversational, "
-               "a little playful, never like a news anchor or an ad. Real pauses, real emphasis, a smile in the voice.")
+VOICE_STYLE = ("You are a bright, quick, upbeat 17-year-old telling a friend something you just found out. Energetic and "
+               "amused, a grin in the voice, never an announcer and never an ad read. Real emphasis, crisp pace, short pauses.")
 SCENE_STYLE = {
     "intro": "Hook them: curious and slightly incredulous, rising on 'Is it true?'.",
     "check": "Casual and quick, like an aside.",
@@ -691,26 +692,27 @@ def tts_available() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY")) and setting("narration", "1") == "1"
 
 
-def tts_request(text: str, scene: str = "", model: str | None = None) -> dict:
+def tts_request(text: str, scene: str = "", model: str | None = None, voice_style: str | None = None, scene_style: dict | None = None) -> dict:
     """Pure: the speech request. The instructable model gets the voice
     direction (who is talking, how this scene feels); plain tts-1 cannot
     take instructions and gets a slight speed-up instead."""
     model = model or TTS_MODEL
     req = {"model": model, "voice": TTS_VOICE, "input": text, "response_format": "mp3"}
+    styles = SCENE_STYLE if scene_style is None else scene_style
     if model.startswith("tts-1"):
-        req["speed"] = 1.05
+        req["speed"] = 1.08
     else:
-        req["instructions"] = VOICE_STYLE + (" " + SCENE_STYLE[scene] if scene in SCENE_STYLE else "")
+        req["instructions"] = (voice_style or VOICE_STYLE) + (" " + styles[scene] if scene in styles else "")
     return req
 
 
-def tts(text: str, http=None, scene: str = "") -> bytes:
+def tts(text: str, http=None, scene: str = "", voice_style: str | None = None, scene_style: dict | None = None) -> bytes:
     """One sentence -> MP3 bytes via OpenAI's speech endpoint; falls back
     to tts-1 if the expressive model is refused. Raises on failure."""
     key = os.environ.get("OPENAI_API_KEY", "")
     hdr = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
     st, body, _ = (http or _http)("POST", "https://api.openai.com/v1/audio/speech", hdr,
-                                  json.dumps(tts_request(text, scene)).encode(), timeout=60)
+                                  json.dumps(tts_request(text, scene, voice_style=voice_style, scene_style=scene_style)).encode(), timeout=60)
     if st != 200 and not TTS_MODEL.startswith("tts-1"):
         st, body, _ = (http or _http)("POST", "https://api.openai.com/v1/audio/speech", hdr,
                                       json.dumps(tts_request(text, scene, model="tts-1")).encode(), timeout=60)
@@ -725,27 +727,39 @@ def _duration(path: str, ffprobe: str = "ffprobe") -> float:
     return float(out or 0)
 
 
-def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmpeg") -> tuple:
+def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmpeg", script_: list | None = None,
+                      gaps: dict | None = None, lead_in: float = 0.8, scene_style: dict | None = None, voice_style: str | None = None,
+                      want_segs: bool = False, pre: dict | None = None) -> tuple:
     """Synthesize each sentence, lay them on a timeline with short gaps,
-    and return (audio_path, bounds, total). The picture's scene changes
-    are set from where each sentence starts."""
+    and return (audio_path, bounds, total). `bounds` = {scene: start}
+    for every scene — the picture's scene changes come from it."""
     segs = []
     import inspect
-    takes_scene = "scene" in inspect.signature(speak).parameters
-    for scene, text in narration_script(result):
+    params = inspect.signature(speak).parameters
+    takes_scene = "scene" in params
+    takes_style = "voice_style" in params
+    lines = script_ if script_ is not None else narration_script(result)
+    gap = gaps or {"intro": 0.6, "check": 0.5, "wait": 1.6, "result": 1.0, "end": 0.0}
+    for scene, text in lines:
         fp = os.path.join(workdir, f"{scene}.mp3")
+        kw = {}
+        if takes_scene:
+            kw["scene"] = scene
+        if takes_style:
+            kw["voice_style"] = voice_style; kw["scene_style"] = scene_style
         with open(fp, "wb") as f:
-            f.write(speak(text, scene=scene) if takes_scene else speak(text))
-        segs.append((scene, fp, _duration(fp)))
-    gap = {"intro": 0.6, "check": 0.5, "wait": 1.6, "result": 1.0, "end": 0.0}
-    t, bounds, delays = 0.8, {}, []
-    for scene, fp, dur in segs:
+            f.write(speak(text, **kw))
+        segs.append((scene, fp, _duration(fp), text))
+    t, bounds, delays = lead_in, {}, []
+    pre = pre or {}
+    for scene, fp, dur, _txt in segs:
         bounds[scene] = round(t, 2)
+        t += pre.get(scene, 0.0)          # a held beat before this line (the verdict)
         delays.append((fp, t))
-        t += dur + gap[scene]
+        t += dur + gap.get(scene, 0.5)
     total = round(t + 1.2, 2)
-    # the first scene starts at 0; the narration of it starts at 0.8
-    bounds = {"check": bounds["check"], "wait": bounds["wait"], "result": bounds["result"], "end": bounds["end"]}
+    first = segs[0][0]
+    bounds[first] = 0.0  # the first scene is on screen from frame one
     out = os.path.join(workdir, "voice.m4a")
     inputs, filt = [], []
     for i, (fp, at) in enumerate(delays):
@@ -756,13 +770,33 @@ def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmp
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
         raise RuntimeError("voice mix failed: " + r.stderr[-300:])
+    if want_segs:
+        return out, bounds, total, [(sc, txt, dur) for sc, _fp, dur, txt in segs]
     return out, bounds, total
 
 
-def render_narrated(result: dict, out_path: str, speak=tts, **kw) -> dict:
-    """The whole video, voice included. Returns {narrated, total}; falls
-    back to the silent cut if the voice step fails for any reason."""
+def ad_style() -> str:
+    """House style from admin: one of app.ads.STYLES, 'classic', or
+    'rotate' (a different style each day)."""
+    return setting("ad_style", "rotate")
+
+
+def style_for_today(st: str | None = None) -> str:
+    st = st or ad_style()
+    if st == "rotate":
+        from app import ads
+        return ads.ROTATION[int(time.time() // 86400) % len(ads.ROTATION)]
+    return st
+
+
+def render_narrated(result: dict, out_path: str, speak=tts, style: str | None = None, **kw) -> dict:
+    """The whole video, voice included. Returns {narrated, total, style};
+    falls back to the silent classic cut if the voice step fails."""
     import tempfile
+    style = style_for_today(style)
+    if style != "classic":
+        from app import ads
+        return ads.render(result, out_path, style, speak=speak, **kw)
     try:
         with tempfile.TemporaryDirectory() as td:
             audio, bounds, total = build_voice_track(result, td, speak=speak)
@@ -772,10 +806,10 @@ def render_narrated(result: dict, out_path: str, speak=tts, **kw) -> dict:
             add_usage(0.01, count=False)
         except Exception:
             pass
-        return {"narrated": True, "total": total}
+        return {"narrated": True, "total": total, "style": "classic"}
     except Exception as e:
         render_clip(result, out_path, **kw)
-        return {"narrated": False, "total": DEFAULT_BOUNDS["total"], "voice_error": str(e)[:160]}
+        return {"narrated": False, "total": DEFAULT_BOUNDS["total"], "style": "classic", "voice_error": str(e)[:160]}
 
 
 def share_card(result: dict, key: str) -> bytes:
@@ -1012,7 +1046,7 @@ def linkedin_post(text: str, images: list, http=_http) -> dict:
 
 
 # ==================================================================== jobs
-def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_drafts, url_key: str = "") -> dict:
+def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_drafts, url_key: str = "", style: str | None = None) -> dict:
     """Pick → render → caption → TikTok drafts. Always stores the clip so
     admin can download it even when TikTok isn't connected."""
     if paused("tiktok") and not force:
@@ -1033,7 +1067,7 @@ def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_d
     voice = {"narrated": False}
     try:
         if render is render_clip and tts_available():
-            voice = render_narrated(result, path)
+            voice = render_narrated(result, path, style=style)
         else:
             render(result, path)
         mp4 = open(path, "rb").read()
@@ -1047,7 +1081,7 @@ def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_d
             pass
     detail = {"title": str(result.get("title") or "")[:120], "score": (result.get("report") or {}).get("headline_score"),
               "word": lead_word(result), "bytes": len(mp4), "narrated": bool(voice.get("narrated")),
-              "story_score": meta.get("story_score"), "why": meta.get("why"),
+              "story_score": meta.get("story_score"), "why": meta.get("why"), "style": voice.get("style"),
               "voice_error": voice.get("voice_error"), "seconds": voice.get("total"),
               "note": (AI_LABEL_NOTE_VOICED if voice.get("narrated") else AI_LABEL_NOTE)}
     pid = _insert_post("tiktok", "daily", key, cap, "rendered", detail, media=mp4)
@@ -1194,6 +1228,7 @@ def status() -> dict:
         "enabled": ENABLED,
         "daily_hour_pt": DAILY_HOUR, "weekly_hour_pt": WEEKLY_HOUR, "autopost_linkedin": AUTOPOST_LINKEDIN,
         "narration": {"available": bool(os.environ.get("OPENAI_API_KEY")), "on": setting("narration", "1") == "1", "voice": TTS_VOICE, "model": TTS_MODEL},
+        "ad_style": ad_style(), "ad_style_today": style_for_today(),
         "tiktok": {"configured": bool(TIKTOK_KEY and TIKTOK_SECRET), "connected": bool(tt), "paused": paused("tiktok"),
                    "refresh_until": datetime.fromtimestamp(tt["refresh_expires_at"], tz=timezone.utc).date().isoformat() if tt and tt.get("refresh_expires_at") else None},
         "linkedin": {"configured": bool(LINKEDIN_ID and LINKEDIN_SECRET), "connected": bool(lt), "paused": paused("linkedin"),

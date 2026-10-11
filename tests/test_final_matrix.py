@@ -2480,7 +2480,7 @@ if not _pk or _pk[0] != "e" or "why" not in _pk[2]: fails.append(f"m123 pick the
 _sl = _MK.spoken_line("Inaccurate — for most people a daily egg barely moves blood cholesterol; the smoking comparison comes from nowhere, and the study it cites was about something else entirely.")
 if "—" in _sl or len(_sl) > 150 or not _sl.endswith(".") or not _sl.startswith("Inaccurate, for most"): fails.append(f"m123 spoken line: {_sl}")
 _rq = _MK.tts_request("hi", "result")
-if "instructions" not in _rq or "verdict" not in _rq["instructions"] or "speed" in _rq or _MK.tts_request("hi", "result", model="tts-1").get("speed") != 1.05 or "instructions" in _MK.tts_request("hi", model="tts-1"): fails.append(f"m123 tts request: {_rq}")
+if "instructions" not in _rq or "verdict" not in _rq["instructions"] or "speed" in _rq or _MK.tts_request("hi", "result", model="tts-1").get("speed") != 1.08 or "instructions" in _MK.tts_request("hi", model="tts-1"): fails.append(f"m123 tts request: {_rq}")
 _tcalls = []
 def _http123(method, url, headers=None, data=None, timeout=60):
     _tcalls.append(_j95.loads(data)); return (400, b"{}", {}) if len(_tcalls) == 1 else (200, b"x" * 2000, {})
@@ -2497,6 +2497,51 @@ finally:
     _MK._insert_post = _orig_ins
 if 'url_key: str = ""' not in open("app/main.py").read().split("class MarketingRun")[1].split("class MarketingAction")[0] or "mkPickGo" not in open("app/templates/admin.html").read(): fails.append("m123 admin hand-pick")
 
+# 124. FOUR ADS, NO WAITING (Oct 12): each style is a scene list whose
+# words come from the stored check only; none says "a minute later";
+# the voice is directed per scene; sources are spoken as names; the
+# stamp/answer/end picture renders for every style; admin picks the
+# style or rotates; a chosen style reaches the renderer.
+from app import ads as _AD
+for _st in _AD.STYLES:
+    _sc = _AD.script(_eggs123, _st); _all = " ".join(t for _, t in _sc).lower()
+    if "minute" in _all or "Inaccurate" not in " ".join(t for _, t in _sc) or "2.1 out of ten" not in _all or "glowby" not in _all or _MK.FORBIDDEN.search(_all): fails.append(f"m124 script {_st}: {_sc}")
+    if [k for k, _ in _sc][0] != {"caught": "claim", "groupchat": "bubble", "guess": "guess", "receipts": "stamp", "facebook": "reel", "friend": "dm"}[_st]: fails.append(f"m124 opening scene {_st}")
+if _AD.say_source("www.health.harvard.edu") != "Harvard Health" or _AD.say_source("apnews.com") != "the AP" or " dot " in _AD.say_source("www.honeyflow.com"): fails.append("m124 spoken sources")
+if "verdict" not in _AD.SCENE_STYLE["stamp"] or "upbeat" not in _AD.VOICE_STYLE or "breath" not in _AD.DRAMATIC_STYLE or _AD.STYLE_VOICE.get("friend") != _AD.DRAMATIC_STYLE: fails.append("m124 voice direction")
+for _st in ("facebook", "friend"):
+    _all = " ".join(t for _, t in _AD.script(_eggs123, _st)).lower()
+    if ("facebook" not in _all if _st == "facebook" else "sent the link" not in _all) or "minute" in _all: fails.append(f"m124 story script {_st}")
+_rq = _MK.tts_request("hi", "stamp", voice_style=_AD.VOICE_STYLE, scene_style=_AD.SCENE_STYLE)
+if not _rq["instructions"].startswith(_AD.VOICE_STYLE) or _AD.SCENE_STYLE["stamp"] not in _rq["instructions"]: fails.append("m124 style reaches the request")
+_b124 = {"claim": 0, "stamp": 3, "answer": 6, "sources": 10, "end": 14}
+_b124b = {"reel": 0, "dm": 0, "hold": 3, "verdict": 6, "answer": 9, "sources": 12, "reply": 12, "end": 16}
+for _st in _AD.STYLES:
+    for _t in (0.5, 3.4, 6.5, 10.5, 14.5):
+        if _st in ("facebook", "friend"):
+            _b124 = _b124b
+        try:
+            _AD.frame(_eggs123, _t, _st, _b124, 18.0)
+        except Exception as _e:
+            fails.append(f"m124 frame {_st}@{_t}: {_e}")
+_r124 = _AD.render(_eggs123, _out122, "guess", speak=_speak122, fps=4, scale=1)
+if not _r124.get("narrated") or _r124.get("style") != "guess" or not (8 < _r124.get("total", 0) < 20): fails.append(f"m124 styled render: {_r124}")
+_seen124 = {}
+_orig_ar = _AD.render; _AD.render = lambda r, p, st, speak=None, **kw: _seen124.update(style=st) or _orig_ar(r, p, st, speak=_speak122, fps=4, scale=1)
+try:
+    _MK.render_narrated(_eggs123, _out122, speak=_speak122, style="receipts")
+    if _seen124.get("style") != "receipts": fails.append("m124 chosen style must reach the renderer")
+    if _MK.style_for_today("caught") != "caught" or _MK.style_for_today("rotate") not in _AD.STYLES: fails.append("m124 style_for_today")
+finally:
+    _AD.render = _orig_ar
+if "/api/admin/marketing/style" not in open("app/main.py").read() or 'id="mkStyle"' not in open("app/templates/admin.html").read(): fails.append("m124 admin style picker")
+# v2 engine: word captions follow the voice, the verdict gets its beat, effects are synthesized without numpy
+_wt = _AD.word_times([("reel", "This is all over Facebook.", 2.0), ("verdict", "Inaccurate. 1.4 out of ten.", 2.0)], 1.0, _AD.GAPS, _AD.PRE)
+if _wt[0][2] != "This" or abs(_wt[0][0] - 1.08) > 0.01 or _wt[-1][2] != "ten." or not (_wt[5][0] > 1.0 + 2.0 + _AD.GAPS["reel"] + _AD.PRE["verdict"] - 0.01): fails.append(f"m124 word times: {_wt[:2]} {_wt[5]}")
+_fx = _AD.sfx_track(_AD.sfx_events({"dm": 0, "verdict": 5, "end": 9}, 11.0), 11.0, _os.path.join(_tf120.gettempdir(), "m124fx.wav"))
+if _os.path.getsize(_fx) < 44100 * 2 * 2 * 10 or "import numpy" in open("app/ads.py").read(): fails.append("m124 sfx track")
+if not _os.path.exists("app/static/fonts/Poppins-Bold.ttf") or not _os.path.exists("app/static/fonts/LICENSE.txt"): fails.append("m124 bundled font + license")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 123/123 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story")
+    "FINAL MATRIX PASS: 124/124 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting")

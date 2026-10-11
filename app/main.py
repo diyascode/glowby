@@ -92,7 +92,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.26"
+VERSION = "0.66.29"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2731,6 +2731,7 @@ class MarketingRun(BaseModel):
     key: str
     kind: str = "daily"  # daily | weekly
     url_key: str = ""    # daily only: a person picks the story (a stored check's key or its /r/ link)
+    style: str = ""      # daily only: this run's ad style (otherwise the house setting)
 
 
 _MKT_BUSY = {"daily": False, "weekly": False}
@@ -2750,7 +2751,7 @@ def api_admin_marketing_run(req: MarketingRun):
     def _go():
         _MKT_BUSY[kind] = True
         try:
-            _mkt.run_daily(force=True, url_key=uk) if kind == "daily" else _mkt.run_weekly(force=True)
+            _mkt.run_daily(force=True, url_key=uk, style=(req.style or None)) if kind == "daily" else _mkt.run_weekly(force=True)
         finally:
             _MKT_BUSY[kind] = False
     threading.Thread(target=_go, daemon=True).start()
@@ -2781,6 +2782,21 @@ def api_admin_marketing_pause(req: MarketingPause):
     if not _admin_ok(req.key) or req.platform not in ("tiktok", "linkedin"):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     return {"ok": _mkt.set_setting(f"paused:{req.platform}", "1" if req.paused else "0")}
+
+
+class MarketingStyle(BaseModel):
+    key: str
+    style: str = "rotate"  # rotate | caught | groupchat | guess | receipts | classic
+
+
+@app.post("/api/admin/marketing/style")
+def api_admin_marketing_style(req: MarketingStyle):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app import ads as _ads
+    if req.style not in ("rotate", "classic") + tuple(_ads.STYLES):
+        return JSONResponse(status_code=422, content={"detail": "unknown style"})
+    return {"ok": _mkt.set_setting("ad_style", req.style)}
 
 
 class MarketingNarration(BaseModel):
