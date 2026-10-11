@@ -43,25 +43,25 @@ if r["transcript_source"] != "captions" or not r.get("frames"): fails.append("m2
 
 # 3. no captions, speech only, eyes see nothing -> whisper alone
 ing._transcript_from_captions = lambda info: None
-ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: ("spoken " * 30, ["x"], None, None)
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0, info=None: ("spoken " * 30, ["x"], None, None)
 r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
 if r["transcript_source"] != "whisper" or "frames" in r: fails.append("m3 whisper path")
 
 # 3b. EARS + EYES together -> BOTH claims merged into one transcript
-ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: ("Ronaldo scored " * 20, ["x"] * 6, "on-screen text: Neymar called to 2026 World Cup", None)
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0, info=None: ("Ronaldo scored " * 20, ["x"] * 6, "on-screen text: Neymar called to 2026 World Cup", None)
 r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
 if ("Ronaldo" not in r["transcript"] or "Neymar" not in r["transcript"]
         or r["transcript_source"] != "whisper+visual analysis"):
     fails.append("m3b ears+eyes merged")
 
 # 4. silent but visual -> the eyes' read becomes the transcript
-ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: (None, ["x"] * 6, "eyes saw a chart", None)
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0, info=None: (None, ["x"] * 6, "eyes saw a chart", None)
 r = ing.ingest("https://youtube.com/shorts/abcdefg1234")
 if r["transcript_source"] != "visual analysis" or "eyes saw a chart" not in r["transcript"]:
     fails.append("m4 silent visual")
 
 # 5. silent AND blind -> honest error
-ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0: (None, [], None, IngestError("no audio"))
+ing._transcribe_and_see = lambda url, max_frames=6, duration_s=0, info=None: (None, [], None, IngestError("no audio"))
 try:
     ing.ingest("https://youtube.com/shorts/abcdefg1234"); fails.append("m5 no error")
 except IngestError:
@@ -1001,7 +1001,7 @@ if not _pdf(1100).startswith("worst[height>=240]"): fails.append("m70 long video
 _in70 = open("app/agents/ingest.py").read()
 if "scale=640:-2" in _in70 or '"-q:v", "5"' in _in70: fails.append("m70 frames still low quality")
 if "min({FRAME_MAX_W},iw)" not in _in70 or '"-q:v", "2"' not in _in70: fails.append("m70 frame scale/quality missing")
-if "_transcribe_and_see(url, duration_s=duration)" not in _in70: fails.append("m70 duration not passed to the download")
+if "_transcribe_and_see(url, duration_s=duration, info=info)" not in _in70: fails.append("m70 duration not passed to the download")
 from app.agents.authenticity import check_labels as _cl70
 if not _cl70(caption="new spot #sora #ai"): fails.append("m70 #sora caption not declared")
 if not _cl70(caption="#aicommercial for a car brand"): fails.append("m70 #aicommercial not declared")
@@ -1920,7 +1920,7 @@ for _need in ("_media_thread = threading.Thread(target=_media_lane", "_media_thr
 if _m101.index("_media_thread.start()") > _m101.index("ex.map(_verify_staggered"): fails.append("m101 media lane must start before judging")
 _i101 = open("app/agents/ingest.py").read()
 if '"-ac", "1", "-ar", "16000"' not in _i101 or "whisper_future = wpool.submit(_whisper_file, audio)" not in _i101: fails.append("m101 whisper-first ingest missing")
-if _i101.index("wpool.submit(_whisper_file") > _i101.index("frames = _sample_frames(vid, tmpdir, max_frames)\n    try:\n        _EXTRAS.data"): fails.append("m101 whisper must start before frame sampling")
+if _i101.index("wpool.submit(_whisper_file") > _i101.index("frames, extras_future = _sample_frames(vid, tmpdir, max_frames, background_extras=True)"): fails.append("m101 whisper must start before frame sampling")
 if 'TRANSCRIBE_MODEL = os.environ.get("GLOWBY_TRANSCRIBE_MODEL", "whisper-1")' not in _i101: fails.append("m101 transcribe model switch missing / default changed")
 import shutil as _sh101, tempfile as _tf101, subprocess as _sp101, time as _tm101
 if _sh101.which("ffmpeg"):
@@ -2614,6 +2614,28 @@ finally:
     _os.environ.pop("YOUTUBE_API_KEY", None); _PC126._FAILED.clear()
 if "job_status=lambda jid" not in open("app/main.py").read() or "geo_blocked" not in open("app/templates/admin.html").read(): fails.append("m126 wiring")
 
+# 127. FETCH WAS 20s (Oct 12): now every check records where the fetch
+# seconds went (meta / captions / download / audio / frames / whisper /
+# vision / stage1) and admin averages them; the scene pass decodes
+# keyframes only; the six primary frames come out in parallel and the
+# eyes start on them while the scene-aware extras are found on the
+# side; the download reuses the metadata already fetched.
+import subprocess as _sp127, tempfile as _tf127
+_vid127 = _os.path.join(_tf120.gettempdir(), "m127.mp4")
+_sp127.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x568:rate=30:duration=20", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", _vid127], check=True)
+with _tf127.TemporaryDirectory() as _td:
+    _t = time.time(); _fr, _fut = _IN126._sample_frames(_vid127, _td, 12, background_extras=True); _tp = time.time() - _t
+    _ex = _fut.result(timeout=60)
+    if len(_fr) != 6 or len(_ex) < 3 or _tp > 8: fails.append(f"m127 frames: {len(_fr)} primary in {_tp:.1f}s, {len(_ex)} extras")
+    if len(_IN126._sample_frames(_vid127, _td, 12)) < 9: fails.append("m127 plain path still returns primary + extras")
+_src127 = open("app/agents/ingest.py").read()
+if '"-skip_frame", "nokey"' not in _src127.split("def _scene_times")[1].split("def pick_frame_times")[0]: fails.append("m127 scene pass must decode keyframes only")
+if "process_ie_result(dict(info), download=True)" not in _src127: fails.append("m127 download must reuse the metadata")
+_IN126._TIMES.data = {}; _t0 = time.time() - 1.25; _IN126._mark("meta", _t0); _IN126._mark("meta", time.time() - 0.5)
+_tt = _IN126.take_timings()
+if not (1.7 <= _tt.get("meta", 0) <= 1.9) or _IN126.take_timings() != {}: fails.append(f"m127 timing side channel: {_tt}")
+if '"fetch_parts"' not in open("app/main.py").read() or "fetch_parts" not in open("app/storage.py").read() or "inside fetch" not in open("app/templates/admin.html").read(): fails.append("m127 fetch parts wiring")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 126/126 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country")
+    "FINAL MATRIX PASS: 127/127 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts")

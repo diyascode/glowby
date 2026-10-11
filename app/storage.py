@@ -598,6 +598,17 @@ def quality_stats() -> dict:
         out["avg_stages"] = {"fetch_s": r[0][1] and float(r[0][1]), "route_s": r[0][2] and float(r[0][2]),
                              "verify_s": r[0][3] and float(r[0][3]), "n": int(r[0][4]),
                              "median_s": r[0][5] and float(r[0][5])}
+        # v0.66.32: the fetch stage's parts, averaged over the checks that
+        # recorded them (a part absent from a check is not averaged as 0)
+        parts = ("meta", "captions", "download", "audio", "frames", "whisper", "vision", "stage1")
+        sel = ", ".join(f"round(avg((result->'timings'->'fetch_parts'->>'{k}')::float)::numeric, 1)" for k in parts)
+        pr = q(f"SELECT {sel}, count(*) FILTER (WHERE result->'timings'->'fetch_parts' IS NOT NULL) "
+               "FROM checks WHERE result->'timings'->'fetch_parts' IS NOT NULL "
+               "AND result->>'transcript_source' IS DISTINCT FROM 'typed' "
+               "AND created_at > now() - interval '7 days'")
+        if pr and pr[0][-1]:
+            out["avg_stages"]["fetch_parts"] = {k: float(v) for k, v in zip(parts, pr[0][:-1]) if v is not None}
+            out["avg_stages"]["fetch_parts_n"] = int(pr[0][-1])
     else:
         out["avg_check_seconds"] = None
         out["avg_stages"] = {"n": 0}

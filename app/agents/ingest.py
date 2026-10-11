@@ -183,6 +183,8 @@ def ingest(url: str) -> dict:
     info = None
     bot_blocked = False
     err_text = ""
+    _TIMES.data = {}
+    _t_meta = time.time()
     # blocks are often luck-of-the-draw: a second knock seconds later
     # frequently gets in. Two attempts before giving up.
     for attempt in (1, 2):
@@ -194,6 +196,7 @@ def ingest(url: str) -> dict:
             err_text = str(e)
             if attempt == 1:
                 time.sleep(1.5)
+    _mark("meta", _t_meta)
     if info is None:
         bot_blocked = "Sign in to confirm" in err_text or "not a bot" in err_text
         if platform == "youtube":
@@ -287,7 +290,9 @@ def ingest(url: str) -> dict:
     }
 
     # --- Path 1: caption tracks (free) ---
+    _t_cap = time.time()
     transcript = _transcript_from_captions(info)
+    _mark("captions", _t_cap)
     if transcript:
         result["transcript"] = transcript
         result["transcript_source"] = "captions"
@@ -301,7 +306,7 @@ def ingest(url: str) -> dict:
     # feed both the ears (audio -> Whisper) and the eyes (frames) — in
     # PARALLEL. Silent videos no longer wait for the ears to finish
     # before the eyes start.
-    text, frames, visual_desc, whisper_err = _transcribe_and_see(url, duration_s=duration)
+    text, frames, visual_desc, whisper_err = _transcribe_and_see(url, duration_s=duration, info=info)
     speech = (text or "").strip()
     _ex = take_extras()
     if _ex.get("audio_clip_b64"):
@@ -573,7 +578,7 @@ def pick_download_format(duration_s) -> str:
     return "worst[height>=240]/worst/bestvideo+bestaudio/best"
 
 
-def _transcribe_and_see(url: str, max_frames: int = 12, duration_s=0):
+def _transcribe_and_see(url: str, max_frames: int = 12, duration_s=0, info=None):
     """Download the video ONCE; feed both ears and eyes from it — at
     the same time.
 
@@ -601,16 +606,24 @@ def _transcribe_and_see(url: str, max_frames: int = 12, duration_s=0):
             **({"proxy": _proxy_url()} if _proxy_url() else {}),
         }
         dl_err = None
+        _t_dl = time.time()
         for attempt in (1, 2):  # blocks are often transient — knock twice
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([url])
+                    # v0.66.32: the metadata was already fetched once (three
+                    # player clients through the proxy); reuse it instead of
+                    # extracting everything a second time before downloading.
+                    if info is not None and attempt == 1 and info.get("formats"):
+                        ydl.process_ie_result(dict(info), download=True)
+                    else:
+                        ydl.download([url])
                 dl_err = None
                 break
             except Exception as e:
                 dl_err = e
                 if attempt == 1:
                     time.sleep(2)
+        _mark("download", _t_dl)
         if dl_err is not None:
             platform = detect_platform(url)
             # RESCUE TIER: ask the professional scraper for a direct
@@ -679,6 +692,7 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
     # to internally (it downmixes and resamples every upload to that), so
     # the transcript is identical and the upload is ~4× smaller/faster.
     audio = os.path.join(tmpdir, "audio.mp3")
+    _t_audio = time.time()
     try:
         subprocess.run(
             ["ffmpeg", "-i", vid, "-vn", "-ac", "1", "-ar", "16000",
@@ -686,16 +700,24 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
             capture_output=True, timeout=120)
     except Exception:
         pass
+    _mark("audio", _t_audio)
     audio_ok = os.path.exists(audio) and os.path.getsize(audio) > 0
     audio_big = audio_ok and os.path.getsize(audio) > 25 * 1024 * 1024
 
     whisper_future = None
+    _t_whisper = time.time()
     if audio_ok and not audio_big:
         wpool = ThreadPoolExecutor(max_workers=1)
         whisper_future = wpool.submit(_whisper_file, audio)
         wpool.shutdown(wait=False)
 
-    frames = _sample_frames(vid, tmpdir, max_frames)
+    # v0.66.32: the six PRIMARY frames come out first (three ffmpeg seeks
+    # at a time) and the eyes start on them at once; the scene-aware
+    # EXTRA frames — a whole-video decode — are found on a side thread
+    # and only matter for the detector's second pass.
+    _t_frames = time.time()
+    frames, extras_future = _sample_frames(vid, tmpdir, max_frames, background_extras=True)
+    _mark("frames", _t_frames)
     try:
         _EXTRAS.data = {"audio_clip_b64": _audio_clip_b64(vid, tmpdir)}
     except Exception:
@@ -703,6 +725,7 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
 
     # eyes start looking NOW, in parallel with whatever the ears do
     vision_future = None
+    _t_vision = time.time()
     if frames and SPECULATIVE_VISION:
         pool = ThreadPoolExecutor(max_workers=1)
         vision_future = pool.submit(_describe_safely, frames)
@@ -712,28 +735,41 @@ def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
         if vision_future is None:
             return None
         try:
-            return vision_future.result(timeout=60)
+            r = vision_future.result(timeout=60)
+            _mark("vision", _t_vision)
+            return r
         except Exception:
             return None
 
+    def _with_extras():
+        # extras that are ready by now ride along; otherwise the 6 primary
+        # frames are plenty for the first detector pass
+        if extras_future is not None:
+            try:
+                frames.extend(extras_future.result(timeout=2))
+            except Exception:
+                pass
+        return frames
+
     if not audio_ok:
-        return None, frames, _vision_result(), IngestError(
+        return None, _with_extras(), _vision_result(), IngestError(
             "This video's audio could not be extracted (it may be silent).")
     if audio_big:
-        return None, frames, _vision_result(), IngestError(
+        return None, _with_extras(), _vision_result(), IngestError(
             "The audio for this video is too large to transcribe (over 25MB).")
     try:
         text = whisper_future.result(timeout=180)
+        _mark("whisper", _t_whisper)
     except IngestError as e:
-        return None, frames, _vision_result(), e
+        return None, _with_extras(), _vision_result(), e
     except Exception as e:
-        return None, frames, _vision_result(), IngestError(
+        return None, _with_extras(), _vision_result(), IngestError(
             f"Transcription failed. (Details: {str(e)[:200]})")
     # ALWAYS take the eyes' description — a video can SPEAK one claim and
     # SHOW another (on-screen text, charts). Both must reach the router,
     # so the visual read is merged with the audio, never discarded.
     desc = _vision_result()
-    return text, frames, desc, None
+    return text, _with_extras(), desc, None
 
 
 def _describe_safely(frames: list):
@@ -775,6 +811,22 @@ def _whisper_file(audio_file: str):
 
 import threading as _threading
 _EXTRAS = _threading.local()  # per-pipeline-thread side channel (audio clip)
+_TIMES = _threading.local()   # per-pipeline-thread fetch timings (v0.66.32)
+
+
+def _mark(name: str, t0: float) -> None:
+    """Add seconds since t0 under `name` for this thread's check."""
+    d = getattr(_TIMES, "data", None)
+    if d is None:
+        d = _TIMES.data = {}
+    d[name] = round(d.get(name, 0.0) + (time.time() - t0), 2)
+
+
+def take_timings() -> dict:
+    """The fetch stage's parts for this thread, then reset."""
+    d = getattr(_TIMES, "data", None) or {}
+    _TIMES.data = {}
+    return d
 
 
 def take_extras() -> dict:
@@ -789,8 +841,11 @@ def _scene_times(vid: str, duration: float, limit: int = 12) -> list:
     import re as _re
     import subprocess
     try:
+        # v0.66.32: decode KEYFRAMES only. Encoders put a keyframe on every
+        # scene cut, so the cuts are all still there — and the pass is
+        # ~20× cheaper than decoding every frame (4.6s → 0.2s on a 90s clip).
         r = subprocess.run(
-            ["ffmpeg", "-i", vid, "-vf", "select='gt(scene,0.30)',showinfo",
+            ["ffmpeg", "-skip_frame", "nokey", "-i", vid, "-vf", "select='gt(scene,0.35)',showinfo",
              "-an", "-f", "null", "-"],
             capture_output=True, text=True, timeout=60)
         ts = [float(x) for x in _re.findall(r"pts_time:([0-9.]+)", r.stderr or "")]
@@ -824,12 +879,31 @@ def pick_frame_times(duration: float, scene_times: list, primary: int = 6, extra
     return prim + chosen[:extra]
 
 
-def _sample_frames(vid: str, tmpdir: str, max_frames: int = 12) -> list:
-    """Sample frames from a downloaded video file -> base64 JPEGs.
-    First 6 = evenly spread (vision + primary detector pass); next 6 =
-    scene-aware alternates (adaptive second pass)."""
+def _grab_frame(vid: str, fp: str, t: float):
+    """One frame at t (fast input seek) -> base64 JPEG or None."""
     import base64
     import subprocess
+    try:
+        subprocess.run(
+            ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v", "1",
+             "-vf", f"scale='min({FRAME_MAX_W},iw)':-2", "-q:v", "2", "-y", fp],
+            capture_output=True, timeout=30)
+    except Exception:
+        return None
+    if os.path.exists(fp) and os.path.getsize(fp) > 0:
+        with open(fp, "rb") as fh:
+            return base64.b64encode(fh.read()).decode()
+    return None
+
+
+def _sample_frames(vid: str, tmpdir: str, max_frames: int = 12, background_extras: bool = False):
+    """Sample frames from a downloaded video file -> base64 JPEGs.
+    First 6 = evenly spread (vision + primary detector pass); next 6 =
+    scene-aware alternates (adaptive second pass). With
+    background_extras=True returns (primary_frames, extras_future) so the
+    eyes can start while the scene pass runs on the side."""
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
 
     try:
         probe = subprocess.run(
@@ -841,21 +915,27 @@ def _sample_frames(vid: str, tmpdir: str, max_frames: int = 12) -> list:
         duration = 30.0
     primary = min(6, max_frames)
     extra = max(0, min(6, max_frames - primary))
-    times = pick_frame_times(duration, _scene_times(vid, duration) if extra else [], primary, extra)
-    frames = []
-    for i, t in enumerate(times):
-        fp = os.path.join(tmpdir, f"frame{i}.jpg")
-        try:
-            subprocess.run(
-                ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v", "1",
-                 "-vf", f"scale='min({FRAME_MAX_W},iw)':-2", "-q:v", "2", "-y", fp],
-                capture_output=True, timeout=30)
-        except Exception:
-            continue
-        if os.path.exists(fp) and os.path.getsize(fp) > 0:
-            with open(fp, "rb") as fh:
-                frames.append(base64.b64encode(fh.read()).decode())
-    return frames
+
+    def grab_many(times, offset):
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            got = list(pool.map(lambda it: _grab_frame(vid, os.path.join(tmpdir, f"frame{offset + it[0]}.jpg"), it[1]), enumerate(times)))
+        return [g for g in got if g]
+
+    prim_times = pick_frame_times(duration, [], primary, 0)
+    frames = grab_many(prim_times, 0)
+
+    def extras():
+        if not extra:
+            return []
+        times = pick_frame_times(duration, _scene_times(vid, duration), primary, extra)[primary:]
+        return grab_many(times, primary)
+
+    if background_extras:
+        pool = ThreadPoolExecutor(max_workers=1)
+        fut = pool.submit(extras) if extra else None
+        pool.shutdown(wait=False)
+        return frames, fut
+    return frames + extras()
 
 
 def _audio_clip_b64(vid: str, tmpdir: str, seconds: int = 12):

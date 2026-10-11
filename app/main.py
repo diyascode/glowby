@@ -93,7 +93,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.31"
+VERSION = "0.66.32"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -660,6 +660,9 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             _set_job(job_id, status="running", stage="fetching")
             result = ingest(url)
         result["url_key"] = url_key
+        from app.agents.ingest import take_timings as _take_t
+        _fetch_parts = _take_t()
+        _t_part = time.time()
         if AUTHENTICITY_ENABLED and not url_key.startswith("text:") and not url_key.startswith("aud:"):
             try:
                 _vis = ""
@@ -691,10 +694,12 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             # frames 7-12 (scene-aware sampling) are held back for the
             # adaptive second pass — spent only on uncertain videos
             _au_extra = list(_src)[6:12] if _src and len(_src) > 6 else None
+        _fetch_parts["stage1"] = round(time.time() - _t_part, 2); _t_part = time.time()
         if frames:
             # speculative vision may have already looked during ingest
             desc = result.pop("visual_desc", None) or describe_frames(
                 frames, result.get("title") or "", result.get("uploader") or "")
+            _fetch_parts["vision"] = round(_fetch_parts.get("vision", 0) + time.time() - _t_part, 2)
             if desc:
                 base = (result.get("transcript") or "").strip()
                 tag = ("[WHAT THE PHOTO POST'S COVER SLIDE SHOWS] "
@@ -1086,6 +1091,9 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             "route_s": round(t_route, 1),
             "verify_s": round(t_verify, 1),
             "total_s": round(time.time() - t0, 1),
+            # v0.66.32: where the fetch seconds went (meta / captions /
+            # download / audio / frames / whisper / vision / stage1)
+            "fetch_parts": {k: v for k, v in (_fetch_parts or {}).items() if v},
         }
         result["cached"] = False
         with _fresh_lock:

@@ -880,8 +880,10 @@ function render(d){
     tile("Checks stored", s.checks_stored ?? 0, "all-time, cached + shareable") +
     tile("Total views", s.total_views ?? 0, "incl. cache hits + share links") +
     (() => {
-      const st = s.avg_stages || {};
-      return tile("Check stages", st.n ? `${st.fetch_s}s / ${st.route_s}s / ${st.verify_s}s` : "—", "fetch / claims / verify · last 7 days");
+      const st = s.avg_stages || {}, fp = st.fetch_parts || {};
+      const order = [["meta","video info"],["captions","captions"],["download","download"],["audio","audio"],["frames","frames"],["whisper","whisper"],["vision","eyes"],["stage1","AI stage 1"]];
+      const parts = order.filter(([k]) => fp[k] != null).map(([k, lab]) => `${lab} ${fp[k]}s`).join(" · ");
+      return tile("Check stages", st.n ? `${st.fetch_s}s / ${st.route_s}s / ${st.verify_s}s` : "—", "fetch / claims / verify · last 7 days" + (parts ? ` · inside fetch: ${parts} (${st.fetch_parts_n} checks; whisper and eyes run side by side)` : ""));
     })() +
     (() => {
       const views = s.total_views ?? 0, stored = s.checks_stored ?? 0;
