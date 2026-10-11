@@ -34,7 +34,6 @@ into ffmpeg (ffmpeg is on Railway for yt-dlp already).
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import hmac
 import json
@@ -73,12 +72,19 @@ LINKEDIN_SECRET = os.environ.get("GLOWBY_LINKEDIN_CLIENT_SECRET", "")
 FORBIDDEN = re.compile(r"\b(fake|faked|liar|lying|lies|lie|scam|scammer|fraud|hoax|propaganda|idiot|stupid)\b", re.I)
 HASHTAGS = "#factcheck #isthisreal #glowby"
 AI_LABEL_NOTE = "Before posting: tick TikTok's “AI-generated content” label (this clip is machine-rendered) and record your voice over it."
+AI_LABEL_NOTE_VOICED = "Ready to post as is — it has a synthetic narrator (not Diya). Tick TikTok's “AI-generated content” label. Or mute it and talk over it yourself."
 
 
 # ====================================================================== db
 def _db():
     from app.storage import _get_conn
     return _get_conn()
+
+
+def _peek(url_key: str):
+    """A stored result without counting a view (None if unknown)."""
+    from app.storage import peek_result
+    return peek_result(url_key)
 
 
 _READY = {"ok": False}
@@ -307,15 +313,66 @@ def candidates(days: int, limit: int = 40) -> list:
         return []
 
 
+# Which story to tell. Most-viewed is not the same as most-watchable: a
+# niche product review with a Mixed score is a hard 25 seconds for a
+# stranger; a clear verdict on something people argue about at dinner is
+# an easy one. Pure, explainable (admin shows the reasons).
+_BUCKET_PTS = {"health": 2.0, "politics": 1.5, "economy": 1.5, "society_culture": 1.5, "entertainment": 1.5,
+               "sports": 1.0, "science": 1.0, "conflict": 0.5, "law": 0.5, "education": 0.5, "history_geography": 0.5,
+               "technology": -1.0, "business": -1.5, "other": 0.0}
+_RELATABLE = re.compile(r"\b(you|your|kids?|children|baby|phone|food|water|sleep|money|tax(es)?|price|prices|gas|rent|"
+                        r"vaccines?|cancer|doctors?|school|police|cops?|president|congress|election|celebrity|viral|free|"
+                        r"ban(ned)?|illegal|die[ds]?|death|arrested|earthquake|storm|hurricane|flood|fire|shooting|"
+                        r"recall|poison|toxic|salary|jobs?|immigrants?|border|war|troops|hospital|drug|diet|weight|"
+                        r"coffee|sugar|eggs|milk|chicken|tiktok|instagram|iphone|tesla|amazon|walmart|costco)\b", re.I)
+
+
+def story_score(result: dict, hits: int = 0) -> tuple:
+    """(score, [reasons]) — higher is a better story for a 25-second video."""
+    import math
+    rep = result.get("report") or {}
+    hs = rep.get("headline_score")
+    title = str(result.get("title") or "").strip()
+    line = str(rep.get("one_line") or "").strip()
+    why, pts = [], 0.0
+    if hits:
+        v = min(3.0, math.log2(1 + hits)); pts += v; why.append(f"viewed {hits}× (+{v:.1f})")
+    if hs is not None:
+        hs = float(hs)
+        if hs <= 3.0: pts += 2.5; why.append("clear verdict: inaccurate (+2.5)")
+        elif hs >= 8.0: pts += 2.0; why.append("clear verdict: accurate (+2)")
+        elif hs < 5.0: pts += 1.0; why.append("leans inaccurate (+1)")
+        else: pts -= 1.0; why.append("mixed — nuanced in 25s (−1)")
+    buckets = [str(c.get("bucket") or "other") for c in (result.get("claims") or []) if isinstance(c, dict)]
+    if buckets:
+        top = max(set(buckets), key=buckets.count); v = _BUCKET_PTS.get(top, 0.0); pts += v
+        why.append(f"topic {top} ({'+' if v >= 0 else ''}{v:g})")
+    rel = len(set(m.group(0).lower() for m in _RELATABLE.finditer(title + " " + line)))
+    if rel:
+        v = min(2.0, 0.5 * rel); pts += v; why.append(f"everyday words ×{rel} (+{v:.1f})")
+    words = re.findall(r"[A-Za-z']+", title)
+    if len(words) > 16: pts -= 1.0; why.append("long title (−1)")
+    if words and sum(len(w) for w in words) / len(words) > 6.2: pts -= 1.0; why.append("heavy words (−1)")
+    if any(len(w) >= 13 for w in words): pts -= 0.5; why.append("jargon-length word (−0.5)")
+    if len(re.findall(r"\d[\d,.]*", title)) > 1 or re.search(r"\$\d{2,3},\d{3}", title): pts -= 0.5; why.append("number-heavy (−0.5)")
+    if len(line) > 150: pts -= 1.0; why.append("long answer (−1)")
+    return round(pts, 2), why
+
+
 def pick(exclude: set | None = None, fetch=candidates) -> tuple | None:
-    """Yesterday's most-shared eligible check; widens to a week, then a
-    month, then all time, skipping anything already used."""
+    """The best STORY among recent eligible checks — yesterday's first,
+    widening to a week, a month, then all time; skips anything used."""
     exclude = set(exclude or ())
     for days in (1, 7, 30, 3650):
+        best = None
         for key, hits, result in fetch(days):
             if key in exclude or not eligible(result):
                 continue
-            return key, result
+            sc, why = story_score(result, hits)
+            if best is None or sc > best[0]:
+                best = (sc, key, result, why)
+        if best:
+            return best[1], best[2], {"story_score": best[0], "why": best[3]}
     return None
 
 
@@ -454,8 +511,15 @@ def _domains(result: dict, n: int = 3) -> list:
     return out
 
 
-def frame(result: dict, t: float, total: float = 20.0):
-    """Pure-ish: one RGBA frame of the 'here's the check' cut at time t."""
+DEFAULT_BOUNDS = {"check": 4.0, "wait": 6.5, "result": 8.5, "end": 17.0, "total": 20.0}
+
+
+def frame(result: dict, t: float, total: float = 20.0, bounds: dict | None = None):
+    """Pure-ish: one RGBA frame of the 'here's the check' cut at time t.
+    `bounds` = when each scene starts (seconds); the narrated cut sets
+    them from the voice track so the picture follows the words."""
+    B = dict(DEFAULT_BOUNDS); B.update(bounds or {}); B["total"] = total
+    b1, b2, b3, b4 = B["check"], B["wait"], B["result"], B["end"]
     from PIL import Image, ImageDraw, ImageFilter
     rep = result.get("report") or {}
     hs = rep.get("headline_score"); word = lead_word(result); col = _color(word)
@@ -469,37 +533,37 @@ def frame(result: dict, t: float, total: float = 20.0):
     im.alpha_composite(glow)
     d = ImageDraw.Draw(im)
     d.text((30, 40), "glowby.io", font=_font(20), fill=(180, 170, 230))
-    if t < 4.0:                                   # 1. the claim everyone is sharing
+    if t < b1:                                    # 1. the claim everyone is sharing
         a = _ease(t / 0.6)
         _text(im, "Everyone's sharing this.", 36, 250, (232, 234, 240), alpha=255 * a)
-        if t > 1.0:
+        if t > min(1.0, b1 * 0.25):
             yb = _text(im, "“" + title + "”", 28, 372, (200, 200, 215), alpha=255 * _ease((t - 1.0) / 0.6))
-        if t > 2.4:
+        if t > min(2.4, b1 * 0.6):
             _text(im, "Is it true?", 44, 600, (255, 255, 255), alpha=255 * _ease((t - 2.4) / 0.5))
-    elif t < 6.5:                                 # 2. Share → Glowby
-        a = _ease((t - 4.0) / 0.5)
+    elif t < b2:                                  # 2. Share → Glowby
+        a = _ease((t - b1) / 0.5)
         _text(im, "Let’s check.", 40, 230, (232, 234, 240), alpha=255 * a)
         # a share-sheet row with Glowby highlighted
         y0 = 400
         d.rounded_rectangle((40, y0, 500, y0 + 150), radius=24, fill=(28, 27, 40))
         for i, (lab, c) in enumerate((("Messages", (74, 222, 128)), ("Copy link", (120, 120, 140)), ("Glowby", (124, 108, 246)), ("More", (90, 90, 110)))):
             x = 70 + i * 110
-            on = lab == "Glowby" and t > 5.0
+            on = lab == "Glowby" and t > b1 + 1.0
             d.rounded_rectangle((x, y0 + 22, x + 76, y0 + 98), radius=20, fill=c if (lab != "Glowby" or on) else (60, 55, 110))
             if lab == "Glowby":
                 d.ellipse((x + 20, y0 + 42, x + 56, y0 + 78), outline=(255, 255, 255), width=5)
             tw = d.textlength(lab, font=_font(16)); d.text((x + 38 - tw / 2, y0 + 108), lab, font=_font(16), fill=(200, 200, 215))
-        if t > 5.3:
+        if t > b1 + 1.3:
             d.ellipse((275 + 40, y0 + 60, 275 + 70, y0 + 90), fill=(255, 255, 255, 200))  # the tap
-        _text(im, "Share → Glowby", 24, 600, (160, 150, 230), alpha=255 * _ease((t - 5.0) / 0.5))
-    elif t < 8.5:                                 # 3. the wait, sped up
+        _text(im, "Share → Glowby", 24, 600, (160, 150, 230), alpha=255 * _ease((t - b1 - 1.0) / 0.5))
+    elif t < b3:                                  # 3. the wait, sped up
         ang = (t * 300) % 360
         d.arc((190, 350, 350, 510), start=ang, end=ang + 80, fill=(124, 108, 246), width=12)
         _text(im, "checking the claims…", 26, 560, (200, 200, 215))
         d.rounded_rectangle((165, 640, 375, 686), radius=23, fill=(28, 27, 40))
         tw = d.textlength("~1 minute later", font=_font(20)); d.text((270 - tw / 2, 651), "~1 minute later", font=_font(20), fill=(232, 234, 240))
-    elif t < total - 3.0:                         # 4. the result
-        u = t - 8.5
+    elif t < b4:                                  # 4. the result
+        u = t - b3
         d.ellipse((160, 200, 380, 420), outline=(34, 33, 48), width=18)
         if hs is not None:
             frac = max(0.03, float(hs) / 9.9) * _ease(u / 1.4)
@@ -524,7 +588,7 @@ def frame(result: dict, t: float, total: float = 20.0):
                     d.rounded_rectangle((60, y, 480, y + 36), radius=18, fill=(28, 27, 40, int(255 * a)))
                     d.text((82, y + 8), "source · " + dom, font=_font(18), fill=(200, 200, 215, int(255 * a)))
     else:                                         # 5. end card
-        u = t - (total - 3.0)
+        u = t - b4
         yb = _text(im, "Share a video to Glowby.", 36, 300, (232, 234, 240), alpha=255 * _ease(u / 0.5))
         _text(im, "A minute later: score, answer, sources.", 24, yb + 24, (200, 200, 215), alpha=255 * _ease((u - 0.3) / 0.5))
         if u > 0.9:
@@ -534,32 +598,184 @@ def frame(result: dict, t: float, total: float = 20.0):
         _text(im, "link in bio", 20, 610, (160, 150, 230), alpha=255 * _ease((u - 1.4) / 0.5))
     # caption bar for muted viewers
     sub = {0: "everyone's sharing this", 1: "is it true?", 2: "share it to Glowby", 3: "a minute later", 4: "the answer, with sources", 5: "free · glowby.io/get"}
-    k = 0 if t < 2.4 else 1 if t < 4 else 2 if t < 6.5 else 3 if t < 8.5 else 4 if t < total - 3 else 5
+    k = 0 if t < min(2.4, b1 * 0.6) else 1 if t < b1 else 2 if t < b2 else 3 if t < b3 else 4 if t < b4 else 5
     d.rounded_rectangle((120, 880, 420, 918), radius=19, fill=(0, 0, 0, 160))
     tw = d.textlength(sub[k], font=_font(18)); d.text((270 - tw / 2, 889), sub[k], font=_font(18), fill=(255, 255, 255))
     return im
 
 
-def render_clip(result: dict, out_path: str, fps: int = 30, total: float = 20.0, scale: int = 2, ffmpeg: str = "ffmpeg") -> str:
-    """Render the clip to an MP4 (H.264, yuv420p, silent AAC track so
-    every platform accepts it). Frames are piped — nothing hits the disk
-    but the result. Returns out_path."""
+def render_clip(result: dict, out_path: str, fps: int = 30, total: float = 20.0, scale: int = 2, ffmpeg: str = "ffmpeg",
+                bounds: dict | None = None, audio_path: str | None = None) -> str:
+    """Render the clip to an MP4 (H.264, yuv420p). With `audio_path` the
+    voice track is muxed in; without it a silent AAC track is added so
+    every platform accepts the file. Frames are piped — nothing hits the
+    disk but the result. Returns out_path."""
     n = int(total * fps)
+    audio_in = ["-i", audio_path] if audio_path else ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
     cmd = [ffmpeg, "-y", "-loglevel", "error",
-           "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-",
-           "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+           "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(fps), "-i", "-", *audio_in,
            "-vf", f"scale={W * scale}:{H * scale}:flags=lanczos", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-shortest", "-movflags", "+faststart", out_path]
+           "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-shortest", "-movflags", "+faststart", out_path]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         for i in range(n):
-            p.stdin.write(frame(result, i / fps, total).convert("RGB").tobytes())
+            p.stdin.write(frame(result, i / fps, total, bounds).convert("RGB").tobytes())
     finally:
         p.stdin.close()
     err = p.stderr.read().decode("utf-8", "ignore")
     if p.wait() != 0:
         raise RuntimeError("ffmpeg failed: " + err[-400:])
     return out_path
+
+
+# =============================================================== narration
+# A finished video, voice included, so there is always something to post.
+# The voice is a plain synthetic narrator (OpenAI TTS, same key Whisper
+# uses) — it is NEVER presented as Diya, and the caption + TikTok's AI
+# label say the video is machine-made. Diya can post it as is on a busy
+# day or talk over it when she has a minute. Cost: well under a cent.
+TTS_MODEL = os.environ.get("GLOWBY_TTS_MODEL", "gpt-4o-mini-tts")   # takes style instructions; tts-1 is the plain fallback
+TTS_VOICE = os.environ.get("GLOWBY_TTS_VOICE", "coral")
+
+
+def narration_script(result: dict) -> list:
+    """Pure: [(scene, sentence)] in the order the scenes play. Plain
+    template, no model — so it can never invent a fact or a verdict."""
+    rep = result.get("report") or {}
+    hs = rep.get("headline_score"); word = lead_word(result)
+    title = str(result.get("title") or "this video").strip()[:90].rstrip(".")
+    line = one_line(result) or f"{word}. The sources are in the app."
+    line = re.sub(r"^" + re.escape(word) + r"\s*[—\-–:]\s*", "", line, flags=re.I).strip() or line
+    line = spoken_line(line)
+    doms = _domains(result, 2)
+    src = (" The sources are right there: " + " and ".join(d.replace(".com", " dot com").replace(".org", " dot org") for d in doms) + ".") if doms else " The sources are right there on every claim."
+    score = f"{float(hs):.1f} out of ten." if hs is not None else "no score, it says why."
+    return [
+        ("intro", f"Everyone's sharing this one: {title}. Is it true?"),
+        ("check", "I shared it to Glowby."),
+        ("wait", "About a minute later…"),
+        ("result", f"{word}. {score} {line}{src}"),
+        ("end", "Glowby is free. Link in bio."),
+    ]
+
+
+def spoken_line(line: str, limit: int = 140) -> str:
+    """Pure: the one-line answer as something a person would SAY — one
+    breath, no dashes, cut at a natural joint when it runs long."""
+    t = re.sub(r"\s*[—–]\s*", ", ", (line or "").strip())
+    t = re.sub(r"\s+", " ", t)
+    if len(t) > limit:
+        cut = max(t.rfind(". ", 0, limit), t.rfind("; ", 0, limit), t.rfind(", but ", 0, limit), t.rfind(", ", 0, limit))
+        if cut > 40:
+            t = t[:cut]
+        else:
+            t = t[:limit].rsplit(" ", 1)[0]
+    t = t.rstrip(" ,;:")
+    if t and t[-1] not in ".!?":
+        t += "."
+    return t[:1].upper() + t[1:]
+
+
+VOICE_STYLE = ("You are a warm, curious 17-year-old explaining something to a friend on TikTok. Natural and conversational, "
+               "a little playful, never like a news anchor or an ad. Real pauses, real emphasis, a smile in the voice.")
+SCENE_STYLE = {
+    "intro": "Hook them: curious and slightly incredulous, rising on 'Is it true?'.",
+    "check": "Casual and quick, like an aside.",
+    "wait": "Light and amused, trailing off.",
+    "result": "Slow down. Take a small breath before the verdict word and say it with quiet confidence; then explain plainly and kindly, like you're the friend who checked.",
+    "end": "Warm and friendly, a genuine smile; unhurried.",
+}
+
+
+def tts_available() -> bool:
+    return bool(os.environ.get("OPENAI_API_KEY")) and setting("narration", "1") == "1"
+
+
+def tts_request(text: str, scene: str = "", model: str | None = None) -> dict:
+    """Pure: the speech request. The instructable model gets the voice
+    direction (who is talking, how this scene feels); plain tts-1 cannot
+    take instructions and gets a slight speed-up instead."""
+    model = model or TTS_MODEL
+    req = {"model": model, "voice": TTS_VOICE, "input": text, "response_format": "mp3"}
+    if model.startswith("tts-1"):
+        req["speed"] = 1.05
+    else:
+        req["instructions"] = VOICE_STYLE + (" " + SCENE_STYLE[scene] if scene in SCENE_STYLE else "")
+    return req
+
+
+def tts(text: str, http=None, scene: str = "") -> bytes:
+    """One sentence -> MP3 bytes via OpenAI's speech endpoint; falls back
+    to tts-1 if the expressive model is refused. Raises on failure."""
+    key = os.environ.get("OPENAI_API_KEY", "")
+    hdr = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+    st, body, _ = (http or _http)("POST", "https://api.openai.com/v1/audio/speech", hdr,
+                                  json.dumps(tts_request(text, scene)).encode(), timeout=60)
+    if st != 200 and not TTS_MODEL.startswith("tts-1"):
+        st, body, _ = (http or _http)("POST", "https://api.openai.com/v1/audio/speech", hdr,
+                                      json.dumps(tts_request(text, scene, model="tts-1")).encode(), timeout=60)
+    if st != 200 or len(body) < 1000:
+        raise RuntimeError(f"tts {st}: {body[:120]!r}")
+    return body
+
+
+def _duration(path: str, ffprobe: str = "ffprobe") -> float:
+    out = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                         capture_output=True, text=True, timeout=30).stdout.strip()
+    return float(out or 0)
+
+
+def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmpeg") -> tuple:
+    """Synthesize each sentence, lay them on a timeline with short gaps,
+    and return (audio_path, bounds, total). The picture's scene changes
+    are set from where each sentence starts."""
+    segs = []
+    import inspect
+    takes_scene = "scene" in inspect.signature(speak).parameters
+    for scene, text in narration_script(result):
+        fp = os.path.join(workdir, f"{scene}.mp3")
+        with open(fp, "wb") as f:
+            f.write(speak(text, scene=scene) if takes_scene else speak(text))
+        segs.append((scene, fp, _duration(fp)))
+    gap = {"intro": 0.6, "check": 0.5, "wait": 1.6, "result": 1.0, "end": 0.0}
+    t, bounds, delays = 0.8, {}, []
+    for scene, fp, dur in segs:
+        bounds[scene] = round(t, 2)
+        delays.append((fp, t))
+        t += dur + gap[scene]
+    total = round(t + 1.2, 2)
+    # the first scene starts at 0; the narration of it starts at 0.8
+    bounds = {"check": bounds["check"], "wait": bounds["wait"], "result": bounds["result"], "end": bounds["end"]}
+    out = os.path.join(workdir, "voice.m4a")
+    inputs, filt = [], []
+    for i, (fp, at) in enumerate(delays):
+        inputs += ["-i", fp]
+        filt.append(f"[{i}:a]aresample=44100,aformat=channel_layouts=stereo,adelay={int(at * 1000)}|{int(at * 1000)}[a{i}]")
+    filt.append("".join(f"[a{i}]" for i in range(len(delays))) + f"amix=inputs={len(delays)}:normalize=0,apad=whole_dur={total}[out]")
+    cmd = [ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt), "-map", "[out]", "-c:a", "aac", "-b:a", "96k", out]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise RuntimeError("voice mix failed: " + r.stderr[-300:])
+    return out, bounds, total
+
+
+def render_narrated(result: dict, out_path: str, speak=tts, **kw) -> dict:
+    """The whole video, voice included. Returns {narrated, total}; falls
+    back to the silent cut if the voice step fails for any reason."""
+    import tempfile
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            audio, bounds, total = build_voice_track(result, td, speak=speak)
+            render_clip(result, out_path, total=total, bounds=bounds, audio_path=audio, **kw)
+        try:
+            from app.storage import add_usage
+            add_usage(0.01, count=False)
+        except Exception:
+            pass
+        return {"narrated": True, "total": total}
+    except Exception as e:
+        render_clip(result, out_path, **kw)
+        return {"narrated": False, "total": DEFAULT_BOUNDS["total"], "voice_error": str(e)[:160]}
 
 
 def share_card(result: dict, key: str) -> bytes:
@@ -796,20 +1012,30 @@ def linkedin_post(text: str, images: list, http=_http) -> dict:
 
 
 # ==================================================================== jobs
-def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_drafts) -> dict:
+def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_drafts, url_key: str = "") -> dict:
     """Pick → render → caption → TikTok drafts. Always stores the clip so
     admin can download it even when TikTok isn't connected."""
     if paused("tiktok") and not force:
         return {"ok": False, "detail": "TikTok lane paused"}
-    chosen = pick(used_keys())
+    if url_key:  # a person chose the story in admin
+        r = _peek(url_key)
+        if not r or not eligible(r):
+            return {"ok": False, "detail": "that check can't be used (not stored, not scoreable, or not general-rated)"}
+        chosen = (url_key, r, {"story_score": story_score(r)[0], "why": ["chosen by hand"] + story_score(r)[1]})
+    else:
+        chosen = pick(used_keys())
     if not chosen:
         pid = _insert_post("tiktok", "daily", None, "", "skipped", {"reason": "no eligible check to show"})
         return {"ok": False, "detail": "no eligible check", "id": pid}
-    key, result = chosen
+    key, result, meta = chosen
     cap = tiktok_caption(result)
     path = os.path.join(_tmpdir(), f"glowby-{int(time.time())}.mp4")
+    voice = {"narrated": False}
     try:
-        render(result, path)
+        if render is render_clip and tts_available():
+            voice = render_narrated(result, path)
+        else:
+            render(result, path)
         mp4 = open(path, "rb").read()
     except Exception as e:
         pid = _insert_post("tiktok", "daily", key, cap, "failed", {"error": f"render: {str(e)[:200]}", "title": result.get("title", "")})
@@ -820,7 +1046,10 @@ def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_d
         except Exception:
             pass
     detail = {"title": str(result.get("title") or "")[:120], "score": (result.get("report") or {}).get("headline_score"),
-              "word": lead_word(result), "bytes": len(mp4), "note": AI_LABEL_NOTE}
+              "word": lead_word(result), "bytes": len(mp4), "narrated": bool(voice.get("narrated")),
+              "story_score": meta.get("story_score"), "why": meta.get("why"),
+              "voice_error": voice.get("voice_error"), "seconds": voice.get("total"),
+              "note": (AI_LABEL_NOTE_VOICED if voice.get("narrated") else AI_LABEL_NOTE)}
     pid = _insert_post("tiktok", "daily", key, cap, "rendered", detail, media=mp4)
     if get_token("tiktok"):
         up = upload(mp4)
@@ -871,8 +1100,7 @@ def publish_linkedin(pid: int, post=linkedin_post) -> dict:
     images = []
     for k in (p["detail"].get("keys") or [])[:3]:
         try:
-            from app.storage import peek_result
-            r = peek_result(k)
+            r = _peek(k)
             if r:
                 images.append(share_card(r, k))
         except Exception:
@@ -965,6 +1193,7 @@ def status() -> dict:
     return {
         "enabled": ENABLED,
         "daily_hour_pt": DAILY_HOUR, "weekly_hour_pt": WEEKLY_HOUR, "autopost_linkedin": AUTOPOST_LINKEDIN,
+        "narration": {"available": bool(os.environ.get("OPENAI_API_KEY")), "on": setting("narration", "1") == "1", "voice": TTS_VOICE, "model": TTS_MODEL},
         "tiktok": {"configured": bool(TIKTOK_KEY and TIKTOK_SECRET), "connected": bool(tt), "paused": paused("tiktok"),
                    "refresh_until": datetime.fromtimestamp(tt["refresh_expires_at"], tz=timezone.utc).date().isoformat() if tt and tt.get("refresh_expires_at") else None},
         "linkedin": {"configured": bool(LINKEDIN_ID and LINKEDIN_SECRET), "connected": bool(lt), "paused": paused("linkedin"),

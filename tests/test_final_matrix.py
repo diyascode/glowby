@@ -2444,6 +2444,59 @@ _adm121 = open("app/templates/admin.html").read()
 for _need in ("Checks that didn’t run", "Didn’t run today", "mark reviewed", "retry in Glowby"):
     if _need not in _adm121: fails.append(f"m121 admin {_need}")
 
+# 122. THE WHOLE VIDEO, VOICE INCLUDED (Oct 11): a plain-template script
+# (no model, so it cannot invent a verdict), one synthetic sentence per
+# scene, the picture's scene changes set from where each sentence starts;
+# if the voice step fails the silent cut still ships. Never Diya's voice.
+_sc122 = _MK.narration_script({"title": "R", "report": {"headline_score": 1.5, "one_line": "Inaccurate — the creator is lying."}, "claims": []})
+_txt122 = " ".join(t for _, t in _sc122)
+if [k for k, _ in _sc122] != ["intro", "check", "wait", "result", "end"] or _MK.FORBIDDEN.search(_txt122) or "Inaccurate. 1.5 out of ten." not in _txt122 or "Diya" in _txt122: fails.append(f"m122 script: {_sc122}")
+import subprocess as _sp122
+def _speak122(text):
+    fp = _os.path.join(_tf120.gettempdir(), "m122.mp3")
+    _sp122.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1.5", "-c:a", "libmp3lame", "-q:a", "6", fp], check=True)
+    return open(fp, "rb").read()
+_out122 = _os.path.join(_tf120.gettempdir(), "m122.mp4")
+_r122 = _MK.render_narrated(_ok120, _out122, speak=_speak122, fps=4, scale=1)
+if not _r122.get("narrated") or not (10 < _r122.get("total", 0) < 20): fails.append(f"m122 narrated render: {_r122}")
+_pr122 = _sp122.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", _out122], capture_output=True, text=True).stdout
+if "audio" not in _pr122 or "video" not in _pr122: fails.append(f"m122 streams: {_pr122}")
+def _boom122(text): raise RuntimeError("tts down")
+_r122b = _MK.render_narrated(_ok120, _out122, speak=_boom122, fps=4, total=20.0, scale=1)
+if _r122b.get("narrated") or "tts down" not in (_r122b.get("voice_error") or "") or not _os.path.exists(_out122): fails.append(f"m122 fallback: {_r122b}")
+if "/api/admin/marketing/narration" not in open("app/main.py").read() or "Narrator voice" not in open("app/templates/admin.html").read(): fails.append("m122 admin switch")
+
+# 123. A STORY PEOPLE CAN FOLLOW, IN A VOICE WITH SOMETHING IN IT (Oct 11):
+# the picker scores stories (clear verdict > Mixed, everyday topic >
+# niche product, plain title > jargon) and explains itself; a person can
+# hand-pick the story; the spoken line is one breath; the expressive
+# speech model gets per-scene direction and falls back to plain tts-1.
+_flow123 = {"title": "Flow Hive braided hands cut beekeeping failures 90%, costs $30,000", "report": {"headline_score": 6.4, "one_line": "Mixed — the design does reduce failure points, but the $30,000 price tag doesn’t hold up."}, "claims": [{"bucket": "business"}]}
+_eggs123 = {"title": "Eating eggs every day raises your cholesterol like smoking", "report": {"headline_score": 2.1, "one_line": "Inaccurate — a daily egg barely moves blood cholesterol for most people."}, "claims": [{"bucket": "health"}]}
+_sf, _wf = _MK.story_score(_flow123, 40); _se, _we = _MK.story_score(_eggs123, 5)
+if not _se > _sf or not any("mixed" in w for w in _wf) or not any("health" in w for w in _we): fails.append(f"m123 story score: {_sf} {_wf} / {_se} {_we}")
+_pk = _MK.pick(set(), fetch=lambda d: [("f", 40, _flow123), ("e", 5, _eggs123)] if d == 1 else [])
+if not _pk or _pk[0] != "e" or "why" not in _pk[2]: fails.append(f"m123 pick the followable story: {_pk}")
+_sl = _MK.spoken_line("Inaccurate — for most people a daily egg barely moves blood cholesterol; the smoking comparison comes from nowhere, and the study it cites was about something else entirely.")
+if "—" in _sl or len(_sl) > 150 or not _sl.endswith(".") or not _sl.startswith("Inaccurate, for most"): fails.append(f"m123 spoken line: {_sl}")
+_rq = _MK.tts_request("hi", "result")
+if "instructions" not in _rq or "verdict" not in _rq["instructions"] or "speed" in _rq or _MK.tts_request("hi", "result", model="tts-1").get("speed") != 1.05 or "instructions" in _MK.tts_request("hi", model="tts-1"): fails.append(f"m123 tts request: {_rq}")
+_tcalls = []
+def _http123(method, url, headers=None, data=None, timeout=60):
+    _tcalls.append(_j95.loads(data)); return (400, b"{}", {}) if len(_tcalls) == 1 else (200, b"x" * 2000, {})
+if _MK.tts("hello", http=_http123, scene="end") != b"x" * 2000 or _tcalls[1]["model"] != "tts-1" or "instructions" in _tcalls[1]: fails.append(f"m123 tts fallback: {_tcalls}")
+_ran123 = {}
+_MK._peek = lambda k: _eggs123 if k == "eggs:1" else None
+_orig_ins = _MK._insert_post; _MK._insert_post = lambda *a, **k: _ran123.update(args=a, kw=k) or 7
+try:
+    _rd = _MK.run_daily(force=True, render=lambda r, p: open(p, "wb").write(b"\x00" * 2000), upload=lambda mp4: {"ok": True, "detail": "in TikTok drafts", "publish_id": "p"}, url_key="eggs:1")
+    if not _rd.get("ok") or _ran123["args"][2] != "eggs:1" or "chosen by hand" not in (_ran123["args"][5] or {}).get("why", []): fails.append(f"m123 hand-pick: {_rd} {_ran123}")
+    _rd2 = _MK.run_daily(force=True, render=lambda r, p: None, url_key="nope")
+    if _rd2.get("ok"): fails.append("m123 hand-pick of an unknown check must refuse")
+finally:
+    _MK._insert_post = _orig_ins
+if 'url_key: str = ""' not in open("app/main.py").read().split("class MarketingRun")[1].split("class MarketingAction")[0] or "mkPickGo" not in open("app/templates/admin.html").read(): fails.append("m123 admin hand-pick")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 121/121 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run")
+    "FINAL MATRIX PASS: 123/123 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story")

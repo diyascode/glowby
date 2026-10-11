@@ -17,6 +17,7 @@ import os
 import secrets
 import threading
 import time
+import urllib.parse
 import uuid
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
@@ -91,7 +92,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.23"
+VERSION = "0.66.26"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2629,8 +2630,10 @@ def api_admin_dashboard(key: str = ""):
     checks, spent = today_usage()
     daily = daily_usage_series(14)
     visitors = visitor_series(14)
+    failed_by_day = {f["day"]: f["total"] for f in failure_series(14)}
     for d in daily:
         d["visitors"] = visitors.get(d["day"], 0)
+        d["failed"] = failed_by_day.get(str(d["day"])[:10], 0)
     today_key = time.strftime("%Y-%m-%d")
     return {
         "version": VERSION,
@@ -2727,6 +2730,7 @@ def api_admin_marketing(key: str = ""):
 class MarketingRun(BaseModel):
     key: str
     kind: str = "daily"  # daily | weekly
+    url_key: str = ""    # daily only: a person picks the story (a stored check's key or its /r/ link)
 
 
 _MKT_BUSY = {"daily": False, "weekly": False}
@@ -2739,11 +2743,14 @@ def api_admin_marketing_run(req: MarketingRun):
     kind = req.kind if req.kind in ("daily", "weekly") else "daily"
     if _MKT_BUSY[kind]:
         return {"ok": False, "detail": "already running"}
+    uk = (req.url_key or "").strip()
+    if "/r/" in uk:
+        uk = urllib.parse.unquote(uk.split("/r/", 1)[1].split("?")[0].split("#")[0])
 
     def _go():
         _MKT_BUSY[kind] = True
         try:
-            _mkt.run_daily(force=True) if kind == "daily" else _mkt.run_weekly(force=True)
+            _mkt.run_daily(force=True, url_key=uk) if kind == "daily" else _mkt.run_weekly(force=True)
         finally:
             _MKT_BUSY[kind] = False
     threading.Thread(target=_go, daemon=True).start()
@@ -2774,6 +2781,18 @@ def api_admin_marketing_pause(req: MarketingPause):
     if not _admin_ok(req.key) or req.platform not in ("tiktok", "linkedin"):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     return {"ok": _mkt.set_setting(f"paused:{req.platform}", "1" if req.paused else "0")}
+
+
+class MarketingNarration(BaseModel):
+    key: str
+    on: bool = True
+
+
+@app.post("/api/admin/marketing/narration")
+def api_admin_marketing_narration(req: MarketingNarration):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": _mkt.set_setting("narration", "1" if req.on else "0")}
 
 
 @app.post("/api/admin/marketing/disconnect")
