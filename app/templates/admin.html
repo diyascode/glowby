@@ -199,6 +199,17 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Checks that didn’t run — last 14 days</h2>
+        <span class="s">filter: <select id="flDay" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px"><option value="">all days</option></select> <select id="flKind" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px"><option value="">all reasons</option></select></span>
+      </div>
+      <div class="s" style="margin:6px 0 8px">Every request that never became a check: a platform that blocked the fetch, a private or deleted link, no speech to check, a timeout, the hourly limit, the daily budget, a crash. Review them here; mark each one reviewed (or fixed when a code change covered it). Nothing about who asked is stored.</div>
+      <div id="flChart"></div>
+      <div id="flLegend" class="dist" style="margin:8px 0"></div>
+      <div id="flList"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Marketing on autopilot — TikTok drafts &amp; LinkedIn</h2>
         <span><button id="mkDaily" class="fbf" style="font-size:.78rem;padding:6px 12px">Make today’s clip now</button> <button id="mkWeekly" class="fbf" style="font-size:.78rem;padding:6px 12px">Compose this week’s LinkedIn post</button></span>
       </div>
@@ -534,6 +545,46 @@ async function loadScam(){
     tile("High or critical", crit, "suspicious " + (bv.suspicious||0) + " · caution " + (bv.use_caution||0), crit ? "warn" : "") +
     tile("Low / not enough info", (bv.low_detected_risk||0) + " / " + (bv.not_enough_information||0), "");
 }
+const FL_LABEL = {blocked:"platform blocked the fetch", private_or_deleted:"private / deleted / unsupported", fetch_service:"fetch service down", no_speech:"nothing to check (no speech)", too_long:"video too long", transcription:"transcription failed", timeout:"timed out", unexpected:"crash (see last errors)", router:"router refused", rate_limited:"hourly limit", budget:"daily budget", bot_check:"bot check", bad_input:"unreadable upload", other:"other"};
+const FL_COLOR = {blocked:"#f87171", private_or_deleted:"#fb923c", fetch_service:"#f87171", no_speech:"#9aa0b0", too_long:"#9aa0b0", transcription:"#fab219", timeout:"#fab219", unexpected:"#e879f9", router:"#e879f9", rate_limited:"#38bdf8", budget:"#38bdf8", bot_check:"#38bdf8", bad_input:"#9aa0b0", other:"#9aa0b0"};
+window.__flDay = ""; window.__flKind = "";
+async function loadFailures(){
+  let d = null;
+  try { const r = await fetch("/api/admin/failures?key=" + encodeURIComponent(KEY) + "&day=" + encodeURIComponent(window.__flDay) + "&kind=" + encodeURIComponent(window.__flKind) + "&limit=150"); if (r.ok) d = await r.json(); } catch(e){}
+  if (!d) { $("flList").innerHTML = '<div class="empty">Could not load.</div>'; return; }
+  const ser = d.series || [], max = Math.max(1, ...ser.map(x => x.total));
+  // stacked bars, one per day, segments by reason
+  $("flChart").innerHTML = '<div style="display:flex;gap:4px;align-items:flex-end;height:90px">' + ser.map(x => {
+    const segs = Object.entries(x.kinds||{}).sort((a,b)=>b[1]-a[1]).map(([k,n]) => `<i title="${esc(FL_LABEL[k]||k)}: ${n}" style="display:block;height:${Math.max(2, n/max*78)}px;background:${FL_COLOR[k]||'#9aa0b0'};border-radius:2px;margin-top:1px"></i>`).join("");
+    return `<div style="flex:1;text-align:center;cursor:pointer" onclick="flPick('${x.day}')" title="${x.day}: ${x.total}"><div style="display:flex;flex-direction:column-reverse;height:80px;justify-content:flex-start">${segs}</div><div class="s" style="font-size:.62rem">${x.total||""}</div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`;
+  }).join("") + '</div>';
+  const tot = {}; ser.forEach(x => Object.entries(x.kinds||{}).forEach(([k,n]) => tot[k] = (tot[k]||0) + n));
+  $("flLegend").innerHTML = Object.entries(tot).sort((a,b)=>b[1]-a[1]).map(([k,n]) => `<span style="cursor:pointer" onclick="flKindPick('${k}')"><i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${FL_COLOR[k]||'#9aa0b0'};margin-right:5px"></i>${esc(FL_LABEL[k]||k)} <b>${n}</b></span>`).join("") || '<span>none in 14 days</span>';
+  // filters
+  const dsel = $("flDay"); if (dsel.options.length <= 1) ser.slice().reverse().forEach(x => { const o = document.createElement("option"); o.value = x.day; o.textContent = fmtDay(x.day); dsel.appendChild(o); });
+  dsel.value = window.__flDay;
+  const ksel = $("flKind"); if (ksel.options.length <= 1) Object.keys(FL_LABEL).forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = FL_LABEL[k]; ksel.appendChild(o); });
+  ksel.value = window.__flKind;
+  const items = d.items || [];
+  $("flList").innerHTML = !items.length ? '<div class="empty">Nothing failed' + (window.__flDay || window.__flKind ? " for that filter" : " in the last 14 days") + '.</div>' : items.map(f => {
+    const when = (f.at||"").slice(5,16).replace("T"," ");
+    const link = f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))}</a> · <a href="/?u=${encodeURIComponent(f.url)}" target="_blank">retry in Glowby ↗</a>` : (f.url_key ? `<span class="s">${esc(f.url_key.slice(0,40))}</span>` : "");
+    const acts = f.status === "new" ? `<button onclick="flResolve(${f.id},'reviewed')">mark reviewed</button> <button onclick="flResolve(${f.id},'fixed')">mark fixed</button>` : `<span class="s">${esc(f.status)}</span> <button onclick="flResolve(${f.id},'new')">reopen</button>`;
+    return `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);opacity:${f.status==='new'?1:.55}">
+      <div><b style="color:${FL_COLOR[f.kind]||'#9aa0b0'}">${esc(FL_LABEL[f.kind]||f.kind)}</b> · ${esc(f.platform||"")} · ${esc(when)}</div>
+      <div class="s">${link}</div>
+      <div class="s" style="margin-top:2px">${esc(f.message||"")}</div>
+      <div class="racts">${acts}</div>
+    </div>`;
+  }).join("");
+}
+function flPick(day){ window.__flDay = (window.__flDay === day) ? "" : day; loadFailures(); }
+function flKindPick(k){ window.__flKind = (window.__flKind === k) ? "" : k; loadFailures(); }
+async function flResolve(id, status){
+  try { await fetch("/api/admin/failures/resolve", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, failure_id: id, status})}); } catch(e){}
+  loadFailures();
+}
+
 async function loadMarketing(){
   let d = null;
   try { const r = await fetch("/api/admin/marketing?key=" + encodeURIComponent(KEY)); if (r.ok) d = await r.json(); } catch(e){}
@@ -709,6 +760,7 @@ function render(d){
 
   $("tiles").innerHTML =
     tile("Visitors today", t.visitors ?? 0, "unique devices · bots & link previews excluded") +
+    tile("Didn’t run today", (t.failed||{}).total ?? 0, (t.failed||{}).total ? ("mostly: " + (FL_LABEL[(t.failed||{}).top] || (t.failed||{}).top) + " · review below") : "every request became a check", (t.failed||{}).total ? "warn" : "good") +
     (() => {
       const mo = d.visitors_monthly || [];
       const thisMo = mo.length ? mo[0].unique : 0;
@@ -783,6 +835,7 @@ function render(d){
   loadCalendar(window.__calMonth);
   loadFeedback();
   loadReview();
+  loadFailures();
   loadMarketing();
   loadCalibration();
   loadScam();
@@ -835,6 +888,8 @@ function render(d){
       const j = await r.json(); $("calMeta").textContent = j.ok ? `started ${j.started} item(s) · est. $${j.est_cost}` : ("Could not start: " + (j.detail||"")); } catch(e){}
     $("calRun").disabled = false; setTimeout(loadCalibration, 3000);
   };
+  $("flDay").onchange = e => { window.__flDay = e.target.value; loadFailures(); };
+  $("flKind").onchange = e => { window.__flKind = e.target.value; loadFailures(); };
   $("mkDaily").onclick = () => mkRun("daily", $("mkDaily"));
   $("mkWeekly").onclick = () => mkRun("weekly", $("mkWeekly"));
   $("runReview").onclick = async () => {

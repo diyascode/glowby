@@ -1850,3 +1850,124 @@ def reader_labelled_media(limit: int = 200) -> list:
         except Exception:
             pass
         return []
+
+
+# ------------------------------------------------------- checks that didn't run
+# v0.66.23: every request that did NOT become a check — a platform that
+# blocked the fetch, a private or deleted link, a video with no speech,
+# a timeout, the rate limit, the daily budget, a crash — is a row here,
+# so admin can review them day by day instead of hearing about them
+# from users. Only a public URL is stored (never image/audio data, never
+# an IP); the message is the user-facing one.
+
+
+FAILURE_KINDS = ("blocked", "private_or_deleted", "fetch_service", "no_speech", "too_long",
+                 "transcription", "timeout", "unexpected", "router", "rate_limited", "budget",
+                 "bot_check", "bad_input", "other")
+
+
+def record_failure(kind: str, platform: str = "", url: str = "", url_key: str = "", message: str = "") -> None:
+    """Store one request that never became a check. No-ops on failure."""
+    conn = _get_conn()
+    if conn is None:
+        return
+    kind = kind if kind in FAILURE_KINDS else "other"
+    if url and not url.startswith(("http://", "https://")):
+        url = ""  # never store typed text, image or audio payloads
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS check_failures (
+                    id SERIAL PRIMARY KEY,
+                    at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    day DATE NOT NULL DEFAULT CURRENT_DATE,
+                    kind TEXT NOT NULL,
+                    platform TEXT NOT NULL DEFAULT '',
+                    url TEXT NOT NULL DEFAULT '',
+                    url_key TEXT NOT NULL DEFAULT '',
+                    message TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'new'
+                )
+                """
+            )
+            cur.execute(
+                "INSERT INTO check_failures (kind, platform, url, url_key, message) VALUES (%s,%s,%s,%s,%s)",
+                (kind, (platform or "")[:40], (url or "")[:500], (url_key or "")[:160], (message or "")[:400]),
+            )
+            cur.execute("DELETE FROM check_failures WHERE at < now() - interval '90 days'")
+    except Exception:
+        pass
+
+
+def failure_series(days: int = 14) -> list:
+    """[{day, total, kinds: {kind: n}}] oldest first, for the last N days
+    (days with nothing are present with total 0)."""
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT day::text, kind, count(*) FROM check_failures "
+                "WHERE day > CURRENT_DATE - make_interval(days => %s) GROUP BY day, kind", (days,))
+            rows = cur.fetchall()
+            cur.execute("SELECT (CURRENT_DATE - make_interval(days => %s - 1) + make_interval(days => g))::date::text "
+                        "FROM generate_series(0, %s - 1) g", (days, days))
+            all_days = [r[0] for r in cur.fetchall()]
+        by = {d: {"day": d, "total": 0, "kinds": {}} for d in all_days}
+        for day, kind, n in rows:
+            if day in by:
+                by[day]["kinds"][kind] = int(n)
+                by[day]["total"] += int(n)
+        return [by[d] for d in all_days]
+    except Exception:
+        return []
+
+
+def list_failures(day: str = "", kind: str = "", limit: int = 100) -> list:
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        q = "SELECT id, at, kind, platform, url, url_key, message, status FROM check_failures WHERE 1=1"
+        args: list = []
+        if day:
+            q += " AND day = %s"; args.append(day)
+        if kind:
+            q += " AND kind = %s"; args.append(kind)
+        q += " ORDER BY id DESC LIMIT %s"; args.append(limit)
+        with conn.cursor() as cur:
+            cur.execute(q, args)
+            rows = cur.fetchall()
+        return [{"id": r[0], "at": r[1].isoformat() if r[1] else None, "kind": r[2], "platform": r[3],
+                 "url": r[4], "url_key": r[5], "message": r[6], "status": r[7]} for r in rows]
+    except Exception:
+        return []
+
+
+def failures_today() -> dict:
+    """{'total': n, 'top': kind|None} for the admin tile."""
+    conn = _get_conn()
+    if conn is None:
+        return {"total": 0, "top": None}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT kind, count(*) FROM check_failures WHERE day = CURRENT_DATE "
+                        "GROUP BY kind ORDER BY 2 DESC")
+            rows = cur.fetchall()
+        return {"total": sum(int(r[1]) for r in rows), "top": rows[0][0] if rows else None}
+    except Exception:
+        return {"total": 0, "top": None}
+
+
+def resolve_failure(fid: int, status: str) -> bool:
+    conn = _get_conn()
+    if conn is None or status not in ("new", "reviewed", "fixed"):
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE check_failures SET status=%s WHERE id=%s", (status, fid))
+            return cur.rowcount > 0
+    except Exception:
+        return False

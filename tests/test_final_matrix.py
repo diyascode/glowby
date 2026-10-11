@@ -2397,6 +2397,53 @@ for _need in ("/api/admin/marketing/run", "/api/marketing/{platform}/callback", 
     if _need not in open("app/main.py").read(): fails.append(f"m120 route {_need}")
 if "Make today’s clip now" not in open("app/templates/admin.html").read() or "Approve &amp; post" not in open("app/templates/admin.html").read(): fails.append("m120 admin card")
 
+# 121. CHECKS THAT DIDN'T RUN (Oct 11): every request that never became a
+# check is recorded once with a reason — blocked / private / no speech /
+# timeout / limit / budget / crash — and admin lists them per day for
+# review. Only public URLs are stored; the job payload never leaks them.
+for _msg, _kind in (("TikTok blocked this video even after a retry", "blocked"), ("Instagram wouldn't hand over this Reel", "blocked"),
+                    ("YouTube is temporarily challenging our server", "blocked"), ("Facebook posts are locked behind Facebook's login wall", "blocked"),
+                    ("Instagram fetching is temporarily unavailable on Glowby's side", "fetch_service"),
+                    ("Could not read this youtube link. It may be private, deleted", "private_or_deleted"),
+                    ("This video is 41 minutes long — Glowby v1 supports", "too_long"), ("This video has no speech or captions", "no_speech"),
+                    ("Transcription failed. (Details: x)", "transcription"), ("This check took too long and was stopped.", "timeout"),
+                    ("Unexpected error while checking this link.", "unexpected"), ("something else", "other")):
+    if m.classify_failure(_msg) != _kind: fails.append(f"m121 classify {_msg!r} -> {m.classify_failure(_msg)}")
+_rec121 = []
+_orig_rf = m.record_failure
+m.record_failure = lambda *a: _rec121.append(a)
+try:
+    m._set_job("j121", status="queued", stage="fetching", started=time.time(), url="https://www.tiktok.com/@a/video/1", url_key="tiktok:1")
+    m._set_job("j121", status="error", error="TikTok blocked this video even after a retry")
+    m._set_job("j121", status="error", error="TikTok blocked this video even after a retry")
+    time.sleep(0.3)
+    if len(_rec121) != 1 or _rec121[0][0] != "blocked" or _rec121[0][1] != "tiktok" or _rec121[0][2] != "https://www.tiktok.com/@a/video/1": fails.append(f"m121 job failure recorded once: {_rec121}")
+    _j = m.api_job("j121")
+    if "url" in _j or "started" in _j or "_failed" in _j or _j.get("status") != "error": fails.append(f"m121 job payload leaks: {_j}")
+    # watchdog: a stuck job becomes a timeout row, once
+    m._set_job("j121b", status="running", stage="fetching", started=time.time() - m.JOB_TIMEOUT_SECONDS - 5, url="https://youtu.be/x", url_key="yt:x")
+    _j = m.api_job("j121b"); _j2 = m.api_job("j121b"); time.sleep(0.3)
+    if _j.get("status") != "error" or _j2.get("status") != "error" or sum(1 for r in _rec121 if r[0] == "timeout") != 1: fails.append(f"m121 watchdog: {_j} {_rec121}")
+    # the hourly limit is a row too (kind rate_limited), with the URL
+    _orig_rl = m._rate_limited; m._rate_limited = lambda ip: True
+    _orig_gc = m.get_cached; m.get_cached = lambda k, d=0: None
+    from fastapi.testclient import TestClient as _TC121
+    _r = _TC121(m.app).post("/api/check", json={"url": "https://www.youtube.com/watch?v=abc123xyz00", "captcha_token": "x"}, headers={"referer": "https://glowby.io/app?app=1"})
+    time.sleep(0.3)
+    if _r.status_code != 429 or not any(r[0] == "rate_limited" and "youtube.com" in r[2] for r in _rec121): fails.append(f"m121 rate limit row: {_r.status_code} {_rec121}")
+    m._rate_limited = _orig_rl; m.get_cached = _orig_gc
+finally:
+    m.record_failure = _orig_rf
+import app.storage as _ST121
+if _ST121.record_failure("blocked", "x", "data:image/png;base64,AAAA", "", "") is not None: fails.append("m121 record_failure must return None")
+_src121 = open("app/storage.py").read().split("def record_failure")[1].split("def failure_series")[0]
+if 'startswith(("http://", "https://"))' not in _src121: fails.append("m121 only public URLs may be stored")
+for _need in ("/api/admin/failures", "failures_today()", "def classify_failure"):
+    if _need not in open("app/main.py").read(): fails.append(f"m121 main {_need}")
+_adm121 = open("app/templates/admin.html").read()
+for _need in ("Checks that didn’t run", "Didn’t run today", "mark reviewed", "retry in Glowby"):
+    if _need not in _adm121: fails.append(f"m121 admin {_need}")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 120/120 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot")
+    "FINAL MATRIX PASS: 121/121 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run")

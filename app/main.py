@@ -47,6 +47,11 @@ from app.agents.router import (
 )
 from app.storage import (
     add_usage,
+    record_failure,
+    failure_series,
+    list_failures,
+    failures_today,
+    resolve_failure,
     add_video_timing,
     admin_recent_checks,
     cache_available,
@@ -86,7 +91,7 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 
-VERSION = "0.66.22"
+VERSION = "0.66.23"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -216,13 +221,60 @@ _jobs_lock = threading.Lock()
 MAX_JOBS_KEPT = 500
 
 
+# ---- requests that never became a check (admin review; v0.66.23) ----
+# Pure: the user-facing error line -> one of storage.FAILURE_KINDS.
+_FAIL_RULES = (
+    ("timeout", r"took too long"),
+    ("fetch_service", r"temporarily unavailable on Glowby's side|fetch service"),
+    ("blocked", r"wouldn't hand over|blocked this video|challenging our server|login wall|locked behind"),
+    ("too_long", r"minutes long"),
+    ("no_speech", r"no speech or captions|couldn't hear any speech|no captions, and Whisper"),
+    ("transcription", r"Transcription failed"),
+    ("private_or_deleted", r"Could not read this|private, deleted"),
+    ("unexpected", r"Unexpected error"),
+)
+
+
+def classify_failure(message: str) -> str:
+    m = message or ""
+    for kind, rx in _FAIL_RULES:
+        if re.search(rx, m, re.I):
+            return kind
+    return "other"
+
+
+def _note_failure(job: dict, message: str, kind: str = "") -> None:
+    """Record a failed job once, in the background. Never raises."""
+    try:
+        url = job.get("url") or ""
+        try:
+            from app.agents.ingest import detect_platform
+            platform = detect_platform(url) if url else ""
+        except Exception:
+            platform = ""
+        threading.Thread(target=record_failure,
+                         args=(kind or classify_failure(message), platform or "", url, job.get("url_key") or "", message),
+                         daemon=True).start()
+    except Exception:
+        pass
+
+
+_JOB_PRIVATE = ("started", "url", "url_key", "_failed")
+
+
 def _set_job(job_id: str, **fields) -> None:
     with _jobs_lock:
         job = _jobs.setdefault(job_id, {})
         job.update(fields)
+        first_fail = fields.get("status") == "error" and not job.get("_failed")
+        if first_fail:
+            job["_failed"] = True
+            snap = dict(job)
         if len(_jobs) > MAX_JOBS_KEPT:  # drop oldest
             for k in list(_jobs)[: len(_jobs) - MAX_JOBS_KEPT]:
                 _jobs.pop(k, None)
+    if first_fail:
+        _note_failure(snap, str(fields.get("error") or ""))
 
 
 def _publish_partial(job_id: str, result: dict, claims: list) -> None:
@@ -1480,6 +1532,7 @@ def api_check(req: CheckRequest, request: Request):
     if req.audio_b64:
         audio_b64, _aext = _clean_audio_b64(req.audio_b64)
         if audio_b64 is None:
+            _note_failure({}, "Recording couldn't be read", "bad_input")
             return JSONResponse(
                 status_code=422,
                 content={"detail": "That recording couldn't be read — try an "
@@ -1489,6 +1542,7 @@ def api_check(req: CheckRequest, request: Request):
     elif req.image_b64:
         image_b64 = _clean_image_b64(req.image_b64)
         if image_b64 is None:
+            _note_failure({}, "Image couldn't be read", "bad_input")
             return JSONResponse(
                 status_code=422,
                 content={"detail": "That image couldn't be read — try a "
@@ -1570,6 +1624,7 @@ def api_check(req: CheckRequest, request: Request):
         _ref = request.headers.get("referer", "")
         _is_app = "app=1" in _ref
         if not _is_app:
+            _note_failure({"url": raw if looks_like_url(raw) else "", "url_key": url_key}, "Bot check failed", "bot_check")
             return JSONResponse(
                 status_code=403,
                 content={"detail": (
@@ -1578,6 +1633,7 @@ def api_check(req: CheckRequest, request: Request):
                 )},
             )
     if _rate_limited(_client_ip(request)):
+        _note_failure({"url": raw if looks_like_url(raw) else "", "url_key": url_key}, f"Rate limit ({RATE_LIMIT_PER_HOUR}/hour) reached", "rate_limited")
         return JSONResponse(
             status_code=429,
             content={"detail": (
@@ -1588,6 +1644,7 @@ def api_check(req: CheckRequest, request: Request):
         )
     _, spent = today_usage()
     if spent >= DAILY_BUDGET_USD:
+        _note_failure({"url": raw if looks_like_url(raw) else "", "url_key": url_key}, "Daily budget reached", "budget")
         return JSONResponse(
             status_code=503,
             content={"detail": (
@@ -1626,7 +1683,8 @@ def api_check(req: CheckRequest, request: Request):
         _why_fresh = "first check"
     with _fresh_lock:
         _fresh_reasons[job_id] = _why_fresh
-    _set_job(job_id, status="queued", stage="fetching", started=time.time())
+    _set_job(job_id, status="queued", stage="fetching", started=time.time(),
+             url=(raw if looks_like_url(raw) else ""), url_key=url_key)
     threading.Thread(
         target=_run_pipeline,
         args=(job_id, (raw if looks_like_url(raw) else req.url), url_key, question, prior_claims, image_b64,
@@ -1674,11 +1732,14 @@ def api_job(job_id: str):
         return JSONResponse(status_code=404, content={"detail": "Unknown job."})
     # watchdog: a job stuck past the timeout reports an honest error
     started = job.get("started")
-    if job.get("status") in ("queued", "running") and started             and time.time() - started > JOB_TIMEOUT_SECONDS:
-        job = {"status": "error",
-               "error": "This check took too long and was stopped. "
-                        "Please try again."}
-    job.pop("started", None)
+    if job.get("status") in ("queued", "running") and started \
+            and time.time() - started > JOB_TIMEOUT_SECONDS:
+        _set_job(job_id, status="error",
+                 error="This check took too long and was stopped. Please try again.")
+        with _jobs_lock:
+            job = dict(_jobs.get(job_id) or job)
+    for k in _JOB_PRIVATE:
+        job.pop(k, None)
     return job
 
 
@@ -2578,6 +2639,7 @@ def api_admin_dashboard(key: str = ""):
             "est_spend_usd": round(spent, 2),
             "budget_usd": DAILY_BUDGET_USD,
             "visitors": visitors.get(today_key, 0),
+            "failed": failures_today(),
         },
         "visitors_total": visitor_total(),
         "visitors_monthly": visitor_monthly(),
@@ -2763,6 +2825,30 @@ def api_marketing_callback(platform: str, code: str = "", state: str = "", error
     msg = _html_attr(res.get("detail", ""))
     return HTMLResponse(f"<p style='font:16px system-ui;padding:2em'>{'✓ ' if res.get('ok') else 'Not connected: '}{msg}. You can close this tab.</p>",
                         status_code=200 if res.get("ok") else 400)
+
+
+@app.get("/api/admin/failures")
+def api_admin_failures(key: str = "", day: str = "", kind: str = "", limit: int = 100):
+    """Requests that never became a check — per day and as a list (admin)."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if day and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        day = ""
+    return {"series": failure_series(14), "items": list_failures(day, kind, max(1, min(int(limit or 100), 300))),
+            "today": failures_today()}
+
+
+class FailureResolve(BaseModel):
+    key: str
+    failure_id: int
+    status: str  # reviewed | fixed | new
+
+
+@app.post("/api/admin/failures/resolve")
+def api_admin_failures_resolve(req: FailureResolve):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": resolve_failure(req.failure_id, req.status)}
 
 
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
