@@ -23,7 +23,7 @@ import re
 
 from app import marketing as M
 
-STYLES = ("caught", "groupchat", "guess", "receipts", "facebook", "friend")
+STYLES = ("caught", "groupchat", "guess", "receipts", "facebook", "friend", "oneword", "textfroma")
 ROTATION = ("facebook", "friend", "groupchat", "caught")
 
 # Two voices. The quick upbeat one for the game-ish cuts; a slower,
@@ -126,6 +126,22 @@ def script(result: dict, style: str) -> list:
                 ("answer", line),
                 ("reply", f"So I didn't argue. I sent the link. {_say_doms(doms) if doms else 'The sources'}, right there in it."),
                 ("end", "Don't argue. Send the check. Glowby is free, link in bio.")]
+    if style == "oneword":
+        # TikTok's "answer in one word" format: the creator asks, the AI
+        # answers in one word. Glowby's lead word IS one word. Four real
+        # checks: the day's pick plus three more from the week.
+        rs = [result] + [r for r in (result.get("_extra") or []) if isinstance(r, dict)][:3]
+        out = [("setup", "I'll ask you a question. Answer in one word.")]
+        for i, r in enumerate(rs):
+            t = str(r.get("title") or "this").strip()[:90].rstrip(".?")
+            out.append((f"q{i}", f"{t}?"))
+            out.append((f"a{i}", ""))  # silent: the stamp answers
+        out.append(("end", "Glowby. One word, with receipts. Free, link in bio."))
+        return out
+    if style == "textfroma":
+        # "text message from -A": ominous text cards over the trend sound;
+        # no narration at all — add the sound in TikTok.
+        return [("t1", ""), ("t2", ""), ("t3", ""), ("reveal", ""), ("end", "")]
     # caught (default)
     return [("claim", f"{title}. Everyone's sharing it."),
             ("stamp", f"{word}. {score}"),
@@ -135,8 +151,16 @@ def script(result: dict, style: str) -> list:
 
 
 GAPS = {"claim": 0.5, "bubble": 0.6, "share": 0.9, "guess": 0.3, "stamp": 0.7, "answer": 0.7, "sources": 0.6, "end": 0.0,
-        "reel": 0.7, "hold": 1.1, "dm": 0.6, "verdict": 0.9, "reply": 0.6}
-LEAD_IN = {"caught": 0.5, "groupchat": 0.9, "guess": 0.6, "receipts": 0.3, "facebook": 1.0, "friend": 0.9}
+        "reel": 0.7, "hold": 1.1, "dm": 0.6, "verdict": 0.9, "reply": 0.6,
+        "setup": 0.6, "q0": 0.5, "q1": 0.5, "q2": 0.5, "q3": 0.5, "a0": 1.7, "a1": 1.7, "a2": 1.7, "a3": 1.7,
+        # textfroma is silent: each card is on screen for exactly its gap
+        "t1": 2.6, "t2": 3.0, "t3": 2.4, "reveal": 3.4}
+LEAD_IN = {"caught": 0.5, "groupchat": 0.9, "guess": 0.6, "receipts": 0.3, "facebook": 1.0, "friend": 0.9, "oneword": 0.6, "textfroma": 0.0}
+SCENE_STYLE.update({
+    "setup": "Flat and matter-of-fact, like reading the rules of a game.",
+    "q0": "Ask it like you're genuinely curious, a tiny pause at the end.", "q1": "Same, a little faster.",
+    "q2": "Same, almost daring it.", "q3": "The big one: slow, eyebrow raised.",
+})
 PRE = {"verdict": 0.6}  # the beat of dark before the verdict is spoken
 
 
@@ -613,8 +637,8 @@ def frame(result: dict, t: float, style: str, bounds: dict, total: float, words:
     nxt = [bounds[k] for k in order if bounds[k] > start]
     seg = (nxt[0] if nxt else total) - start
     kseg = min(1.0, u / max(seg, 0.1))
-    is_stamp = cur in ("stamp", "verdict")
-    hit = u if cur == "stamp" else (u - 0.6 if cur == "verdict" else -1)
+    is_stamp = cur in ("stamp", "verdict", "reveal") or (style == "oneword" and cur.startswith("a") and cur[1:].isdigit())
+    hit = u if (cur in ("stamp", "reveal") or (is_stamp and cur != "verdict")) else (u - 0.6 if cur == "verdict" else -1)
     flash = max(0.0, 0.45 - hit * 2.5) if hit >= 0 else 0.0
     im = bg(t, flash=flash, glow=0.6 if cur in ("reel", "dm", "reply", "answer") else 1.0)
     d = ImageDraw.Draw(im)
@@ -648,7 +672,7 @@ def frame(result: dict, t: float, style: str, bounds: dict, total: float, words:
     elif cur == "dm":
         phone(im, lambda dd, s, sw, sh: chat(dd, s, sw, sh, title, u), scale=0.96 + 0.06 * kseg)
         cap_y = 800
-    elif is_stamp:
+    elif cur in ("stamp", "verdict"):
         if cur == "verdict" and u < 0.6:
             k = 0.4 + 0.6 * abs(math.sin(u * 7))
             text(im, "…", 70, 280, (int(120 * k) + 40,) * 3)
@@ -673,11 +697,46 @@ def frame(result: dict, t: float, style: str, bounds: dict, total: float, words:
     elif cur == "reply":
         phone(im, lambda dd, s, sw, sh: chat(dd, s, sw, sh, title, 5.0, word=word, hs=hs, col=col, doms=doms, reply=u), scale=0.96 + 0.05 * kseg)
         cap_y = 800
+    elif cur == "setup":
+        a = M._ease(u / 0.3)
+        text(im, "I'll ask you a question.", 40, 300, (245, 245, 250), alpha=255 * a)
+        text(im, "Answer in one word.", 40, 360, (250, 178, 25), alpha=255 * M._ease((u - 0.5) / 0.3))
+    elif cur.startswith("q") and cur[1:].isdigit():
+        i = int(cur[1:]); rs = [result] + [r for r in (result.get("_extra") or []) if isinstance(r, dict)]
+        r_ = rs[i] if i < len(rs) else result
+        a = M._ease(u / 0.3)
+        text(im, f"Q{i + 1}", 22, 190, (170, 160, 240), weight="medium", alpha=255 * a)
+        text(im, "“" + str(r_.get("title") or "").strip()[:110].rstrip(".?") + "?”", 36, 230, (245, 245, 250), alpha=255 * a, maxw=470)
+        d.rounded_rectangle((50, 560, 490, 616), radius=28, fill=(30, 29, 42))
+        d.text((74, 575), "glowby is checking…", font=font(20, "medium"), fill=(154, 160, 176))
+        for k in range(3):
+            b = 0.5 + 0.5 * math.sin(t * 6 - k * 0.9)
+            d.ellipse((420 + k * 18, 582, 430 + k * 18, 592), fill=(150 + int(90 * b),) * 3)
+    elif style == "oneword" and cur.startswith("a") and cur[1:].isdigit():
+        i = int(cur[1:]); rs = [result] + [r for r in (result.get("_extra") or []) if isinstance(r, dict)]
+        r_ = rs[i] if i < len(rs) else result
+        w_ = M.lead_word(r_); c_ = M._color(w_); h_ = (r_.get("report") or {}).get("headline_score")
+        text(im, "“" + str(r_.get("title") or "").strip()[:110].rstrip(".?") + "?”", 26, 170, (200, 200, 215), maxw=470, weight="medium")
+        stamp(im, "Mostly" if w_ == "Mostly accurate" else w_, c_, h_, u, scale_from=2.2)
+        if w_ == "Mostly accurate" and u > 0.4:
+            text(im, "accurate", 30, 395, c_, alpha=255 * M._ease((u - 0.4) / 0.3))
+        text(im, "one word. receipts in the app.", 20, 560, (154, 160, 176), weight="medium", alpha=255 * M._ease((u - 0.9) / 0.3))
+    elif style == "textfroma" and cur in ("t1", "t2", "t3"):
+        msg = {"t1": "I know what you forwarded last night.", "t2": "“" + title[:100] + "”", "t3": "It wasn't true.    —A"}[cur]
+        n = int(len(msg) * min(1.0, u / max(0.6, seg * 0.6)))
+        lines_n = len(_wrap(d, msg, font(32), 420))
+        d.text((60, 296), "Unknown number · 2:14 AM", font=font(16, "medium"), fill=(154, 160, 176))
+        d.rounded_rectangle((40, 330, 500, 350 + 44 * lines_n), radius=22, fill=(44, 44, 56))
+        text(im, msg[:n], 32, 346, (245, 245, 250), maxw=420, shadow=False)
+    elif cur == "reveal":
+        stamp(im, word, col, hs, u, scale_from=2.6)
+        text(im, "—A was just Glowby.", 34, 520, (245, 245, 250), alpha=255 * M._ease((u - 1.0) / 0.3))
+        text(im, "it checks any video. free. link in bio.", 22, 580, (170, 160, 240), alpha=255 * M._ease((u - 1.6) / 0.3), weight="medium")
     else:  # end
         a = M._ease(u / 0.35)
         _icon(im, 270, 150, 96, a)
         text(im, {"groupchat": "Send them the receipt.", "receipts": "Sources on every claim.", "guess": "Any video. Checked.", "caught": "I checked it with Glowby.",
-                  "facebook": "Check before you share.", "friend": "Don't argue. Send the check."}.get(style, "Glowby"), 40, 230, (245, 245, 250), alpha=255 * a)
+                  "facebook": "Check before you share.", "friend": "Don't argue. Send the check.", "oneword": "One word. With receipts.", "textfroma": "Check before you share."}.get(style, "Glowby"), 40, 230, (245, 245, 250), alpha=255 * a)
         if u > 0.4:
             k = M._ease((u - 0.4) / 0.3); txt = "Free · glowby.io/get"; f = font(34); tw = d.textlength(txt, font=f)
             d.rounded_rectangle((270 - tw / 2 - 24, 400, 270 + tw / 2 + 24, 468), radius=18, fill=(124, 108, 246, int(255 * k)))
@@ -699,6 +758,11 @@ def sfx_events(bounds: dict, total: float) -> list:
             ev.append((at + 0.05, "thud", 1.0))
         if scene == "verdict":
             ev.append((at + 0.62, "thud", 1.0))
+        if scene in ("a0", "a1", "a2", "a3", "reveal"):
+            ev.append((at + 0.05, "thud", 0.9))
+        if scene in ("t1", "t2", "t3"):
+            for k in range(8):
+                ev.append((at + 0.1 + k * 0.17, "tick", 0.4))
         if scene in ("dm", "bubble"):
             ev.append((at + 0.3, "ding", 0.7))
             for k in range(6):

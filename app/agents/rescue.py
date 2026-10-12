@@ -302,11 +302,26 @@ def rescue_media(url: str, platform: str):
     if platform not in ("tiktok", "instagram") or not _allowed():
         return None
     _count()
-    if provider() == "scrapecreators":
-        return _sc_tiktok(url) if platform == "tiktok" else _sc_instagram(url)
-    if platform == "tiktok":
-        return _rescue_tiktok(url)
-    return _rescue_instagram(url)
+    try:
+        if provider() == "scrapecreators":
+            out = _sc_tiktok(url) if platform == "tiktok" else _sc_instagram(url)
+        elif platform == "tiktok":
+            out = _rescue_tiktok(url)
+        else:
+            out = _rescue_instagram(url)
+    except Exception as e:
+        _health(False, str(e))
+        raise
+    _health(bool(out and out.get("media_url")), "" if out else f"no media for {platform} (http {LAST.get('http')})")
+    return out
+
+
+def _health(ok, err=""):
+    try:
+        from app.apihealth import note
+        note("rescue", ok, err)
+    except Exception:
+        pass
 
 
 def _rescue_tiktok(url: str):

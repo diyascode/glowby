@@ -2505,8 +2505,9 @@ if 'url_key: str = ""' not in open("app/main.py").read().split("class MarketingR
 from app import ads as _AD
 for _st in _AD.STYLES:
     _sc = _AD.script(_eggs123, _st); _all = " ".join(t for _, t in _sc).lower()
+    if _st in ("oneword", "textfroma"): continue  # trend cuts: tested in m129
     if "minute" in _all or "Inaccurate" not in " ".join(t for _, t in _sc) or "2.1 out of ten" not in _all or "glowby" not in _all or _MK.FORBIDDEN.search(_all): fails.append(f"m124 script {_st}: {_sc}")
-    if [k for k, _ in _sc][0] != {"caught": "claim", "groupchat": "bubble", "guess": "guess", "receipts": "stamp", "facebook": "reel", "friend": "dm"}[_st]: fails.append(f"m124 opening scene {_st}")
+    if [k for k, _ in _sc][0] != {"caught": "claim", "groupchat": "bubble", "guess": "guess", "receipts": "stamp", "facebook": "reel", "friend": "dm", "oneword": "setup", "textfroma": "t1"}[_st]: fails.append(f"m124 opening scene {_st}")
 if _AD.say_source("www.health.harvard.edu") != "Harvard Health" or _AD.say_source("apnews.com") != "the AP" or " dot " in _AD.say_source("www.honeyflow.com"): fails.append("m124 spoken sources")
 if "verdict" not in _AD.SCENE_STYLE["stamp"] or "upbeat" not in _AD.VOICE_STYLE or "breath" not in _AD.DRAMATIC_STYLE or _AD.STYLE_VOICE.get("friend") != _AD.DRAMATIC_STYLE: fails.append("m124 voice direction")
 for _st in ("facebook", "friend"):
@@ -2644,6 +2645,69 @@ _a128 = open("app/templates/admin.html").read()
 if "Where visitors landed — last 14 days" not in _a128 or 'id="landWrap"' not in _a128 or "% on result pages" not in _a128: fails.append("m128 overview card + tooltip")
 if 'd["landed"] = kinds.get' not in open("app/main.py").read(): fails.append("m128 dashboard carries landing kinds")
 
+# 129. TREND CUTS (Oct 12): "answer in one word" (four real checks, the
+# lead word is the one word; silent answer scenes carry a stamp) and
+# "text from —A" (silent cards, the trend's sound is added in TikTok).
+_r129 = dict(_eggs123); _r129["_extra"] = [_ok120, _flow123]
+_sc = _AD.script(_r129, "oneword")
+if [k for k, _ in _sc] != ["setup", "q0", "a0", "q1", "a1", "q2", "a2", "end"] or any(t for k, t in _sc if k.startswith("a")) or "?" not in _sc[1][1]: fails.append(f"m129 oneword script {_sc}")
+if any(t for _, t in _AD.script(_r129, "textfroma")): fails.append("m129 textfroma must be silent")
+_bo = {"setup": 0, "q0": 3, "a0": 5.5, "q1": 7.5, "a1": 10, "q2": 12, "a2": 14.5, "end": 17}
+for _t in (1.0, 3.5, 6.0, 10.5, 15.0, 18.0):
+    try: _AD.frame(_r129, _t, "oneword", _bo, 20.0)
+    except Exception as _e: fails.append(f"m129 oneword frame @{_t}: {_e}")
+for _t in (1.0, 4.0, 7.0, 9.5, 12.5):
+    try: _AD.frame(_r129, _t, "textfroma", {"t1": 0, "t2": 2.6, "t3": 5.6, "reveal": 8.0, "end": 11.4}, 14.0)
+    except Exception as _e: fails.append(f"m129 textfroma frame @{_t}: {_e}")
+_rt = _AD.render(_r129, _out122, "textfroma", speak=_speak122, fps=4, scale=1)
+if not _rt.get("narrated") or _rt.get("style") != "textfroma" or not (10 < _rt.get("total", 0) < 16): fails.append(f"m129 silent render: {_rt}")
+_ro = _AD.render(_r129, _out122, "oneword", speak=_speak122, fps=4, scale=1)
+if not _ro.get("narrated") or _ro.get("style") != "oneword": fails.append(f"m129 oneword render: {_ro}")
+if 'value="oneword"' not in open("app/templates/admin.html").read() or '"_extra"' not in open("app/marketing.py").read(): fails.append("m129 wiring")
+
+# 130. API & KEYS ON THE SECURITY PAGE (Oct 12): outbound services report
+# their own calls (no extra probes); rate-limit hits, failed bot checks
+# and partner calls are counted; partner keys get a log-safe id and a
+# daily cap and can read their own usage; secrets get a salted
+# fingerprint so rotation is logged without the value; the deployed
+# code is scanned for anything shaped like a key.
+from app import apihealth as _AH
+_AH._MEM.clear(); _AH.note("anthropic", True); _AH.note("brave", False, "HTTP 429 quota")
+_sv = {x["service"]: x for x in _AH.services()}
+if _sv["anthropic"]["state"] != "ok" or _sv["brave"]["state"] != "failing" or "429" not in _sv["brave"]["err"] or _sv["rescue"]["state"] != "unused": fails.append(f"m130 services: {_sv['brave']}")
+if _AH.key_id("k1") == _AH.key_id("k2") or len(_AH.key_id("k1")) != 8 or "k1" in _AH.key_id("k1"): fails.append("m130 key id")
+_cnt = []
+_orig_c = _AH.count; _AH.count = lambda kind, key_id="": _cnt.append((kind, key_id))
+_orig_kc = _AH.key_calls_today; _AH.key_calls_today = lambda kid: 0
+try:
+    if _AH.partner_check("good", ["good"])[0] is not True or _AH.partner_check("bad", ["good"])[0] is not False: fails.append("m130 partner check")
+    _AH.key_calls_today = lambda kid: _AH.PARTNER_DAILY_CAP
+    _ok, _why, _kid = _AH.partner_check("good", ["good"])
+    if _ok or "cap" not in _why: fails.append("m130 partner cap")
+    if ("partner_call", _AH.key_id("good")) not in _cnt or ("partner_denied", "") not in _cnt or ("partner_capped", _AH.key_id("good")) not in _cnt: fails.append(f"m130 counters {_cnt}")
+finally:
+    _AH.count = _orig_c; _AH.key_calls_today = _orig_kc
+if _AH.fingerprint_secret("same", "s1") == _AH.fingerprint_secret("same", "s2") or _AH.fingerprint_secret("a", "s") == _AH.fingerprint_secret("b", "s"): fails.append("m130 fingerprint")
+_hits = _AH.scan_source()
+if _hits: fails.append(f"m130 the deployed code must not contain key-shaped strings: {_hits[:3]}")
+import tempfile as _tf130
+with _tf130.TemporaryDirectory() as _td:
+    open(_os.path.join(_td, "leak.py"), "w").write('KEY = "sk-ant-api03-' + "A" * 40 + '"\n')
+    if not _AH.scan_source(_td): fails.append("m130 scan must catch a planted key")
+_c130 = _TC121(m.app)
+if _c130.get("/api/scam/usage").status_code != 403: fails.append("m130 usage needs a partner key")
+_os.environ["GLOWBY_PARTNER_KEYS"] = "pk_test_abc"
+try:
+    _u = _c130.get("/api/scam/usage", headers={"x-api-key": "pk_test_abc"})
+    if _u.status_code != 200 or _u.json().get("key_id") != _AH.key_id("pk_test_abc") or "pk_test_abc" in _u.text: fails.append(f"m130 usage endpoint {_u.text[:120]}")
+finally:
+    _os.environ.pop("GLOWBY_PARTNER_KEYS", None)
+for _need in ("partner_check", "boot_scan", "record_secrets", "/api/admin/security/audited"):
+    if _need not in open("app/main.py").read(): fails.append(f"m130 main {_need}")
+for _f, _need in (("app/agents/llm.py", '_note("anthropic"'), ("app/agents/evidence.py", '_note("brave"'), ("app/agents/ingest.py", '_health("openai"'), ("app/agents/rescue.py", 'note("rescue"')):
+    if _need not in open(_f).read(): fails.append(f"m130 {_f} not instrumented")
+if 'id="apiServices"' not in open("app/templates/admin.html").read(): fails.append("m130 admin section")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 128/128 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel")
+    "FINAL MATRIX PASS: 130/130 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys")

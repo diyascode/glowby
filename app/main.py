@@ -93,8 +93,9 @@ from app.storage import (
     pending_flags, load_result_quiet, save_review, latest_review, last_review_at,
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
+from app import apihealth as _ah  # noqa: E402
 
-VERSION = "0.66.33"
+VERSION = "0.66.35"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -143,8 +144,12 @@ def _verify_turnstile(token: str, ip: str) -> bool:
         )
         with _ur.urlopen(req, timeout=10) as resp:
             out = _json.loads(resp.read().decode())
+        _ah.note("turnstile", True)
+        if not out.get("success"):
+            _ah.count("bot_check_failed")
         return bool(out.get("success"))
-    except Exception:
+    except Exception as e:
+        _ah.note("turnstile", False, str(e))
         return False
 
 # per-IP sliding-window rate limiter (in-process; fine at beta scale)
@@ -166,6 +171,7 @@ def _rate_limited(ip: str) -> bool:
         while q and now - q[0] > 3600:
             q.popleft()
         if len(q) >= RATE_LIMIT_PER_HOUR:
+            _ah.count("rate_limited")
             return True
         q.append(now)
         return False
@@ -2088,8 +2094,12 @@ def api_scam(req: ScamRequest, request: Request):
     nothing in it is executed, fetched, or contacted."""
     key = (request.headers.get("x-api-key") or "").strip()
     partners = [k.strip() for k in (os.environ.get("GLOWBY_PARTNER_KEYS") or "").split(",") if k.strip()]
-    if not key or not (key in partners or _admin_ok(key)):
-        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if _admin_ok(key):
+        _kid = "admin"
+    else:
+        _okp, _why, _kid = _ah.partner_check(key, partners)
+        if not _okp:
+            return JSONResponse(status_code=403 if _why == "forbidden" else 429, content={"detail": _why.capitalize() + "."})
     if _rate_limited(_client_ip(request)):
         return JSONResponse(status_code=429, content={"detail": "Too many requests."})
     text = (req.text or "").strip()
@@ -2931,7 +2941,9 @@ def _store_snapshot(name: str, compute):
 
 def _security_report() -> dict:
     partners = [k for k in (os.environ.get("GLOWBY_PARTNER_KEYS") or "").split(",") if k.strip()]
-    return _sec.report(VERSION, len(_admin_sessions), RATE_LIMIT_PER_HOUR, len(partners))
+    rep = _sec.report(VERSION, len(_admin_sessions), RATE_LIMIT_PER_HOUR, len(partners))
+    rep["api"] = _ah.report()
+    return rep
 
 
 def _weekly_admin_snapshots() -> None:
@@ -3000,15 +3012,34 @@ def api_admin_money_recurring(req: MoneyRecurring):
     return {"ok": ok}
 
 
+class KeyOnly(BaseModel):
+    key: str
+
+
+@app.get("/api/scam/usage")
+def api_scam_usage(request: Request):
+    """A partner's own numbers for its key (today / 7 days); never the key."""
+    key = (request.headers.get("x-api-key") or "").strip()
+    partners = [k.strip() for k in (os.environ.get("GLOWBY_PARTNER_KEYS") or "").split(",") if k.strip()]
+    if not key or key not in partners:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    kid = _ah.key_id(key)
+    return {"key_id": kid, "daily_cap": _ah.PARTNER_DAILY_CAP, "usage": (_ah.counters().get("keys") or {}).get(kid, {})}
+
+
+@app.post("/api/admin/security/audited")
+def api_admin_security_audited(req: KeyOnly):
+    """Mark the monthly dependency audit (pip audit) as done today."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    return {"ok": _mkt.set_setting("sec:pip_audit", time.strftime("%Y-%m-%d"))}
+
+
 @app.get("/api/admin/security")
 def api_admin_security(key: str = "", live: int = 0):
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     return _store_snapshot("security", _security_report) if live else _snapshot("security", _security_report)
-
-
-class KeyOnly(BaseModel):
-    key: str
 
 
 @app.post("/api/admin/security/signout_all")
@@ -3113,6 +3144,8 @@ def _startup_precheck() -> None:
                    job_status=lambda jid: (_jobs.get(jid) or {}).get("status"))
     _mkt.start()  # daily clip → TikTok drafts; weekly LinkedIn queue
     threading.Thread(target=_sec.record_deploy, args=(VERSION,), daemon=True).start()  # security ledger
+    threading.Thread(target=_ah.record_secrets, daemon=True).start()   # key ages (fingerprints only)
+    threading.Thread(target=_ah.boot_scan, daemon=True).start()        # secrets-in-code scan
     # CACHE KEEP-ALIVE: re-read the judges' shared rulebook every 50 min
     # so its 1-hour cache never lapses — the rulebook is then billed at
     # 10% on every real judge call, all day, every category. Cost: pennies.

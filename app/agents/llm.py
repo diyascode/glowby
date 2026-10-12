@@ -26,12 +26,29 @@ def create(client, **kw):
         for k in ("temperature", "top_p", "top_k"):
             kw.pop(k, None)
     try:
-        return client.messages.create(**kw)
+        r = client.messages.create(**kw)
+        _note("anthropic", True)
+        return r
     except Exception as e:
         msg = str(e).lower()
         if any(k in kw for k in ("temperature", "top_p", "top_k")) and (
                 "temperature" in msg or "top_p" in msg or "top_k" in msg):
             for k in ("temperature", "top_p", "top_k"):
                 kw.pop(k, None)
-            return client.messages.create(**kw)
+            try:
+                r = client.messages.create(**kw)
+                _note("anthropic", True)
+                return r
+            except Exception as e2:
+                _note("anthropic", False, str(e2))
+                raise
+        _note("anthropic", False, str(e))
         raise
+
+
+def _note(service, ok, err=""):
+    try:
+        from app.apihealth import note
+        note(service, ok, err)
+    except Exception:
+        pass

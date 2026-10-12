@@ -191,11 +191,14 @@ def ingest(url: str) -> dict:
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
+            _health("proxy", True)
             break
         except Exception as e:
             err_text = str(e)
             if attempt == 1:
                 time.sleep(1.5)
+    if info is None:
+        _health("proxy", False, err_text)
     _mark("meta", _t_meta)
     if info is None:
         bot_blocked = "Sign in to confirm" in err_text or "not a bot" in err_text
@@ -804,12 +807,24 @@ def _whisper_file(audio_file: str):
             transcription = client.audio.transcriptions.create(
                 model=TRANSCRIBE_MODEL, file=f,
                 temperature=0)  # deterministic: same audio -> same text
+        _health("openai", True)
     except Exception as e:
+        _health("openai", False, str(e))
         raise IngestError(f"Transcription failed. (Details: {str(e)[:200]})")
     return (transcription.text or "").strip() or None
 
 
 import threading as _threading
+
+
+def _health(service, ok, err=""):
+    try:
+        from app.apihealth import note
+        note(service, ok, err)
+    except Exception:
+        pass
+
+
 _EXTRAS = _threading.local()  # per-pipeline-thread side channel (audio clip)
 _TIMES = _threading.local()   # per-pipeline-thread fetch timings (v0.66.32)
 

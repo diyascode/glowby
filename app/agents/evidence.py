@@ -225,8 +225,21 @@ def _brave_query(q: str, count: int = BRAVE_COUNT) -> list:
         headers={"Accept": "application/json",
                  "Accept-Encoding": "identity",
                  "X-Subscription-Token": key})
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read().decode("utf-8", "replace"))
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception as e:
+        try:
+            from app.apihealth import note as _note
+            _note("brave", False, str(e))
+        except Exception:
+            pass
+        raise
+    try:
+        from app.apihealth import note as _note
+        _note("brave", True)
+    except Exception:
+        pass
     return parse_brave_results(data)
 
 

@@ -81,6 +81,14 @@ def _db():
     return _get_conn()
 
 
+def _note(service, ok, err=""):
+    try:
+        from app.apihealth import note
+        note(service, ok, err)
+    except Exception:
+        pass
+
+
 def _peek(url_key: str):
     """A stored result without counting a view (None if unknown)."""
     from app.storage import peek_result
@@ -741,6 +749,9 @@ def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmp
     lines = script_ if script_ is not None else narration_script(result)
     gap = gaps or {"intro": 0.6, "check": 0.5, "wait": 1.6, "result": 1.0, "end": 0.0}
     for scene, text in lines:
+        if not (text or "").strip():
+            segs.append((scene, None, 0.0, ""))  # a silent scene: on screen for its gap only
+            continue
         fp = os.path.join(workdir, f"{scene}.mp3")
         kw = {}
         if takes_scene:
@@ -755,7 +766,8 @@ def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmp
     for scene, fp, dur, _txt in segs:
         bounds[scene] = round(t, 2)
         t += pre.get(scene, 0.0)          # a held beat before this line (the verdict)
-        delays.append((fp, t))
+        if fp is not None:
+            delays.append((fp, t))
         t += dur + gap.get(scene, 0.5)
     total = round(t + 1.2, 2)
     first = segs[0][0]
@@ -765,8 +777,11 @@ def build_voice_track(result: dict, workdir: str, speak=tts, ffmpeg: str = "ffmp
     for i, (fp, at) in enumerate(delays):
         inputs += ["-i", fp]
         filt.append(f"[{i}:a]aresample=44100,aformat=channel_layouts=stereo,adelay={int(at * 1000)}|{int(at * 1000)}[a{i}]")
-    filt.append("".join(f"[a{i}]" for i in range(len(delays))) + f"amix=inputs={len(delays)}:normalize=0,apad=whole_dur={total}[out]")
-    cmd = [ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt), "-map", "[out]", "-c:a", "aac", "-b:a", "96k", out]
+    if delays:
+        filt.append("".join(f"[a{i}]" for i in range(len(delays))) + f"amix=inputs={len(delays)}:normalize=0,apad=whole_dur={total}[out]")
+        cmd = [ffmpeg, "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filt), "-map", "[out]", "-c:a", "aac", "-b:a", "96k", out]
+    else:  # no narration at all (a trend cut that takes the trend's sound in TikTok)
+        cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100", "-t", str(total), "-c:a", "aac", "-b:a", "64k", out]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     if r.returncode != 0:
         raise RuntimeError("voice mix failed: " + r.stderr[-300:])
@@ -980,6 +995,7 @@ def tiktok_upload_to_drafts(mp4: bytes, http=_http) -> dict:
     data = j.get("data") or {}
     if st != 200 or not data.get("upload_url"):
         err = (j.get("error") or {})
+        _note("tiktok", False, f"init {st} {err.get('code') or ''}")
         return {"ok": False, "detail": f"TikTok init failed ({st}): {err.get('code') or '?'} {err.get('message') or ''}".strip()}
     size = len(mp4); chunk = plan["chunk_size"]; pos = 0; idx = 0
     while pos < size:
@@ -992,6 +1008,7 @@ def tiktok_upload_to_drafts(mp4: bytes, http=_http) -> dict:
         if st2 not in (200, 201, 206):
             return {"ok": False, "detail": f"TikTok upload failed ({st2}) at byte {pos}", "publish_id": data.get("publish_id")}
         pos = end; idx += 1
+    _note("tiktok", True)
     return {"ok": True, "publish_id": data.get("publish_id"), "detail": "in TikTok drafts"}
 
 
@@ -1040,8 +1057,10 @@ def linkedin_post(text: str, images: list, http=_http) -> dict:
         post["content"] = {"multiImage": {"images": [{"id": u, "altText": "Glowby fact-check score card"} for u in urns]}}
     st, body, hdrs = http("POST", "https://api.linkedin.com/rest/posts", hdr, json.dumps(post).encode())
     if st not in (200, 201):
+        _note("linkedin", False, f"post {st}")
         return {"ok": False, "detail": f"LinkedIn post failed ({st}): {_json(body).get('message') or ''}".strip()}
     pid = hdrs.get("x-restli-id") or hdrs.get("X-RestLi-Id") or ""
+    _note("linkedin", True)
     return {"ok": True, "post_urn": pid, "detail": "posted to LinkedIn"}
 
 
@@ -1065,6 +1084,8 @@ def run_daily(force: bool = False, render=render_clip, upload=tiktok_upload_to_d
     cap = tiktok_caption(result)
     path = os.path.join(_tmpdir(), f"glowby-{int(time.time())}.mp4")
     voice = {"narrated": False}
+    if style_for_today(style) == "oneword":  # the trend cut asks four questions
+        result = dict(result); result["_extra"] = [r for k, _h, r in top_week(6) if k != key][:3]
     try:
         if render is render_clip and tts_available():
             voice = render_narrated(result, path, style=style)

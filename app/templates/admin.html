@@ -282,6 +282,15 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="seFailed"></div>
       <div id="seDevices" style="margin-top:8px"></div>
       <div id="seRecent" style="margin-top:8px"></div>
+      <h3 style="font-size:.85rem;margin:14px 0 6px">API &amp; keys</h3>
+      <div class="s" style="margin-bottom:6px">Counted as it happens, reviewed weekly. Services report their own calls; nothing here probes anything extra.</div>
+      <div id="apiTiles" class="tiles" style="margin-bottom:10px"></div>
+      <div id="apiServices"></div>
+      <div class="s" style="margin:10px 0 4px">Key ages — the app keeps a salted fingerprint per secret and logs when it changes; values are never seen. Orange past <span id="apiRotate"></span> days.</div>
+      <div id="apiKeys" class="dist"></div>
+      <div id="apiPartners" style="margin-top:8px"></div>
+      <div id="apiScan" style="margin-top:8px"></div>
+      <div class="s" style="margin-top:8px">Dependency audit (monthly, by hand): run <code>pip install pip-audit && pip-audit -r requirements.txt</code> on the zip, then <a href="#" onclick="seAudited();return false">mark audited today</a>. <span id="apiAudit"></span></div>
       <h3 style="font-size:.85rem;margin:14px 0 6px">Settings in force (secrets by name only)</h3>
       <div id="seConfig" class="dist"></div>
     </div>
@@ -293,7 +302,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       </div>
       <div class="s" style="margin:6px 0 8px">Every morning Glowby turns yesterday’s most-shared real check into a finished 20–35 second video — pictures, captions and a synthetic narrator (never presented as Diya) — and drops it into Diya’s <b>TikTok drafts</b>. She can post it as is, or mute it and talk over it. Nothing is ever auto-posted to TikTok. Every Monday it writes the LinkedIn post and waits here for <b>Approve</b>. Only stored checks, never a made-up one, never “fake”.</div>
       <div id="mkTiles" class="tiles" style="margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px;align-items:center;margin:4px 0 8px;flex-wrap:wrap"><span class="s">Ad style:</span><select id="mkStyle" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:5px"><option value="rotate">rotate daily (facebook → friend → group chat → caught)</option><option value="facebook">Facebook reel — false news, all over Facebook, checked (dramatic voice)</option><option value="friend">Friend — a political reel in a DM; reply with the check and sources (dramatic voice)</option><option value="caught">Caught — cold open, verdict slams in, receipts</option><option value="groupchat">Group chat — before anyone replies, the receipt</option><option value="guess">Guess — true or false? 3-2-1, reveal</option><option value="receipts">Receipts — verdict first, then who says so</option><option value="classic">Classic — the share-and-wait walkthrough</option></select><span class="s" id="mkStyleToday"></span></div>
+      <div style="display:flex;gap:8px;align-items:center;margin:4px 0 8px;flex-wrap:wrap"><span class="s">Ad style:</span><select id="mkStyle" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:5px"><option value="rotate">rotate daily (facebook → friend → group chat → caught)</option><option value="facebook">Facebook reel — false news, all over Facebook, checked (dramatic voice)</option><option value="friend">Friend — a political reel in a DM; reply with the check and sources (dramatic voice)</option><option value="caught">Caught — cold open, verdict slams in, receipts</option><option value="groupchat">Group chat — before anyone replies, the receipt</option><option value="guess">Guess — true or false? 3-2-1, reveal</option><option value="receipts">Receipts — verdict first, then who says so</option><option value="oneword">Trend: “answer in one word” — four questions, four one-word verdicts</option><option value="textfroma">Trend: “text from —A” — silent, add the trend sound in TikTok</option><option value="classic">Classic — the share-and-wait walkthrough</option></select><span class="s" id="mkStyleToday"></span></div>
       <div style="display:flex;gap:8px;align-items:center;margin:4px 0 8px;flex-wrap:wrap"><input id="mkPick" placeholder="pick the story yourself: paste a glowby.io/r/… link" style="flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border);color:var(--ink);border-radius:10px;padding:8px;font-family:inherit;font-size:.85rem"><button id="mkPickGo" class="fbf" style="font-size:.78rem;padding:6px 12px">Make a clip from it</button><span class="s">· otherwise the picker chooses: clear verdicts over Mixed, everyday topics over niche, plain titles over jargon (reasons shown on each row)</span></div>
       <div id="mkMeta" class="s" style="margin-bottom:8px"></div>
       <div id="mkPosts"></div>
@@ -1190,10 +1199,36 @@ async function loadSecurity(live){
   $("seFailed").innerHTML = !fb.length ? '<div class="empty">No logins recorded yet (counting starts with this version).</div>' : '<div style="display:flex;gap:4px;align-items:flex-end;height:70px">' + fb.map(x => `<div style="flex:1;text-align:center" title="${x.day}: ${x.failed} failed · ${x.ok} ok"><div style="display:flex;flex-direction:column-reverse;height:52px"><i style="display:block;height:${Math.max(1, x.ok / fmx * 50)}px;background:#4ade80;border-radius:2px"></i><i style="display:block;height:${x.failed ? Math.max(2, x.failed / fmx * 50) : 0}px;background:#f87171;border-radius:2px"></i></div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`).join("") + '</div>';
   $("seDevices").innerHTML = (ac.devices || []).length ? '<div class="s" style="margin-bottom:4px">Devices that signed in (30 days)</div>' + ac.devices.map(v => `<div class="s"><b style="color:var(--ink)">${esc(v.device)}</b> · network ${esc(v.net)} · ${v.logins} login(s) · last ${esc(String(v.last || "").slice(0, 16).replace("T", " "))}</div>`).join("") : "";
   $("seRecent").innerHTML = (ac.recent || []).length ? '<details><summary class="s" style="cursor:pointer">every login attempt ↓</summary>' + ac.recent.map(v => `<div class="s" style="color:${v.ok ? "var(--ink2)" : "#f87171"}">${esc(String(v.at || "").slice(0, 16).replace("T", " "))} · ${v.ok ? "ok" : "FAILED"} · ${esc(v.method)} · ${esc(v.device)} · ${esc(v.net)}</div>`).join("") + '</details>' : "";
+  // ---- API & keys ----
+  const api = d.api || {}, sc = (api.counters || {}).sec || {};
+  const g = k => (sc[k] || {today: 0, week: 0});
+  $("apiTiles").innerHTML =
+    tile("Rate-limit hits", g("rate_limited").week, `${g("rate_limited").today} today · 7-day total`, g("rate_limited").week > 50 ? "warn" : "good") +
+    tile("Bot checks failed", g("bot_check_failed").week, `${g("bot_check_failed").today} today`, g("bot_check_failed").week > 50 ? "warn" : "good") +
+    tile("Partner API calls", g("partner_call").week, `${g("partner_denied").week} denied · ${g("partner_capped").week} capped · cap ${api.partner_daily_cap}/key/day`, g("partner_denied").week > 20 ? "warn" : "good");
+  const svc = api.services || [];
+  $("apiServices").innerHTML = svc.map(v => {
+    const col = !v.configured ? "#9aa0b0" : v.state === "failing" ? "#f87171" : v.state === "ok" ? "#4ade80" : "#9aa0b0";
+    const when = x => x ? String(x).slice(0, 16).replace("T", " ") : "—";
+    return `<div class="s" style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)"><i style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block"></i><b style="min-width:120px;color:var(--ink)">${esc(v.service)}</b><span style="min-width:90px">${v.configured ? esc(v.state) : "not configured"}</span><span>last ok ${when(v.last_ok)} · last error ${when(v.last_err)}${v.err ? " · " + esc(v.err.slice(0, 80)) : ""} · ${v.ok_count} ok / ${v.err_count} failed</span></div>`;
+  }).join("");
+  $("apiRotate").textContent = api.rotate_days || 90;
+  $("apiKeys").innerHTML = (api.key_ages || []).map(k => `<span style="${k.overdue ? "color:#fab219" : ""}">${esc(k.name)} <b>${k.days}d</b>${k.rotations ? ` · rotated ×${k.rotations}` : ""}</span>`).join("") || '<span>ledger starts at this boot</span>';
+  const pk = (api.counters || {}).keys || {};
+  $("apiPartners").innerHTML = Object.keys(pk).length ? '<div class="s">Partner keys (by id, never the key): ' + Object.entries(pk).map(([id, u]) => `<b>${esc(id)}</b> ${(u.partner_call||{}).week || 0} calls/7d${(u.partner_capped||{}).week ? ", capped " + u.partner_capped.week : ""}`).join(" · ") + '</div>' : "";
+  const scn = api.scan || {};
+  $("apiScan").innerHTML = (scn.hits || []).length
+    ? `<div class="s" style="color:#f87171"><b>Secrets-in-code scan found ${scn.hits.length}:</b> ${scn.hits.map(h => esc(h.file + ":" + h.line + " " + h.kind + " " + h.masked)).join(" · ")} — rotate that key now.</div>`
+    : `<div class="s" style="color:#4ade80">Secrets-in-code scan: clean${scn.at ? " (" + esc(String(scn.at).slice(0, 16).replace("T", " ")) + ")" : ""}.</div>`;
+  $("apiAudit").textContent = api.dependency_audit ? ("last marked " + api.dependency_audit) : "never marked";
   const cf = d.config || {};
   $("seConfig").innerHTML = Object.entries(cf.models || {}).map(([k, v]) => `<span>${esc(k.replace("GLOWBY_", ""))} <b>${esc(v || "default")}</b></span>`).join("") +
     Object.entries(cf.flags || {}).filter(([k, v]) => v).map(([k, v]) => `<span>${esc(k.replace("GLOWBY_", ""))} <b>${esc(v)}</b></span>`).join("") +
     Object.entries(cf.secrets || {}).map(([k, v]) => `<span style="${v ? "" : "opacity:.5"}">${esc(k)} <b>${v ? "set" : "unset"}</b></span>`).join("");
+}
+async function seAudited(){
+  try { await fetch("/api/admin/security/audited", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
+  loadSecurity(true);
 }
 $("seSignout").onclick = async () => {
   try { await fetch("/api/admin/security/signout_all", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
