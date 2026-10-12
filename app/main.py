@@ -95,7 +95,7 @@ from app.storage import (
 )
 from app import apihealth as _ah  # noqa: E402
 
-VERSION = "0.66.35"
+VERSION = "0.66.36"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2921,10 +2921,14 @@ from app import security as _sec  # noqa: E402
 
 
 def _snapshot(name: str, compute):
+    """The stored weekly snapshot — unless it predates this version, in
+    which case it is recomputed so a new section never shows up empty."""
     try:
         raw = _mkt.setting(f"snap:{name}", "")
         if raw:
-            return json.loads(raw)
+            data = json.loads(raw)
+            if data.get("_version") == VERSION:
+                return data
     except Exception:
         pass
     return _store_snapshot(name, compute)
@@ -2932,6 +2936,10 @@ def _snapshot(name: str, compute):
 
 def _store_snapshot(name: str, compute):
     data = compute()
+    try:
+        data["_version"] = VERSION
+    except Exception:
+        pass
     try:
         _mkt.set_setting(f"snap:{name}", json.dumps(data, default=str))
     except Exception:
@@ -3052,15 +3060,18 @@ def api_admin_signout_all(req: KeyOnly):
     return {"ok": True, "signed_out": n}
 
 
-@app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
-def admin_page() -> str:
+@app.get("/admin", include_in_schema=False)
+def admin_page():
     """Admin dashboard shell. Renders nothing sensitive until the admin
-    key is entered client-side and verified against /api/admin/dashboard."""
+    key is entered client-side and verified against /api/admin/dashboard.
+    v0.66.36: served with no-store — a browser that cached the old page
+    kept showing old sections while the version pill (from the API) said
+    the new version (Inderpreet, Oct 12)."""
     global _admin_template_cache
     if _admin_template_cache is None:
         with open(_ADMIN_TEMPLATE_PATH, encoding="utf-8") as f:
             _admin_template_cache = f.read()
-    return _admin_template_cache
+    return HTMLResponse(_admin_template_cache, headers={"Cache-Control": "no-store, max-age=0"})
 
 
 @app.get("/health")
