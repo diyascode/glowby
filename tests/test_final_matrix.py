@@ -1196,7 +1196,7 @@ if [c["model"] for c in _fc.messages.calls] != ["claude-fable-5-1", _rv.FALLBACK
 _pm = _fc.messages.calls[0]["messages"][0]["content"]
 if "NCI [refutes]" not in _pm or "Reader's note: n" not in _pm or "only propose" not in _pm: fails.append("m78 prompt missing evidence/note/guardrail")
 _m78 = open("app/main.py").read()
-for _n in ('"/api/admin/review/run"', '"/api/admin/review/latest"', "def _review_due", "run_flag_review(reason=\"weekly\")", "spent >= DAILY_BUDGET_USD:\n        return {\"ok\": False, \"detail\": \"daily budget reached; review skipped\"}"):
+for _n in ('"/api/admin/review/run"', '"/api/admin/review/latest"', "def _review_due", "run_flag_review(reason=\"weekly\")", "spent >= _budget():\n        return {\"ok\": False, \"detail\": \"daily budget reached; review skipped\"}"):
     if _n not in _m78: fails.append(f"m78 main missing {_n[:40]}")
 _a78 = open("app/templates/admin.html").read()
 if 'id="runReview"' not in _a78 or "accept → rule to build" not in _a78 or "score was right" not in _a78: fails.append("m78 admin review card missing")
@@ -2727,6 +2727,62 @@ try:
 finally:
     _mkt131.setting, _mkt131.set_setting = _orig_set, _orig_get
 
+# 132. THE CREDIT WINDOW (Oct 24): until GLOWBY_BOOST_UNTIL the daily
+# budget is 50, the crawler pre-checks more, and a nightly harness
+# re-checks 30 stored results WITHOUT saving and records the drift;
+# after the date everything returns to normal by itself.
+from app import boost as _B, qa as _Q
+import datetime as _dt132
+if not _B.active(_dt132.date(2026, 11, 17)) or _B.active(_dt132.date(2026, 11, 18)) or _B.active(_dt132.date(2027, 1, 1)): fails.append("m132 window dates")
+_orig_act = _B.active
+_B.active = lambda now=None: True
+if _B.daily_budget(30) != 50 or _B.precheck_per_run(3) != 6 or _B.qa_per_day() != 30: fails.append("m132 boosted values")
+_B.active = lambda now=None: False
+if _B.daily_budget(30) != 30 or _B.precheck_per_run(3) != 3 or _B.qa_per_day() != 0: fails.append("m132 normal values after the window")
+_B.active = _orig_act
+_cmp = _Q.compare({"report": {"headline_score": 7.8, "headline_state": "mostly_accurate"}}, {"report": {"headline_score": 5.9, "headline_state": "mixed"}})
+if _cmp["drift"] != -1.9 or not _cmp["flipped"] or _cmp["old_word"] != "Mostly accurate" or _cmp["new_word"] != "Mixed": fails.append(f"m132 compare {_cmp}")
+_cmp2 = _Q.compare({"report": {"headline_score": 8.1}}, {"report": {"headline_score": 8.4}})
+if _cmp2["flipped"] or _cmp2["drift"] != 0.3: fails.append("m132 same verdict is not a flip")
+# a qa=True pipeline run must never save and never count as a check
+_saved132 = []
+_orig_sr = m.save_result; m.save_result = lambda k, u, r: _saved132.append(k)
+try:
+    m._QA_TL.no_save = True; m._save("k", "u", {"x": 1})
+    m._QA_TL.no_save = False; m._save("k2", "u", {"x": 1})
+    if _saved132 != ["k2"]: fails.append(f"m132 no-save: {_saved132}")
+finally:
+    m.save_result = _orig_sr; m._QA_TL.no_save = False
+import inspect as _in132
+if "qa: bool = False" not in _in132.getsource(m._run_pipeline).split("\n    try:")[0]: fails.append("m132 pipeline qa flag")
+if "save_result(url_key" in open("app/main.py").read().replace("def _save(url_key, url, result)", "").replace("    save_result(url_key, url, result)\n\n\ndef _run_pipeline", ""): pass
+_src132 = open("app/main.py").read()
+if _src132.count("_save(url_key, ") < 5 or "if spent >= DAILY_BUDGET_USD" in _src132 or "start_precheck(_run_pipeline, _budget," not in _src132: fails.append("m132 budget/precheck wiring")
+_runs132 = []
+def _rp132(jid, url, key, prior_claims=None, qa=False):
+    _runs132.append((jid, key, qa))
+_orig_sample = _Q.sample; _Q.sample = lambda n: [("k1", "https://x/1", {"title": "a", "report": {"headline_score": 7.8}, "claims": []}), ("k2", "https://x/2", {"title": "b", "report": {"headline_score": 2.0}, "claims": []})]
+_orig_rec = _Q._record; _rec132 = []; _Q._record = lambda *a, **k: _rec132.append(a)
+try:
+    _out = _Q.run_nightly(_rp132, lambda jid: {"report": {"headline_score": 7.9}}, lambda: 50.0, lambda: (0, 1.0), 0.15, 2)
+    if _out.get("rechecked") != 2 or not all(q for _, _, q in _runs132) or len(_rec132) != 2: fails.append(f"m132 nightly run {_out} {_runs132}")
+    _runs132.clear(); _rec132.clear()
+    _out2 = _Q.run_nightly(_rp132, lambda jid: None, lambda: 50.0, lambda: (0, 40.0), 0.15, 2)
+    if _out2.get("rechecked") != 0 or _runs132: fails.append("m132 must stop at 60% of the budget")
+finally:
+    _Q.sample = _orig_sample; _Q._record = _orig_rec
+if not any(h[0] == "qa" for h in m._mkt.DAILY_HOOKS): fails.append("m132 nightly hook registered")
+if "Consistency — nightly re-checks" not in open("app/templates/admin.html").read(): fails.append("m132 admin card")
+
+# 133. THE REVIEWER IS BOUND BY THE SAME MEMORY RULE (Oct 24): a weekly
+# review proposed rules that would make Glowby call real reporting of a
+# real death "fabricated" — the reviewer's memory overruling evidence,
+# the exact miss the judge was cured of in v0.66.16. The prompt now
+# carries today's date and the rule.
+import app.agents.review as _RV133
+if "EVIDENCE OUTRANKS YOUR MEMORY" not in _RV133.PROMPT or "{today}" not in _RV133.PROMPT or "Never propose a rule that" not in _RV133.PROMPT: fails.append("m133 reviewer memory rule")
+if 'today=_time.strftime' not in open("app/agents/review.py").read(): fails.append("m133 today not bound")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 131/131 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache")
+    "FINAL MATRIX PASS: 133/133 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule")

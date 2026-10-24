@@ -94,8 +94,10 @@ from app.storage import (
     hide_from_trending, delete_result, save_calibration, latest_calibration, reader_labelled_media,
 )
 from app import apihealth as _ah  # noqa: E402
+from app import boost as _boost  # noqa: E402
+from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.36"
+VERSION = "0.66.37"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -107,6 +109,12 @@ MAX_CLAIMS_WITH_EVIDENCE = 3
 
 # ---- armor knobs (all overridable via Railway Variables) ----
 DAILY_BUDGET_USD = float(os.environ.get("GLOWBY_DAILY_BUDGET_USD", "30"))
+
+
+def _budget() -> float:
+    """Today's daily budget: the normal one, or the credit-window one
+    while that lasts (app/boost.py — ends by itself on the date)."""
+    return _boost.daily_budget(DAILY_BUDGET_USD)
 COST_PER_CHECK_EST = float(os.environ.get("GLOWBY_COST_PER_CHECK_EST", "0.15"))
 RATE_LIMIT_PER_HOUR = int(os.environ.get("GLOWBY_RATE_LIMIT_PER_HOUR", "25"))
 JOB_TIMEOUT_SECONDS = int(os.environ.get("GLOWBY_JOB_TIMEOUT_SECONDS", "480"))
@@ -543,11 +551,22 @@ _fresh_reasons: dict = {}
 _fresh_lock = threading.Lock()
 
 
+_QA_TL = threading.local()  # qa=True: a re-check that must never be saved
+
+
+def _save(url_key, url, result) -> None:
+    """save_result, unless this thread is a consistency re-check."""
+    if getattr(_QA_TL, "no_save", False):
+        return
+    save_result(url_key, url, result)
+
+
 def _run_pipeline(job_id: str, url: str, url_key: str,
                   user_question: str = "", prior_claims=None,
                   image_b64: str = None, detect_ai: bool = False,
                   ai_only: bool = False, audio_upload: str = None,
-                  scam_check: bool = False) -> None:
+                  scam_check: bool = False, qa: bool = False) -> None:
+    _QA_TL.no_save = bool(qa)
     try:
         t0 = time.time()
         _rec_clip = None
@@ -622,7 +641,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     "statement. Try a screenshot of a post, a headline, or "
                     "a chart — or type the claim instead.")
                 try:
-                    save_result(url_key, result)
+                    _save(url_key, "", result)  # (was a 2-arg call that always failed quietly)
                 except Exception:
                     pass
                 _set_job(job_id, status="done", result=result)
@@ -815,7 +834,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             result["timings"] = {"total_s": round(time.time() - t0, 1)}
             result["cached"] = False
             try:
-                save_result(url_key, url, result)
+                _save(url_key, url, result)
             except Exception:
                 pass
             _set_job(job_id, status="done", result=result)
@@ -847,7 +866,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             result["timings"] = {"total_s": round(time.time() - t0, 1)}
             result["cached"] = False
             try:
-                save_result(url_key, url, result)
+                _save(url_key, url, result)
             except Exception:
                 pass
             _set_job(job_id, status="done", result=result)
@@ -955,7 +974,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             _scam_lens_finish(result, _scam_started)  # a pasted "is this a scam?" message is the lens's best case
             result["timings"] = {"total_s": round(time.time() - t0, 1)}
             result["cached"] = False
-            save_result(url_key, url, result)
+            _save(url_key, url, result)
             _set_job(job_id, status="done", result=result)
             return
 
@@ -1106,9 +1125,9 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         with _fresh_lock:
             result["fresh_reason"] = _fresh_reasons.pop(job_id, None) or "first check"
         _ensure_one_line(result)
-        if result.get("transcript_source") != "typed":
+        if result.get("transcript_source") != "typed" and not getattr(_QA_TL, "no_save", False):
             threading.Thread(target=add_video_timing, args=(result["timings"]["total_s"],), daemon=True).start()
-        save_result(url_key, url, result)
+        _save(url_key, url, result)
         # "+ask": the check is DONE — now answer the user's question FROM
         # the completed analysis (attached after save, so the shared cache
         # never carries one person's question).
@@ -1623,7 +1642,7 @@ def api_check(req: CheckRequest, request: Request):
                     "answered — but the full check is above.")
                 return cached
             _, spent = today_usage()
-            if spent < DAILY_BUDGET_USD:
+            if spent < _budget():
                 ans = answer_followup(question, _followup_context(cached))
                 if ans:
                     add_usage(0.02, count=False)
@@ -1661,7 +1680,7 @@ def api_check(req: CheckRequest, request: Request):
             )},
         )
     _, spent = today_usage()
-    if spent >= DAILY_BUDGET_USD:
+    if spent >= _budget():
         _note_failure({"url": raw if looks_like_url(raw) else "", "url_key": url_key}, "Daily budget reached", "budget")
         return JSONResponse(
             status_code=503,
@@ -1845,7 +1864,7 @@ def api_followup(req: FollowupRequest, request: Request):
             status_code=429,
             content={"detail": "You've hit the hourly limit — try again soon."})
     _, spent = today_usage()
-    if spent >= DAILY_BUDGET_USD:
+    if spent >= _budget():
         return JSONResponse(
             status_code=503,
             content={"detail": "Glowby's daily budget is used up — back tomorrow."})
@@ -1879,7 +1898,7 @@ def api_ingest(req: CheckRequest, request: Request):
     if _rate_limited(_client_ip(request)):
         return JSONResponse(status_code=429, content={"detail": "Rate limit reached."})
     _, spent = today_usage()
-    if spent >= DAILY_BUDGET_USD:
+    if spent >= _budget():
         return JSONResponse(status_code=503, content={"detail": "Daily budget reached."})
     try:
         return ingest(req.url)
@@ -2106,7 +2125,7 @@ def api_scam(req: ScamRequest, request: Request):
     if len(text) > 12000:
         return JSONResponse(status_code=422, content={"detail": "Text too long (12,000 characters max)."})
     _, spent = today_usage()
-    if spent >= DAILY_BUDGET_USD:
+    if spent >= _budget():
         return JSONResponse(status_code=503, content={"detail": "Daily budget reached; try again tomorrow."})
     from app.agents import scamengine
     rep = scamengine.analyze(text, context=None)
@@ -2312,7 +2331,7 @@ def run_flag_review(reason: str = "scheduled") -> dict:
     if _REVIEW_STATE["running"]:
         return {"ok": False, "detail": "a review is already running"}
     _, spent = today_usage()
-    if spent >= DAILY_BUDGET_USD:
+    if spent >= _budget():
         return {"ok": False, "detail": "daily budget reached; review skipped"}
     flags = pending_flags()
     if not flags:
@@ -2390,7 +2409,7 @@ def api_admin_calibrate(req: CalibrateRequest):
     if _CAL_STATE["running"]:
         return {"ok": False, "detail": "a calibration run is already in progress"}
     _, spent = today_usage()
-    if spent >= DAILY_BUDGET_USD:
+    if spent >= _budget():
         return {"ok": False, "detail": "daily budget reached"}
 
     def _bg():
@@ -2468,7 +2487,7 @@ def api_admin_scamcal(req: ScamCalRequest):
     _SCAMCAL_STATE["learn"] = None
     if req.learn and (doc.get("misses") or doc.get("false_alarms")):
         _, spent = today_usage()
-        if spent >= DAILY_BUDGET_USD:
+        if spent >= _budget():
             _SCAMCAL_STATE["learn"] = {"error": "daily budget reached", "proposals": []}
         else:
             _SCAMCAL_STATE["running"] = True
@@ -2667,7 +2686,8 @@ def api_admin_dashboard(key: str = ""):
         "today": {
             "fresh_checks": checks,
             "est_spend_usd": round(spent, 2),
-            "budget_usd": DAILY_BUDGET_USD,
+            "budget_usd": _budget(),
+            "boost": _boost.status(),
             "visitors": visitors.get(today_key, 0),
             "failed": failures_today(),
         },
@@ -3043,6 +3063,39 @@ def api_admin_security_audited(req: KeyOnly):
     return {"ok": _mkt.set_setting("sec:pip_audit", time.strftime("%Y-%m-%d"))}
 
 
+def _job_result(job_id: str):
+    with _jobs_lock:
+        j = dict(_jobs.get(job_id) or {})
+    return j.get("result") if j.get("status") == "done" else None
+
+
+def _qa_nightly() -> dict:
+    n = _boost.qa_per_day()
+    if n <= 0:
+        return {"ok": False, "detail": "consistency harness is off (credit window over)"}
+    return {"ok": _qa.start_background(_run_pipeline, _job_result, _budget, today_usage, COST_PER_CHECK_EST, n), "n": n}
+
+
+_mkt.DAILY_HOOKS.append(("qa", int(os.environ.get("GLOWBY_QA_HOUR", "3")), _qa_nightly))
+
+
+@app.get("/api/admin/qa")
+def api_admin_qa(key: str = ""):
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    out = _qa.summary(14)
+    out["boost"] = _boost.status()
+    return out
+
+
+@app.post("/api/admin/qa/run")
+def api_admin_qa_run(req: KeyOnly):
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    n = _boost.qa_per_day() or int(os.environ.get("GLOWBY_QA_DAILY", "30"))
+    return {"ok": _qa.start_background(_run_pipeline, _job_result, _budget, today_usage, COST_PER_CHECK_EST, n), "n": n}
+
+
 @app.get("/api/admin/security")
 def api_admin_security(key: str = "", live: int = 0):
     if not _admin_ok(key):
@@ -3151,7 +3204,7 @@ from app.precheck import start_precheck  # noqa: E402
 
 @app.on_event("startup")
 def _startup_precheck() -> None:
-    start_precheck(_run_pipeline, DAILY_BUDGET_USD, COST_PER_CHECK_EST,
+    start_precheck(_run_pipeline, _budget, COST_PER_CHECK_EST,
                    job_status=lambda jid: (_jobs.get(jid) or {}).get("status"))
     _mkt.start()  # daily clip → TikTok drafts; weekly LinkedIn queue
     threading.Thread(target=_sec.record_deploy, args=(VERSION,), daemon=True).start()  # security ledger

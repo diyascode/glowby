@@ -154,6 +154,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     <span class="chip" id="ver"></span>
     <div class="grow"></div>
     <button class="btn" id="refresh" style="display:none">Refresh</button>
+    <button class="btn" id="signoutAll" style="display:none;border-color:#f87171;color:#f87171" title="Ends every admin session on every device, including this one">Sign out everywhere</button>
     <button class="btn" id="logout" style="display:none">Log out</button>
   </div>
 
@@ -184,6 +185,18 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
     </div>
 
     <div class="tiles" id="tiles2" data-pane="checks"></div>
+
+    <div class="card" data-pane="checks">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Consistency — nightly re-checks</h2>
+        <span><span class="s" id="qaMeta"></span> <button id="qaRun" class="fbf" style="font-size:.78rem;padding:6px 12px">Run now</button></span>
+      </div>
+      <div class="s" style="margin:6px 0 8px">Every night at 3 Pacific, Glowby re-checks a sample of stored results without saving them (half most-viewed, half random) and compares: same clip, a day later, same answer? Shown here: how many re-checked, the average score drift, and the verdicts that flipped — each flip is a candidate for a judge rule. Runs while the credit window lasts (<span id="qaUntil"></span>), then stops on its own.</div>
+      <div id="qaTiles" class="tiles" style="margin-bottom:8px"></div>
+      <div class="s" style="margin-bottom:2px">Per night · <span style="color:#38bdf8">■ re-checked</span> <span style="color:#f87171">■ flipped</span></div>
+      <div id="qaBars"></div>
+      <div id="qaFlips" style="margin-top:8px"></div>
+    </div>
 
     <div class="card" data-pane="checks">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
@@ -683,6 +696,30 @@ async function flResolve(id, status){
   loadFailures();
 }
 
+async function loadQA(){
+  const d = await getJSON("/api/admin/qa?key=" + encodeURIComponent(KEY));
+  if (!d) { if (!window.__qaLoaded) $("qaTiles").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
+  window.__qaLoaded = true;
+  const b = d.boost || {}; $("qaUntil").textContent = b.until || "—";
+  const days = d.days || [], last = days.length ? days[days.length - 1] : null, L = d.last || {};
+  $("qaMeta").textContent = d.running ? "running now…" : (L.at ? `last run ${String(L.at).slice(0, 16).replace("T", " ")} UTC · ${L.rechecked} re-checked in ${L.seconds}s` : (b.qa_per_day ? `${b.qa_per_day} a night` : "off"));
+  const tot = days.reduce((a, x) => a + x.n, 0), fl = days.reduce((a, x) => a + x.flips, 0), big = days.reduce((a, x) => a + x.big, 0);
+  const wd = days.filter(x => x.avg_drift != null); const avg = wd.length ? (wd.reduce((a, x) => a + x.avg_drift * x.n, 0) / Math.max(1, wd.reduce((a, x) => a + x.n, 0))).toFixed(2) : "—";
+  $("qaTiles").innerHTML =
+    tile("Re-checked (14 days)", tot, last ? `last night: ${last.n}` : "no runs yet") +
+    tile("Average drift", avg, "points of score, same clip a day later", +avg > 1.0 ? "warn" : "good") +
+    tile("Verdicts flipped", fl, `${tot ? Math.round(fl / tot * 100) : 0}% of re-checks · ${big} moved 1.5+ points`, tot && fl / tot > 0.1 ? "warn" : "good");
+  const mx = Math.max(1, ...days.map(x => x.n));
+  $("qaBars").innerHTML = !days.length ? '<div class="empty">First numbers appear the morning after the first run.</div>' : '<div style="display:flex;gap:4px;align-items:flex-end;height:80px">' + days.map(x => `<div style="flex:1;text-align:center" title="${x.day}: ${x.n} re-checked, ${x.flips} flipped, avg drift ${x.avg_drift ?? "—"}"><div style="display:flex;flex-direction:column-reverse;height:60px"><i style="display:block;height:${Math.max(2, x.n / mx * 56)}px;background:#38bdf8;border-radius:2px"></i><i style="display:block;height:${x.flips ? Math.max(2, x.flips / mx * 56) : 0}px;background:#f87171;border-radius:2px"></i></div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`).join("") + '</div>';
+  const fl2 = d.flips || [];
+  $("qaFlips").innerHTML = !fl2.length ? "" : '<div class="s" style="margin-bottom:4px">Flips and big moves (newest first)</div>' + fl2.map(f => `<div class="s" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)"><b style="color:var(--ink)">${esc(f.title || f.url_key)}</b> · ${esc(f.old_word || "")} ${f.old_score ?? "—"} → <span style="color:#fab219">${esc(f.new_word || "")} ${f.new_score ?? "—"}</span> (${f.drift > 0 ? "+" : ""}${f.drift ?? "—"}) · <a href="/r/${encodeURIComponent(f.url_key)}" target="_blank">open ↗</a></div>`).join("");
+}
+$("qaRun").onclick = async () => {
+  $("qaRun").disabled = true;
+  try { await fetch("/api/admin/qa/run", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
+  setTimeout(() => { $("qaRun").disabled = false; loadQA(); }, 5000);
+};
+
 async function loadMarketing(){
   const d = await getJSON("/api/admin/marketing?key=" + encodeURIComponent(KEY));
   if (!d) { if (!window.__mkLoaded) $("mkTiles").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
@@ -857,6 +894,7 @@ function render(d){
   $("dash").style.display = ""; $("dash").classList.add("on"); showPane(window.__pane || (location.hash || "#overview").slice(1));
   $("logout").style.display = "inline-block";
   $("refresh").style.display = "inline-block";
+  $("signoutAll").style.display = "inline-block";
   $("ver").textContent = "v" + (d.version || "?");
 
   const s = d.stats || {}, t = d.today || {};
@@ -872,7 +910,7 @@ function render(d){
     tile("Didn’t run today", (t.failed||{}).total ?? 0, (t.failed||{}).total ? ("mostly: " + (FL_LABEL[(t.failed||{}).top] || (t.failed||{}).top) + " · see Checks") : "every request became a check", (t.failed||{}).total ? "warn" : "good") +
     `<div class="tile"><div class="k">Spend today</div>` +
       `<div class="v">$${spend.toFixed(2)}</div>` +
-      `<div class="s">of $${budget} daily budget</div>` +
+      `<div class="s">of $${budget} daily budget${(d.today||{}).boost && d.today.boost.active ? " · credit window until " + esc(d.today.boost.until) : ""}</div>` +
       `<div class="budget"><i class="${barCls}" style="width:${pct}%"></i></div></div>` +
     (() => {
       const st = s.avg_stages || {};
@@ -961,6 +999,7 @@ function render(d){
   loadFeedback();
   loadReview();
   loadFailures();
+  loadQA();
   loadMarketing();
   loadCalibration();
   loadScam();
@@ -1230,10 +1269,18 @@ async function seAudited(){
   try { await fetch("/api/admin/security/audited", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
   loadSecurity(true);
 }
-$("seSignout").onclick = async () => {
-  try { await fetch("/api/admin/security/signout_all", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
-  loadSecurity(true);
-};
+async function signOutEverywhere(btn){
+  // v0.66.37: it used to work silently (and killed your own session too,
+  // so the page just went dead a minute later). Now it says so and sends
+  // you back to the login screen right away. Also in the top bar.
+  btn.disabled = true; btn.textContent = "Signing out…";
+  let n = 0;
+  try { const r = await fetch("/api/admin/security/signout_all", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); const j = await r.json(); n = j.signed_out || 0; } catch(e){}
+  btn.textContent = `Signed out ${n} session(s) — log in again`;
+  setTimeout(() => { sessionStorage.removeItem("gbAdminKey"); location.reload(); }, 1800);
+}
+$("seSignout").onclick = () => signOutEverywhere($("seSignout"));
+$("signoutAll").onclick = () => signOutEverywhere($("signoutAll"));
 
 function startTimer(){
   if (timer) clearInterval(timer);

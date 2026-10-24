@@ -1204,10 +1204,19 @@ def due(now_pt: datetime, last: dict) -> list:
 
 
 WEEKLY_HOOKS: list = []  # main.py adds the Monday admin snapshots (money, security)
+DAILY_HOOKS: list = []   # (name, pacific_hour, fn) — e.g. the 3 am consistency harness
 
 
 def _tick():
     now = datetime.now(_PT)
+    for name, hour, fn in list(DAILY_HOOKS):
+        today_s = now.strftime("%Y-%m-%d")
+        if now.hour >= hour and setting(f"last:{name}") != today_s:
+            set_setting(f"last:{name}", today_s)
+            try:
+                fn()
+            except Exception:
+                pass
     last = {"daily": setting("last:daily"), "weekly": setting("last:weekly")}
     for job in due(now, last):
         set_setting(f"last:{job}", now.strftime("%Y-%m-%d"))

@@ -113,8 +113,13 @@ def crawl_once(run_pipeline, daily_budget: float, cost_per_check: float, job_sta
         videos = fetch_trending(api_key)
     except Exception:
         return 0
+    try:
+        from app.boost import precheck_per_run as _ppr
+        per_run = _ppr(PER_RUN)
+    except Exception:
+        per_run = PER_RUN
     picks = pick_candidates(
-        videos, PER_RUN,
+        videos, per_run,
         lambda u: get_cached(canonical_key(u)) is not None,
         failed=recent_failed_urls(SKIP_FAILED_DAYS))
     done = 0
@@ -125,7 +130,8 @@ def crawl_once(run_pipeline, daily_budget: float, cost_per_check: float, job_sta
             break
         # the crawler only spends its SHARE of the budget — real
         # visitors always keep the rest
-        if spent + cost_per_check > daily_budget * BUDGET_SHARE:
+        budget = daily_budget() if callable(daily_budget) else daily_budget
+        if spent + cost_per_check > budget * BUDGET_SHARE:
             break
         job_id = "pre-" + uuid.uuid4().hex[:8]
         try:

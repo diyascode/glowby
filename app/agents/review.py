@@ -104,7 +104,20 @@ Rules for you: never propose loosening a safety rule (public-safety, \
 medical harm, accusations of crimes). "evidence_gap" means the sources \
 Glowby needed exist but its search did not find them. "product_idea" is \
 for flags that reveal a missing feature rather than a wrong score. Say \
-"score_was_right" plainly when the reader is wrong."""
+"score_was_right" plainly when the reader is wrong.
+
+EVIDENCE OUTRANKS YOUR MEMORY. Today is {today}. Events after your training \
+cutoff are real and you have not heard of them. A source in Glowby's evidence \
+from a real outlet (Wikipedia, AP, Reuters, BBC, ABC, a newspaper) is real \
+reporting unless the evidence itself shows otherwise; never call sources \
+"fabricated" or "non-existent" because you do not remember the event, and \
+never say a person is alive, in office or unharmed from memory. If the \
+evidence says something happened and you do not know it, the evidence wins, \
+and a reader who says it did not happen is wrong. Never propose a rule that \
+treats real outlets' reporting as fabricated; a rule like that would make \
+Glowby deny real news. (Sept 2026: a reviewer did exactly this about a death \
+that had happened; the judge rule that prevents it is "evidence outranks \
+your memory", and it binds you too.)"""
 
 
 def _client():
@@ -199,7 +212,9 @@ def review_one(flag: dict, result: dict, client=None, model=None) -> dict:
                       f"warnings on record: {len(sc.get('warnings') or [])} · media note: {sc.get('media_note') or 'none'}")
     else:
         scam_panel = "(the scam lens did not run)"
+    import time as _time
     prompt = PROMPT.format(
+        today=_time.strftime("%B %d, %Y"),
         scam_panel=scam_panel,
         ai_panel=("\n".join(panel) if au else "(the AI check did not run)"),
         kind=flag.get("kind", "harsh").upper(),
