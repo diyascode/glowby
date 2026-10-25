@@ -121,6 +121,22 @@ FB_VIDEO_MSG = (
 )
 
 
+def post_caption(info: dict, limit: int = 2000) -> str:
+    """Pure: the poster's own words from the platform metadata, minus the
+    noise. Empty when there is nothing beyond the title."""
+    if not isinstance(info, dict):
+        return ""
+    text = (info.get("description") or "").strip()
+    title = (info.get("title") or "").strip()
+    if not text or text == title:
+        return ""
+    # a caption that merely repeats the title plus hashtags is not new content
+    body = re.sub(r"#\S+", "", text).strip()
+    if title and body and body.lower() in title.lower():
+        return ""
+    return text[:limit]
+
+
 def ingest(url: str) -> dict:
     """Main entry point: URL in, transcript dict out."""
     import yt_dlp  # imported here so the app can boot even if install fails
@@ -288,6 +304,13 @@ def ingest(url: str) -> dict:
         "uploader": info.get("uploader") or info.get("channel") or "(unknown)",
         "duration_seconds": duration,
         "posted_date": posted,
+        # v0.66.38: the POST CAPTION — what the poster wrote above the
+        # video. On Facebook and Instagram the claim usually lives here,
+        # not in the speech, and until now Glowby never saw it: only
+        # `title` was passed on, which for a reel is often just the page
+        # name. (Inderpreet, Oct 24: "there were claims in the text and
+        # it didn't catch them".)
+        "post_text": post_caption(info),
         "transcript": None,
         "transcript_source": None,
     }

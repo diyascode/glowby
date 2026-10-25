@@ -25,6 +25,7 @@ with the bucket cards. Known-satire list still runs first (cheap).
 import json
 import os
 import re
+import time
 from app.agents import llm as _llm
 
 MODEL = os.environ.get("GLOWBY_CLAUDE_MODEL", "claude-sonnet-4-5")
@@ -70,11 +71,16 @@ assertions worth examining (most consequential first; health/safety first). \
 SEMANTIC UNITY RULE: conditional statements (if X then Y), comparative \
 dependencies, and causal claims ("X caused Y") are ONE claim unit — never \
 split a linkage into fragments; route by the core action clause or dual-tag.
-CAPTION RULE: the video title/caption is content too. Many short videos put \
-the actual claim in the caption or on-screen text while the audio is just \
-music or vibes. If the title/caption asserts a checkable claim the spoken \
-transcript doesn't, extract it as a claim unit (use the caption text as the \
-quote). If the transcript is only lyrics or filler, rely on the title/caption.
+CAPTION RULE: the video title, the POST CAPTION and on-screen text are \
+content too. Many short videos put the actual claim in the caption or \
+on-screen text while the audio is just music or vibes. If the title, the \
+post caption or the on-screen text asserts a checkable claim the spoken \
+transcript doesn't, extract it as a claim unit (use that text as the quote). \
+If the transcript is only lyrics or filler, rely on the caption. A claim \
+written by the poster counts even when the video itself is a joke, a clip or \
+unrelated footage: readers believe the caption. (Oct 2026: a Facebook reel's \
+caption carried the claim and nothing was checked — the caption had not been \
+passed in at all.)
 EVENT RULE: a video presented as footage of a real event — something that \
 happened, somewhere, to someone (a disaster, accident, fire, crash, protest, \
 arrest, attack, rescue, a public figure doing or saying something, "this just \
@@ -181,6 +187,8 @@ disasters, deaths, arrests — facts that can shift within hours.
 Video title: {title}
 Platform: {platform}
 Uploader: {uploader}
+Post caption (what the poster wrote above/with the video):
+\"\"\"{post_text}\"\"\"
 
 Transcript:
 \"\"\"{transcript}\"\"\"
@@ -217,14 +225,27 @@ plainly not in the transcript. Previous claim units:
 {prior_units}"""
 
 
+LAST_UNREADABLE: dict = {}   # what the models actually said, for admin
+
+
+def fence_safe(text: str) -> str:
+    """Pure: text that cannot close the \"\"\" block it is quoted inside.
+    A caption or transcript containing three quote marks used to end the
+    block early, turning the rest of the poster's words into apparent
+    instructions — and the model then answered in prose, which the parser
+    reads as "unreadable" (Oct 2026)."""
+    return (text or "").replace('"""', '"\u2063""').replace("```", "`\u2063``")
+
+
 def build_prompt(transcript: str, title: str, platform: str,
-                 uploader: str, prior_units=None) -> str:
+                 uploader: str, prior_units=None, post_text: str = "") -> str:
     p = PROMPT.format(
         max_claims=MAX_CLAIMS,
         title=title or "(unknown)",
         platform=platform or "(unknown)",
         uploader=uploader or "(unknown)",
-        transcript=transcript[:15000],
+        post_text=fence_safe((post_text or "").strip()[:2000]) or "(none)",
+        transcript=fence_safe(transcript[:15000]),
     )
     if (platform or "").strip().lower() == "typed claim":
         p += TYPED_RULE
@@ -236,7 +257,7 @@ def build_prompt(transcript: str, title: str, platform: str,
 
 
 def route_claims(transcript: str, title: str = "", platform: str = "",
-                 uploader: str = "", prior_units=None) -> list:
+                 uploader: str = "", prior_units=None, post_text: str = "") -> list:
     """Gate + split + route a transcript. Returns list of claim dicts."""
     if not transcript or not transcript.strip():
         raise RouterError("No transcript text to analyze.")
@@ -264,7 +285,7 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
 
     import anthropic
 
-    prompt = build_prompt(transcript, title, platform, uploader, prior_units)
+    prompt = build_prompt(transcript, title, platform, uploader, prior_units, post_text)
     client = anthropic.Anthropic(api_key=api_key)
     last_err = None
     got_unreadable = False
@@ -288,6 +309,19 @@ def route_claims(transcript: str, title: str = "", platform: str = "",
         # unreadable output ALSO falls through to the next model — the
         # fast model answering badly must never kill the whole check
         got_unreadable = True
+        LAST_UNREADABLE.clear()
+        LAST_UNREADABLE.update({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "model": mdl, "title": (title or "")[:120],
+                                "platform": platform or "", "had_caption": bool(post_text),
+                                "chars": len(raw or ""), "raw": (raw or "")[:600]})
+    if got_unreadable and post_text:
+        # LAST RESORT: something in the poster's caption threw both models
+        # off. The caption is the newest input and the least essential —
+        # run once more without it rather than failing the whole check.
+        try:
+            return route_claims(transcript, title, platform, uploader, prior_units, post_text="")
+        except RouterError:
+            pass
     if got_unreadable:
         raise RouterError("The router returned an unreadable response.")
     raise RouterError(

@@ -204,6 +204,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
         <span class="s">filter: <select id="flDay" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px"><option value="">all days</option></select> <select id="flKind" style="background:var(--surface);color:var(--ink);border:1px solid var(--border);border-radius:8px;padding:4px"><option value="">all reasons</option></select></span>
       </div>
       <div class="s" style="margin:6px 0 8px">Every request that never became a check: a platform that blocked the fetch, a private or deleted link, no speech to check, a timeout, the hourly limit, the daily budget, a crash. Review them here; mark each one reviewed (or fixed when a code change covered it). Nothing about who asked is stored.</div>
+      <div id="flRouter" class="s" style="margin-bottom:6px"></div>
       <div id="flChart"></div>
       <div id="flLegend" class="dist" style="margin:8px 0"></div>
       <div id="flList"></div>
@@ -478,6 +479,14 @@ async function loadFeedback(){
   } else $("fbChart").innerHTML = '<div class="empty">No feedback yet.</div>';
   document.querySelectorAll(".fbf").forEach(b => { b.classList.toggle("on", b.dataset.kind === window.__fbKind);
     b.onclick = () => { window.__fbKind = b.dataset.kind; loadFeedback(); }; });
+  // what the router actually answered, the last time it couldn't be read
+  if ((d.items || []).some(x => x.kind === "router")) {
+    const le = await getJSON("/api/admin/lasterror?key=" + encodeURIComponent(KEY), 1);
+    const ru = (le || {}).router_unreadable || {};
+    $("flRouter").innerHTML = ru.raw
+      ? `<b style="color:#e879f9">What the router said</b> (${esc(String(ru.at || "").slice(0, 16).replace("T", " "))} · ${esc(ru.model || "")}${ru.had_caption ? " · caption was included" : ""}): <span style="color:var(--ink)">${esc(ru.raw.slice(0, 300))}</span>`
+      : "";
+  } else { $("flRouter").innerHTML = ""; }
   const items = d.items || [];
   if (!items.length){ $("flags").innerHTML = '<div class="empty">Nothing here yet.</div>'; return; }
   $("flags").innerHTML = "<table>" + items.map(f =>
@@ -648,7 +657,7 @@ async function loadScam(){
     tile("High or critical", crit, "suspicious " + (bv.suspicious||0) + " · caution " + (bv.use_caution||0), crit ? "warn" : "") +
     tile("Low / not enough info", (bv.low_detected_risk||0) + " / " + (bv.not_enough_information||0), "");
 }
-const FL_LABEL = {blocked:"platform blocked the fetch", geo_blocked:"not available in our server's country", private_or_deleted:"private / deleted / unsupported", fetch_service:"fetch service down", no_speech:"nothing to check (no speech)", too_long:"video too long", transcription:"transcription failed", timeout:"timed out", unexpected:"crash (see last errors)", router:"router refused", rate_limited:"hourly limit", budget:"daily budget", bot_check:"bot check", bad_input:"unreadable upload", other:"other"};
+const FL_LABEL = {blocked:"platform blocked the fetch", geo_blocked:"not available in our server's country", private_or_deleted:"private / deleted / unsupported", fetch_service:"fetch service down", no_speech:"nothing to check (no speech)", too_long:"video too long", transcription:"transcription failed", timeout:"timed out", unexpected:"crash (see last errors)", router:"router couldn't be read", rate_limited:"hourly limit", budget:"daily budget", bot_check:"bot check", bad_input:"unreadable upload", other:"other"};
 const FL_COLOR = {blocked:"#f87171", geo_blocked:"#fb923c", private_or_deleted:"#fb923c", fetch_service:"#f87171", no_speech:"#9aa0b0", too_long:"#9aa0b0", transcription:"#fab219", timeout:"#fab219", unexpected:"#e879f9", router:"#e879f9", rate_limited:"#38bdf8", budget:"#38bdf8", bot_check:"#38bdf8", bad_input:"#9aa0b0", other:"#9aa0b0"};
 window.__flDay = ""; window.__flKind = "";
 async function getJSON(url, tries){

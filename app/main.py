@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.37"
+VERSION = "0.66.39"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -249,6 +249,7 @@ _FAIL_RULES = (
     ("no_speech", r"no speech or captions|couldn't hear any speech|no captions, and Whisper"),
     ("transcription", r"Transcription failed"),
     ("private_or_deleted", r"Could not read this|private, deleted"),
+    ("router", r"router returned an unreadable response|router failed to run"),
     ("unexpected", r"Unexpected error"),
 )
 
@@ -813,6 +814,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             platform=result["platform"],
             uploader=result["uploader"],
             prior_units=prior_units or None,
+            post_text=result.get("post_text", ""),
         )
 
         # SECOND LOOK: rich audio but ZERO checkable claims in it — the
@@ -893,6 +895,7 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                     title=result["title"],
                     platform=result["platform"],
                     uploader=result["uploader"],
+                    post_text=result.get("post_text", ""),
                 )
         for c in claims:
             c["posted_date"] = posted
@@ -2446,7 +2449,9 @@ def api_admin_lasterror(key: str = ""):
     """The last few pipeline failures with their tracebacks (admin only)."""
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
-    return {"errors": list(reversed(_LAST_ERRORS)), "version": VERSION}
+    from app.agents.router import LAST_UNREADABLE as _lu
+    return {"errors": list(reversed(_LAST_ERRORS)), "version": VERSION,
+            "router_unreadable": dict(_lu)}
 
 
 @app.get("/api/admin/calibrate/latest")

@@ -2783,6 +2783,72 @@ import app.agents.review as _RV133
 if "EVIDENCE OUTRANKS YOUR MEMORY" not in _RV133.PROMPT or "{today}" not in _RV133.PROMPT or "Never propose a rule that" not in _RV133.PROMPT: fails.append("m133 reviewer memory rule")
 if 'today=_time.strftime' not in open("app/agents/review.py").read(): fails.append("m133 today not bound")
 
+# 134. THE CLAIM WAS IN THE CAPTION (Oct 24): a Facebook reel whose post
+# text carried the claim came back "nothing to fact-check" — the caption
+# was never passed to the router at all. Only `title` was, which on a
+# reel is often just the page name. Now the poster's own words reach the
+# gate, and the caption rule says a caption claim counts even when the
+# video itself is a joke or unrelated footage.
+from app.agents.ingest import post_caption as _pc134
+if _pc134({"title": "BANow Current", "description": "BREAKING: the mayor resigned this morning."}) != "BREAKING: the mayor resigned this morning.": fails.append("m134 caption not captured")
+if _pc134({"title": "x", "description": "x"}) or _pc134({"title": "Funny clip", "description": "Funny clip #fyp"}) or _pc134({}) or _pc134(None): fails.append("m134 empty/duplicate captions must be dropped")
+if len(_pc134({"title": "t", "description": "y" * 5000})) != 2000: fails.append("m134 caption cap")
+import app.agents.router as _RT134
+_p134 = _RT134.build_prompt("music plays", "BANow Current", "facebook", "BANow Current", post_text="BREAKING: the mayor resigned.")
+if "BREAKING: the mayor resigned." not in _p134 or "Post caption" not in _p134: fails.append("m134 caption missing from the prompt")
+if "readers believe the caption" not in _RT134.PROMPT or "POST CAPTION" not in _RT134.PROMPT: fails.append("m134 caption rule")
+if "(none)" not in _RT134.build_prompt("t", "x", "tiktok", "u"): fails.append("m134 no caption renders as (none)")
+_m134 = open("app/main.py").read()
+if _m134.count('post_text=result.get("post_text", "")') != 2: fails.append("m134 both router call sites must pass the caption")
+if '"post_text": post_caption(info)' not in open("app/agents/ingest.py").read(): fails.append("m134 ingest must store the caption")
+
+# 135. "THE ROUTER RETURNED AN UNREADABLE RESPONSE" (Oct 25): three of
+# these in a day with no way to see why. Now: the quoted blocks cannot
+# be closed early by a caption or transcript that contains three quote
+# marks; what the models actually said is kept for admin; the failure is
+# filed as "router", not "other"; and when the gate can't be read with
+# the poster's caption in the prompt, it runs once more WITHOUT the
+# caption rather than failing the whole check.
+if '"""' in _RT134.fence_safe('a """ b') or "```" in _RT134.fence_safe("a ``` b"): fails.append("m135 fence must not be closable")
+if _RT134.fence_safe("") != "" or _RT134.fence_safe(None) != "": fails.append("m135 fence_safe on empty")
+if '"""' in _RT134.build_prompt('t """ x', "T", "tiktok", "U", post_text='c """ d').split("Post caption")[1].split("Respond with")[0].replace('"""{', "").replace('}"""', "").replace('"""', "", 2): pass
+if m.classify_failure("The router returned an unreadable response.") != "router" or m.classify_failure("The router failed to run. (Details: x)") != "router": fails.append("m135 router failures must not be filed as other")
+_calls135 = []
+class _B135:
+    type = "text"
+    def __init__(self, t): self.text = t
+class _Msg135:
+    def __init__(self, t): self.content = [_B135(t)]
+_GOOD135 = '[{"claim":"c","quote":"q","gate_label":"factual","bucket":"politics","confidence":0.9,"risk_level":"low","reason":"r"}]'
+_orig_create = _RT134._llm.create
+def _fake135(client, **kw):
+    _calls135.append(kw["messages"][0]["content"])
+    return _Msg135("I'm sorry, I can't help with that.") if "POISON" in _calls135[-1] else _Msg135(_GOOD135)
+_RT134._llm.create = _fake135
+_prev_key = _os.environ.get("ANTHROPIC_API_KEY")
+_os.environ["ANTHROPIC_API_KEY"] = "x"
+import sys as _sys135, types as _ty135
+_had_anthropic = _sys135.modules.get("anthropic")
+_sys135.modules["anthropic"] = _ty135.SimpleNamespace(Anthropic=lambda **k: object())
+try:
+    _RT134.LAST_UNREADABLE.clear()
+    _out135 = _RT134.route_claims("speech", "T", "facebook", "Page", post_text="POISON caption")
+    if len(_out135) != 1 or "POISON" in _calls135[-1]: fails.append(f"m135 must retry without the caption: {len(_out135)} calls={len(_calls135)}")
+    if _RT134.LAST_UNREADABLE.get("raw", "")[:10] != "I'm sorry," or not _RT134.LAST_UNREADABLE.get("had_caption"): fails.append(f"m135 raw output not kept: {_RT134.LAST_UNREADABLE}")
+    _calls135.clear()
+    try:
+        _RT134.route_claims("POISON speech", "T", "facebook", "Page")
+        fails.append("m135 a truly unreadable run must still raise")
+    except _RT134.RouterError:
+        pass
+finally:
+    _RT134._llm.create = _orig_create
+    if _had_anthropic is None: _sys135.modules.pop("anthropic", None)
+    else: _sys135.modules["anthropic"] = _had_anthropic
+    if _prev_key is None: _os.environ.pop("ANTHROPIC_API_KEY", None)
+    else: _os.environ["ANTHROPIC_API_KEY"] = _prev_key
+if "router_unreadable" not in open("app/main.py").read() or 'id="flRouter"' not in open("app/templates/admin.html").read(): fails.append("m135 admin surface")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 133/133 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule")
+    "FINAL MATRIX PASS: 135/135 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable")
