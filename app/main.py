@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.39"
+VERSION = "0.66.42"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -262,7 +262,13 @@ def classify_failure(message: str) -> str:
     return "other"
 
 
-def _note_failure(job: dict, message: str, kind: str = "") -> None:
+def _job_source(job_id: str) -> str:
+    """Pure: who asked — a person, the trending crawler, or the harness."""
+    j = str(job_id or "")
+    return "crawler" if j.startswith("pre-") else ("qa" if j.startswith("qa-") else "user")
+
+
+def _note_failure(job: dict, message: str, kind: str = "", source: str = "user") -> None:
     """Record a failed job once, in the background. Never raises."""
     try:
         url = job.get("url") or ""
@@ -272,7 +278,7 @@ def _note_failure(job: dict, message: str, kind: str = "") -> None:
         except Exception:
             platform = ""
         threading.Thread(target=record_failure,
-                         args=(kind or classify_failure(message), platform or "", url, job.get("url_key") or "", message),
+                         args=(kind or classify_failure(message), platform or "", url, job.get("url_key") or "", message, source),
                          daemon=True).start()
     except Exception:
         pass
@@ -293,7 +299,12 @@ def _set_job(job_id: str, **fields) -> None:
             for k in list(_jobs)[: len(_jobs) - MAX_JOBS_KEPT]:
                 _jobs.pop(k, None)
     if first_fail:
-        _note_failure(snap, str(fields.get("error") or ""))
+        # the nightly consistency harness re-checks old videos; its
+        # failures are not requests anybody made, and they were filling
+        # the "didn't run" card every morning at 3am Pacific (Oct 28).
+        # They are counted in the QA card instead.
+        if not str(job_id).startswith("qa-"):
+            _note_failure(snap, str(fields.get("error") or ""), source=_job_source(job_id))
 
 
 def _publish_partial(job_id: str, result: dict, claims: list) -> None:
@@ -712,6 +723,13 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # ingest — without it, videos WITH visual analysis had nothing
         # left for the detector to look at.
         _media_frames = result.pop("frames_media", None)
+        # SECOND-LOOK FRAMES (v0.66.40): kept so the "zero checkable
+        # claims -> read the screen again" net below can actually fire.
+        # `frames_standby` was read in four places and written in none,
+        # so that net had never run once. Only held when the eyes have
+        # NOT already described this video, so nothing is paid twice.
+        if _media_frames and "[WHAT THE VIDEO VISUALLY SHOWS]" not in (result.get("transcript") or ""):
+            result["frames_standby"] = list(_media_frames)[:6]
         _audio_clip = result.pop("audio_clip_b64", None) or _rec_clip
         _au_frames = None
         _au_extra = None

@@ -691,7 +691,7 @@ async function loadFailures(){
     const link = f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))}</a> · <a href="/?u=${encodeURIComponent(f.url)}" target="_blank">retry in Glowby ↗</a>` : (f.url_key ? `<span class="s">${esc(f.url_key.slice(0,40))}</span>` : "");
     const acts = f.status === "new" ? `<button onclick="flResolve(${f.id},'reviewed')">mark reviewed</button> <button onclick="flResolve(${f.id},'fixed')">mark fixed</button>` : `<span class="s">${esc(f.status)}</span> <button onclick="flResolve(${f.id},'new')">reopen</button>`;
     return `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);opacity:${f.status==='new'?1:.55}">
-      <div><b style="color:${FL_COLOR[f.kind]||'#9aa0b0'}">${esc(FL_LABEL[f.kind]||f.kind)}</b> · ${esc(f.platform||"")} · ${esc(when)}</div>
+      <div><b style="color:${FL_COLOR[f.kind]||'#9aa0b0'}">${esc(FL_LABEL[f.kind]||f.kind)}</b> · ${esc(f.platform||"")} · ${esc(when)}${f.source === "crawler" ? ' · <span style="color:#9aa0b0">trending crawler, nobody was waiting</span>' : ""}</div>
       <div class="s">${link}</div>
       <div class="s" style="margin-top:2px">${esc(f.message||"")}</div>
       <div class="racts">${acts}</div>
@@ -717,7 +717,9 @@ async function loadQA(){
   $("qaTiles").innerHTML =
     tile("Re-checked (14 days)", tot, last ? `last night: ${last.n}` : "no runs yet") +
     tile("Average drift", avg, "points of score, same clip a day later", +avg > 1.0 ? "warn" : "good") +
-    tile("Verdicts flipped", fl, `${tot ? Math.round(fl / tot * 100) : 0}% of re-checks · ${big} moved 1.5+ points`, tot && fl / tot > 0.1 ? "warn" : "good");
+    tile("Verdicts flipped", fl, `${tot ? Math.round(fl / tot * 100) : 0}% of re-checks · ${big} moved 1.5+ points`, tot && fl / tot > 0.1 ? "warn" : "good") +
+    (() => { const er = days.reduce((a, x) => a + (x.errors || 0), 0);
+      return tile("Re-checks that errored", er, "the harness's own failures — not in the “didn’t run” card", er > tot * 0.2 ? "warn" : "good"); })();
   const mx = Math.max(1, ...days.map(x => x.n));
   $("qaBars").innerHTML = !days.length ? '<div class="empty">First numbers appear the morning after the first run.</div>' : '<div style="display:flex;gap:4px;align-items:flex-end;height:80px">' + days.map(x => `<div style="flex:1;text-align:center" title="${x.day}: ${x.n} re-checked, ${x.flips} flipped, avg drift ${x.avg_drift ?? "—"}"><div style="display:flex;flex-direction:column-reverse;height:60px"><i style="display:block;height:${Math.max(2, x.n / mx * 56)}px;background:#38bdf8;border-radius:2px"></i><i style="display:block;height:${x.flips ? Math.max(2, x.flips / mx * 56) : 0}px;background:#f87171;border-radius:2px"></i></div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`).join("") + '</div>';
   const fl2 = d.flips || [];
@@ -1258,7 +1260,8 @@ async function loadSecurity(live){
   $("apiServices").innerHTML = svc.map(v => {
     const col = !v.configured ? "#9aa0b0" : v.state === "failing" ? "#f87171" : v.state === "ok" ? "#4ade80" : "#9aa0b0";
     const when = x => x ? String(x).slice(0, 16).replace("T", " ") : "—";
-    return `<div class="s" style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)"><i style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block"></i><b style="min-width:120px;color:var(--ink)">${esc(v.service)}</b><span style="min-width:90px">${v.configured ? esc(v.state) : "not configured"}</span><span>last ok ${when(v.last_ok)} · last error ${when(v.last_err)}${v.err ? " · " + esc(v.err.slice(0, 80)) : ""} · ${v.ok_count} ok / ${v.err_count} failed</span></div>`;
+    const extra = v.service === "hive" && api.hive_key_variable ? ` (key in ${esc(api.hive_key_variable)})` : "";
+    return `<div class="s" style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05)"><i style="width:9px;height:9px;border-radius:50%;background:${col};display:inline-block"></i><b style="min-width:120px;color:var(--ink)">${esc(v.service)}${extra}</b><span style="min-width:90px">${v.configured ? esc(v.state) : "not configured"}</span><span>last ok ${when(v.last_ok)} · last error ${when(v.last_err)}${v.err ? " · " + esc(v.err.slice(0, 80)) : ""} · ${v.ok_count} ok / ${v.err_count} failed</span></div>`;
   }).join("");
   $("apiRotate").textContent = api.rotate_days || 90;
   $("apiKeys").innerHTML = (api.key_ages || []).map(k => `<span style="${k.overdue ? "color:#fab219" : ""}">${esc(k.name)} <b>${k.days}d</b>${k.rotations ? ` · rotated ×${k.rotations}` : ""}</span>`).join("") || '<span>ledger starts at this boot</span>';

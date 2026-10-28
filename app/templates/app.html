@@ -1120,7 +1120,8 @@ function renderList(d){
   }
   if(au&&au.stage2_status==='failed'){
     html+='<div class="aicard aicard-warn"><div class="aicard-t">\u26a0\ufe0f The AI media check could not complete</div>'
-      +'<div class="meta">Use Re-check to try again. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div></div>';
+      +'<div class="meta">Nothing here says the video is real or fake \u2014 the check simply did not finish. Use Re-check to try again. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div>'
+      +(au.stage2_reason?'<div class="meta" style="opacity:.75">Reported: '+esc(au.stage2_reason)+'</div>':'')+'</div>';
   }
   // AI-CHECK DETAILS: the promised evidence panel. Categories lead the
   // headline; the detector's own numbers live here, where a reader who
@@ -1370,6 +1371,11 @@ function auWeak(au){
 }
 function aiRow(au,mediaLeads){
   if(!au||au.stage!==2||mediaLeads)return '';
+  // a failed stage 2 must never read as "no synthetic signal": the
+  // detector did not answer, so Glowby has nothing to report (v0.66.42)
+  if(au.stage2_status==='failed'){
+    return '<div class="airow">\ud83d\udd0d <b>AI check incomplete</b> <span class="st">\u00b7 the detector did not answer</span> <a id="aiDet">details \u2193</a></div>';
+  }
   if(au.origin_result==='no_synthetic_signal'){
     const w=auWeak(au);
     const st=w!==null?('\u00b7 weak signals only ('+w+')'):'\u00b7 no synthetic signal';

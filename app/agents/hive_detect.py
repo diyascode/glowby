@@ -80,8 +80,30 @@ def likely_has_person(text=""):
     return bool(_FACE_WORDS.search(text or ""))
 
 
+# v0.66.41: the key is read by name, so a variable spelled differently in
+# Railway left the detector silently dormant with no way to tell. These
+# aliases are accepted for the main key, and the admin page reports which
+# name was found (never the value).
+_KEY_ALIASES = {
+    "HIVE_API_KEY": ("HIVE_API_KEY", "HIVE_KEY", "HIVE_TOKEN", "HIVE_API", "HIVE_APIKEY",
+                     "GLOWBY_HIVE_KEY", "GLOWBY_HIVE_API_KEY", "HIVE_VISUAL_KEY"),
+    "HIVE_AUDIO_KEY": ("HIVE_AUDIO_KEY", "HIVE_AUDIO", "GLOWBY_HIVE_AUDIO_KEY"),
+    "HIVE_DEEPFAKE_KEY": ("HIVE_DEEPFAKE_KEY", "HIVE_DEEPFAKE", "GLOWBY_HIVE_DEEPFAKE_KEY"),
+}
+
+
+def key_source(name="HIVE_API_KEY"):
+    """Pure-ish: which environment variable actually holds this key, or
+    None. The NAME only — the value is never returned or logged."""
+    for alias in _KEY_ALIASES.get(name, (name,)):
+        if (os.environ.get(alias) or "").strip():
+            return alias
+    return None
+
+
 def _key(name="HIVE_API_KEY"):
-    return (os.environ.get(name) or "").strip()
+    src = key_source(name)
+    return (os.environ.get(src) or "").strip() if src else ""
 
 
 def available():
@@ -190,7 +212,9 @@ def _post_v3(key, image_b64=None, media_url=None):
         })
     try:
         with urllib.request.urlopen(req, timeout=HIVE_TIMEOUT_S) as r:
-            return json.loads(r.read().decode("utf-8", "replace"))
+            out = json.loads(r.read().decode("utf-8", "replace"))
+        _health(True)
+        return out
     except urllib.error.HTTPError as e:
         # keep the vendor's own words — the only reliable way to learn
         # why a call is refused (surfaced to the admin diagnostic only)
@@ -198,7 +222,19 @@ def _post_v3(key, image_b64=None, media_url=None):
             detail = e.read().decode("utf-8", "replace")[:400]
         except Exception:
             detail = ""
+        _health(False, f"HTTP {e.code}: {detail[:120]}")
         raise RuntimeError(f"HTTP {e.code}: {detail}") from None
+    except Exception as e:
+        _health(False, str(e)[:160])
+        raise
+
+
+def _health(ok, err=""):
+    try:
+        from app.apihealth import note
+        note("hive", ok, err)
+    except Exception:
+        pass
 
 
 def _finding_to_result(origin, top, gen, provider_label, classes_seen=None):

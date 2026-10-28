@@ -327,6 +327,12 @@ def merge_stage2(stage1, stage2, gate_reason=None):
     out.setdefault("origin_result", ORIGIN_NO_SIGNAL)
     s2 = stage2 or {}
     out["stage2_status"] = s2.get("assessment_status", STATUS_NOT_ASSESSED)
+    # v0.66.42: WHY it failed. The detector returns a reason ("detector
+    # call failed: HTTP 401 …") and the merge used to drop it, so the
+    # card said "could not complete" with nothing to act on and the
+    # cause had to be guessed (Inderpreet, Oct 28).
+    if s2.get("reason"):
+        out["stage2_reason"] = str(s2["reason"])[:300]
     if gate_reason:
         out["stage2_gate_reason"] = gate_reason
     if s2.get("assessment_status") != STATUS_COMPLETED:

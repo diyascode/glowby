@@ -2849,6 +2849,79 @@ finally:
     else: _os.environ["ANTHROPIC_API_KEY"] = _prev_key
 if "router_unreadable" not in open("app/main.py").read() or 'id="flRouter"' not in open("app/templates/admin.html").read(): fails.append("m135 admin surface")
 
+# 136. THE 3AM ROBOT WAS FILLING THE FAILURE CARD (Oct 28): five "router
+# couldn't be read" rows, all within twenty minutes of 10:00 UTC — the
+# nightly consistency harness, not anyone's request. Failures now carry
+# who asked (user / crawler / qa); the card hides qa and marks crawler
+# rows. Also: `frames_standby` was READ in four places and WRITTEN in
+# none, so the "zero checkable claims -> read the screen again" net had
+# never once run.
+if (m._job_source("qa-ab"), m._job_source("pre-ab"), m._job_source("x7")) != ("qa", "crawler", "user"): fails.append("m136 job source")
+_noted136 = []
+_orig_nf = m._note_failure
+m._note_failure = lambda job, msg, kind="", source="user": _noted136.append(source)
+try:
+    m._set_job("qa-zz", status="queued", started=time.time(), url="https://x/1", url_key="k")
+    m._set_job("qa-zz", status="error", error="The router returned an unreadable response.")
+    m._set_job("pre-zz", status="queued", started=time.time(), url="https://x/2", url_key="k2")
+    m._set_job("pre-zz", status="error", error="boom")
+    m._set_job("user-zz", status="queued", started=time.time(), url="https://x/3", url_key="k3")
+    m._set_job("user-zz", status="error", error="boom")
+    if _noted136 != ["crawler", "user"]: fails.append(f"m136 qa must not be recorded, crawler/user must: {_noted136}")
+finally:
+    m._note_failure = _orig_nf
+import inspect as _in136
+_sig136 = _in136.signature(_ST128.record_failure)
+if "source" not in _sig136.parameters: fails.append("m136 record_failure source")
+_st136 = open("app/storage.py").read()
+if _st136.count("coalesce(source,'user') <> 'qa'") < 3 or "ADD COLUMN IF NOT EXISTS source" not in _st136: fails.append("m136 qa excluded from the card's three queries")
+_pl136 = _in136.getsource(m._run_pipeline)
+if 'result["frames_standby"] = list(_media_frames)[:6]' not in _pl136: fails.append("m136 standby frames must be set")
+if '"[WHAT THE VIDEO VISUALLY SHOWS]" not in (result.get("transcript") or "")' not in _pl136: fails.append("m136 never pay the eyes twice")
+if "hive" not in _AH.SERVICES: fails.append("m136 hive not on the health page")
+_hv136 = {x["service"]: x for x in _AH.services()}.get("hive") or {}
+if _hv136.get("configured") is not False: fails.append("m136 hive should read as not configured without a key")
+if 'note("hive"' not in open("app/agents/hive_detect.py").read(): fails.append("m136 hive not instrumented")
+
+# 137. THE HIVE KEY WAS THERE, UNDER ANOTHER NAME (Oct 28): the detector
+# reads one variable name, so a key spelled differently in Railway left
+# it dormant with nothing on screen to say why. Common spellings are now
+# accepted and the admin page names the variable it found (never the key).
+import app.agents.hive_detect as _HV137
+for _v in ("HIVE_API_KEY", "HIVE_KEY", "HIVE_TOKEN", "HIVE_API", "HIVE_APIKEY", "GLOWBY_HIVE_KEY", "HIVE_VISUAL_KEY", "HIVE_AUDIO_KEY", "HIVE_DEEPFAKE_KEY"):
+    _os.environ.pop(_v, None)
+if _HV137.key_source() is not None or _HV137.available(): fails.append("m137 dormant with no key")
+_os.environ["HIVE_KEY"] = "k1"
+try:
+    if _HV137.key_source() != "HIVE_KEY" or not _HV137.available() or not _HV137.audio_available(): fails.append("m137 alias not accepted")
+    _os.environ["HIVE_API_KEY"] = "k2"
+    if _HV137.key_source() != "HIVE_API_KEY": fails.append("m137 canonical name must win")
+    if {x["service"]: x for x in _AH.services()}["hive"]["configured"] is not True: fails.append("m137 health row")
+    if _AH.report().get("hive_key_variable") != "HIVE_API_KEY": fails.append("m137 admin must name the variable")
+finally:
+    _os.environ.pop("HIVE_KEY", None); _os.environ.pop("HIVE_API_KEY", None)
+if "key in ${esc(api.hive_key_variable)}" not in open("app/templates/admin.html").read(): fails.append("m137 admin shows the variable name")
+_hv137src = open("app/agents/hive_detect.py").read()
+if "the value is never returned or logged" not in _hv137src: fails.append("m137 value must never be exposed")
+
+# 138. "THE AI MEDIA CHECK COULD NOT COMPLETE" WITH NO REASON (Oct 28):
+# the detector returns why it failed ("detector call failed: HTTP 401…")
+# and the merge dropped it, so the card asked the reader to re-check
+# without anyone knowing what broke. The reason now rides through, and a
+# failed stage 2 no longer renders as "no synthetic signal" — a detector
+# that did not answer has found nothing either way.
+import app.agents.authenticity as _AU138
+_m138 = _AU138.merge_stage2({"origin_result": "no_synthetic_signal", "evidence": [], "stage": 1},
+                            {"assessment_status": "failed", "reason": "detector call failed: HTTP 401: bad key"})
+if _m138.get("stage2_status") != "failed" or "401" not in (_m138.get("stage2_reason") or ""): fails.append(f"m138 reason not carried: {_m138.get('stage2_reason')}")
+if len(_AU138.merge_stage2({"evidence": []}, {"assessment_status": "failed", "reason": "x" * 900}).get("stage2_reason", "")) != 300: fails.append("m138 reason cap")
+if "stage2_reason" in _AU138.merge_stage2({"evidence": []}, {"assessment_status": "completed", "origin": "no_synthetic_signal"}): fails.append("m138 no reason when it completed")
+_ap138 = open("app/templates/app.html").read()
+if "au.stage2_reason?" not in _ap138 or "Reported: " not in _ap138: fails.append("m138 card must show the reason")
+if "AI check incomplete" not in _ap138 or "the detector did not answer" not in _ap138: fails.append("m138 failed stage 2 must not read as no-signal")
+_row138 = _ap138.split("function aiRow(")[1].split("function render(")[0]
+if _row138.index("stage2_status==='failed'") > _row138.index("no_synthetic_signal"): fails.append("m138 the failed branch must come first")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 135/135 — captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable")
+    "FINAL MATRIX PASS: 138/138 — captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed")

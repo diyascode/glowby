@@ -31,13 +31,22 @@ import time
 from datetime import datetime, timezone
 
 _ROOT = os.path.dirname(__file__)
-SERVICES = ("anthropic", "openai", "brave", "turnstile", "proxy", "rescue", "tiktok", "linkedin", "google_factcheck")
+SERVICES = ("anthropic", "openai", "brave", "turnstile", "proxy", "rescue", "hive", "tiktok", "linkedin", "google_factcheck")
 ROTATE_DAYS = int(os.environ.get("GLOWBY_KEY_ROTATE_DAYS", "90"))
 PARTNER_DAILY_CAP = int(os.environ.get("GLOWBY_PARTNER_DAILY_CAP", "500"))
 
 _MEM: dict = {}
 _LOCK = threading.Lock()
 _LAST_WRITE: dict = {}
+
+
+def _hive_key_source():
+    """Which variable name holds the Hive key (never the value)."""
+    try:
+        from app.agents.hive_detect import key_source
+        return key_source()
+    except Exception:
+        return None
 
 
 def _db():
@@ -126,9 +135,10 @@ def services() -> list:
     env = os.environ
     configured = {"anthropic": bool(env.get("ANTHROPIC_API_KEY")), "openai": bool(env.get("OPENAI_API_KEY")),
                   "brave": bool(env.get("BRAVE_SEARCH_KEY")), "turnstile": bool(env.get("TURNSTILE_SECRET_KEY")),
-                  "proxy": bool(env.get("WEBSHARE_PROXY_USERNAME") or env.get("PROXY_URL")), "rescue": bool(env.get("GLOWBY_RESCUE_TOKEN")),
+                  "proxy": bool(env.get("WEBSHARE_PROXY_USERNAME") or env.get("PROXY_URL")), "rescue": bool(env.get("GLOWBY_RESCUE_TOKEN") or env.get("SCRAPECREATORS_KEY")),
+                  "hive": bool(_hive_key_source()),
                   "tiktok": bool(env.get("GLOWBY_TIKTOK_CLIENT_KEY")), "linkedin": bool(env.get("GLOWBY_LINKEDIN_CLIENT_ID")),
-                  "google_factcheck": bool(env.get("GOOGLE_API_KEY"))}
+                  "google_factcheck": bool(env.get("GOOGLE_API_KEY") or env.get("YOUTUBE_API_KEY"))}
     out = []
     with _LOCK:
         mem = {k: dict(v) for k, v in _MEM.items()}
@@ -218,7 +228,7 @@ def partner_check(key: str, partners: list) -> tuple:
 
 
 # ---------------------------------------------------------------- key ages
-SECRET_VARS = ("GLOWBY_ADMIN_KEY", "GLOWBY_ADMIN_PASSWORD", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "BRAVE_SEARCH_KEY",
+SECRET_VARS = ("GLOWBY_ADMIN_KEY", "GLOWBY_ADMIN_PASSWORD", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "BRAVE_SEARCH_KEY", "HIVE_API_KEY",
                "TURNSTILE_SECRET_KEY", "GLOWBY_PARTNER_KEYS", "GLOWBY_RESCUE_TOKEN", "WEBSHARE_PROXY_PASSWORD",
                "GLOWBY_TIKTOK_CLIENT_SECRET", "GLOWBY_LINKEDIN_CLIENT_SECRET", "GOOGLE_API_KEY", "DATABASE_URL")
 
@@ -318,6 +328,7 @@ def boot_scan() -> list:
 def report() -> dict:
     from app.marketing import setting
     return {"services": services(), "counters": counters(), "key_ages": key_ages(), "rotate_days": ROTATE_DAYS,
+            "hive_key_variable": _hive_key_source(),
             "partner_daily_cap": PARTNER_DAILY_CAP,
             "scan": {"at": _SCAN["at"], "hits": _SCAN["hits"] if _SCAN["hits"] is not None else scan_source()},
             "dependency_audit": setting("sec:pip_audit", "")}

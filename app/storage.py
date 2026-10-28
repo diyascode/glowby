@@ -1899,7 +1899,8 @@ FAILURE_KINDS = ("blocked", "geo_blocked", "private_or_deleted", "fetch_service"
                  "bot_check", "bad_input", "other")
 
 
-def record_failure(kind: str, platform: str = "", url: str = "", url_key: str = "", message: str = "") -> None:
+def record_failure(kind: str, platform: str = "", url: str = "", url_key: str = "", message: str = "",
+                   source: str = "user") -> None:
     """Store one request that never became a check. No-ops on failure."""
     conn = _get_conn()
     if conn is None:
@@ -1924,9 +1925,11 @@ def record_failure(kind: str, platform: str = "", url: str = "", url_key: str = 
                 )
                 """
             )
+            cur.execute("ALTER TABLE check_failures ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'user'")
             cur.execute(
-                "INSERT INTO check_failures (kind, platform, url, url_key, message) VALUES (%s,%s,%s,%s,%s)",
-                (kind, (platform or "")[:40], (url or "")[:500], (url_key or "")[:160], (message or "")[:400]),
+                "INSERT INTO check_failures (kind, platform, url, url_key, message, source) VALUES (%s,%s,%s,%s,%s,%s)",
+                (kind, (platform or "")[:40], (url or "")[:500], (url_key or "")[:160], (message or "")[:400],
+                 source if source in ("user", "crawler", "qa") else "user"),
             )
             cur.execute("DELETE FROM check_failures WHERE at < now() - interval '90 days'")
     except Exception:
@@ -1943,7 +1946,8 @@ def failure_series(days: int = 14) -> list:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT day::text, kind, count(*) FROM check_failures "
-                "WHERE day > CURRENT_DATE - make_interval(days => %s) GROUP BY day, kind", (days,))
+                "WHERE day > CURRENT_DATE - make_interval(days => %s) AND coalesce(source,'user') <> 'qa' "
+                "GROUP BY day, kind", (days,))
             rows = cur.fetchall()
             cur.execute("SELECT (CURRENT_DATE - make_interval(days => %s - 1) + make_interval(days => g))::date::text "
                         "FROM generate_series(0, %s - 1) g", (days, days))
@@ -1963,7 +1967,8 @@ def list_failures(day: str = "", kind: str = "", limit: int = 100) -> list:
     if conn is None:
         return []
     try:
-        q = "SELECT id, at, kind, platform, url, url_key, message, status FROM check_failures WHERE 1=1"
+        q = ("SELECT id, at, kind, platform, url, url_key, message, status, "
+             "coalesce(source,'user') FROM check_failures WHERE coalesce(source,'user') <> 'qa'")
         args: list = []
         if day:
             q += " AND day = %s"; args.append(day)
@@ -1974,7 +1979,7 @@ def list_failures(day: str = "", kind: str = "", limit: int = 100) -> list:
             cur.execute(q, args)
             rows = cur.fetchall()
         return [{"id": r[0], "at": r[1].isoformat() if r[1] else None, "kind": r[2], "platform": r[3],
-                 "url": r[4], "url_key": r[5], "message": r[6], "status": r[7]} for r in rows]
+                 "url": r[4], "url_key": r[5], "message": r[6], "status": r[7], "source": r[8]} for r in rows]
     except Exception:
         return []
 
@@ -2002,7 +2007,7 @@ def failures_today() -> dict:
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT kind, count(*) FROM check_failures WHERE day = CURRENT_DATE "
-                        "GROUP BY kind ORDER BY 2 DESC")
+                        "AND coalesce(source,'user') <> 'qa' GROUP BY kind ORDER BY 2 DESC")
             rows = cur.fetchall()
         return {"total": sum(int(r[1]) for r in rows), "top": rows[0][0] if rows else None}
     except Exception:
