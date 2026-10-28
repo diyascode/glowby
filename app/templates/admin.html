@@ -300,6 +300,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div class="s" style="margin-bottom:6px">Counted as it happens, reviewed weekly. Services report their own calls; nothing here probes anything extra.</div>
       <div id="apiTiles" class="tiles" style="margin-bottom:10px"></div>
       <div id="apiServices"></div>
+      <div style="margin-top:8px"><button onclick="hiveTest()">Ask the AI detector now</button> <span class="s">one real call, about 1&cent; — it answers in Hive's own words</span><div id="hiveTestOut" class="s" style="margin-top:6px"></div></div>
       <div class="s" style="margin:10px 0 4px">Key ages — the app keeps a salted fingerprint per secret and logs when it changes; values are never seen. Orange past <span id="apiRotate"></span> days.</div>
       <div id="apiKeys" class="dist"></div>
       <div id="apiPartners" style="margin-top:8px"></div>
@@ -659,6 +660,15 @@ async function loadScam(){
 }
 const FL_LABEL = {blocked:"platform blocked the fetch", geo_blocked:"not available in our server's country", private_or_deleted:"private / deleted / unsupported", fetch_service:"fetch service down", no_speech:"nothing to check (no speech)", too_long:"video too long", transcription:"transcription failed", timeout:"timed out", unexpected:"crash (see last errors)", router:"router couldn't be read", rate_limited:"hourly limit", budget:"daily budget", bot_check:"bot check", bad_input:"unreadable upload", other:"other"};
 const FL_COLOR = {blocked:"#f87171", geo_blocked:"#fb923c", private_or_deleted:"#fb923c", fetch_service:"#f87171", no_speech:"#9aa0b0", too_long:"#9aa0b0", transcription:"#fab219", timeout:"#fab219", unexpected:"#e879f9", router:"#e879f9", rate_limited:"#38bdf8", budget:"#38bdf8", bot_check:"#38bdf8", bad_input:"#9aa0b0", other:"#9aa0b0"};
+// v0.66.43: not every row here is a bug. A Facebook group post behind a
+// login wall and a video the uploader deleted are the web saying no —
+// Glowby handled them correctly and there is nothing to fix. Mixing those
+// in with real breakage made the card impossible to read daily, so each
+// row now says which kind it is and the list leads with the count.
+const FL_BLAME = {blocked:"web", geo_blocked:"web", private_or_deleted:"web", no_speech:"web", too_long:"web",
+                  bad_input:"web", rate_limited:"limit", budget:"limit"};
+const FL_BLAME_TAG = {web:"nothing to fix · the web said no", limit:"a limit we set, working as intended", ours:"ours to fix"};
+const flBlame = k => FL_BLAME[k] || "ours";
 window.__flDay = ""; window.__flKind = "";
 async function getJSON(url, tries){
   // one retry after a short wait: a flaky connection used to wipe a loaded card with "Could not load"
@@ -686,12 +696,17 @@ async function loadFailures(){
   const ksel = $("flKind"); if (ksel.options.length <= 1) Object.keys(FL_LABEL).forEach(k => { const o = document.createElement("option"); o.value = k; o.textContent = FL_LABEL[k]; ksel.appendChild(o); });
   ksel.value = window.__flKind;
   const items = d.items || [];
-  $("flList").innerHTML = !items.length ? '<div class="empty">Nothing failed' + (window.__flDay || window.__flKind ? " for that filter" : " in the last 14 days") + '.</div>' : items.map(f => {
+  const nOurs = items.filter(f => flBlame(f.kind) === "ours").length;
+  const lead = !items.length ? "" :
+    `<div class="s" style="margin:2px 0 8px;padding:6px 8px;border-radius:7px;background:rgba(255,255,255,.04)">` +
+    (nOurs ? `<b style="color:#f87171">${nOurs} of ${items.length} are ours to fix.</b> ` : `<b style="color:#4ade80">None of these ${items.length} are ours to fix.</b> `) +
+    `The rest are the web saying no — a login wall, a deleted video, a limit we set. Glowby handled those correctly.</div>`;
+  $("flList").innerHTML = !items.length ? '<div class="empty">Nothing failed' + (window.__flDay || window.__flKind ? " for that filter" : " in the last 14 days") + '.</div>' : lead + items.map(f => {
     const when = (f.at||"").slice(5,16).replace("T"," ");
     const link = f.url ? `<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.url.replace(/^https?:\/\/(www\.)?/,"").slice(0,70))}</a> · <a href="/?u=${encodeURIComponent(f.url)}" target="_blank">retry in Glowby ↗</a>` : (f.url_key ? `<span class="s">${esc(f.url_key.slice(0,40))}</span>` : "");
     const acts = f.status === "new" ? `<button onclick="flResolve(${f.id},'reviewed')">mark reviewed</button> <button onclick="flResolve(${f.id},'fixed')">mark fixed</button>` : `<span class="s">${esc(f.status)}</span> <button onclick="flResolve(${f.id},'new')">reopen</button>`;
     return `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);opacity:${f.status==='new'?1:.55}">
-      <div><b style="color:${FL_COLOR[f.kind]||'#9aa0b0'}">${esc(FL_LABEL[f.kind]||f.kind)}</b> · ${esc(f.platform||"")} · ${esc(when)}${f.source === "crawler" ? ' · <span style="color:#9aa0b0">trending crawler, nobody was waiting</span>' : ""}</div>
+      <div><b style="color:${FL_COLOR[f.kind]||'#9aa0b0'}">${esc(FL_LABEL[f.kind]||f.kind)}</b> · ${esc(f.platform||"")} · ${esc(when)}${f.source === "crawler" ? ' · <span style="color:#9aa0b0">trending crawler, nobody was waiting</span>' : ""} · <span style="font-size:.62rem;padding:1px 6px;border-radius:999px;background:rgba(255,255,255,.07);color:${flBlame(f.kind)==='ours'?'#f87171':'#9aa0b0'}">${esc(FL_BLAME_TAG[flBlame(f.kind)])}</span></div>
       <div class="s">${link}</div>
       <div class="s" style="margin-top:2px">${esc(f.message||"")}</div>
       <div class="racts">${acts}</div>
@@ -1276,6 +1291,39 @@ async function loadSecurity(live){
   $("seConfig").innerHTML = Object.entries(cf.models || {}).map(([k, v]) => `<span>${esc(k.replace("GLOWBY_", ""))} <b>${esc(v || "default")}</b></span>`).join("") +
     Object.entries(cf.flags || {}).filter(([k, v]) => v).map(([k, v]) => `<span>${esc(k.replace("GLOWBY_", ""))} <b>${esc(v)}</b></span>`).join("") +
     Object.entries(cf.secrets || {}).map(([k, v]) => `<span style="${v ? "" : "opacity:.5"}">${esc(k)} <b>${v ? "set" : "unset"}</b></span>`).join("");
+}
+// v0.66.43: "The AI media check could not complete" used to be the end of
+// the trail — the detector's own words were thrown away, so the cause had
+// to be guessed. This button makes one real call and translates whatever
+// Hive says back into something you can act on without reading HTTP codes.
+const HIVE_PLAIN = [
+  [/HTTP 401/, "Hive is refusing the key. The variable is set, but the value is wrong, revoked, or belongs to a different Hive project. Paste a fresh key into HIVE_API_KEY in Railway and redeploy."],
+  [/HTTP 402|out of credit|insufficient|balance|quota/i, "The Hive project has no credit left. Top it up in the Hive dashboard — nothing to change in the app."],
+  [/HTTP 403/, "The key works but this project is not allowed to use this model. Enable the AI-generated-content model for it in the Hive dashboard."],
+  [/HTTP 404/, "Hive does not know this model name for this account — it was renamed or moved. The model we ask for is shown above."],
+  [/HTTP 429/, "Hive is throttling us: too many calls at once. Nothing to fix; it clears by itself."],
+  [/HTTP 5\d\d/, "Hive's own servers are erroring. Nothing to fix on our side; try again later."],
+  [/timed out|timeout/i, "Hive did not answer in time. Usually temporary."],
+  [/missing in environment/i, "No Hive key is set at all. Add HIVE_API_KEY in Railway → Variables."],
+];
+function hivePlain(text){
+  for (const [re, msg] of HIVE_PLAIN) if (re.test(text || "")) return msg;
+  return "";
+}
+async function hiveTest(){
+  const out = $("hiveTestOut");
+  out.innerHTML = "asking Hive…";
+  const d = await getJSON("/api/admin/hivetest?key=" + encodeURIComponent(KEY), 1);
+  if (!d) { out.innerHTML = '<span style="color:#f87171">Could not reach the app.</span>'; return; }
+  const r = d.result || {};
+  const head = `<div class="s">model <b>${esc(d.model||"")}</b> · key ${d.key_present ? "set ("+d.key_length+" chars)" : '<span style="color:#f87171">not set</span>'} · AI check ${d.authenticity_enabled ? "on" : '<span style="color:#f87171">switched off</span>'}</div>`;
+  if (r.ok){
+    out.innerHTML = head + `<div style="color:#4ade80"><b>The detector answered.</b> It read the test image and returned ${r.class_lists_found} score list(s). Hive is working — if a video still says the check could not complete, the problem is that video's frames, not the key.</div>`;
+    return;
+  }
+  const detail = String(r.detail || "no detail");
+  const plain = hivePlain(detail);
+  out.innerHTML = head + `<div style="color:#f87171"><b>The detector refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Hive's exact words: ${esc(detail.slice(0,300))}</div>`;
 }
 async function seAudited(){
   try { await fetch("/api/admin/security/audited", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}

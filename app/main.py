@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.42"
+VERSION = "0.66.43"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2621,9 +2621,13 @@ def api_admin_hivetest(key: str = ""):
     guessing from documentation."""
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    # v0.66.43: read the key the same way the detector does (aliases), so
+    # a key set under a different variable name is never reported missing
+    _hk = hive_detect.key_source("HIVE_API_KEY") or "HIVE_API_KEY"
     out = {"authenticity_enabled": AUTHENTICITY_ENABLED,
-           "key_present": bool((os.environ.get("HIVE_API_KEY") or "").strip()),
-           "key_length": len((os.environ.get("HIVE_API_KEY") or "").strip()),
+           "key_variable": _hk,
+           "key_present": bool((os.environ.get(_hk) or "").strip()),
+           "key_length": len((os.environ.get(_hk) or "").strip()),
            "model": hive_detect.HIVE_MODEL,
            "endpoint": hive_detect.HIVE_V3_BASE}
     try:
