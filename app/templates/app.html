@@ -1040,10 +1040,12 @@ function renderList(d){
   // TWIN DIALS: when the authenticity lane has a real FINDING, the
   // headline shows two equal dials (CLAIMS + AI). "No signal" never gets
   // a dial - absence is the honest blank (founder design, Sep 2026).
+  // v0.66.49: likelihood, not certainty. The top two are facts about the
+  // file and read flatly; the detector's own finding reads as a leaning.
   const AU_STYLES={verified_ai_provenance:['#a78bfa','verified AI \u2014 signed provenance',1.0],
                    declared_ai:['#38bdf8','creator-labeled AI',0.95],
-                   likely_synthetic:['#f87171','strong synthetic signals',0.95],
-                   inconclusive:['#8a86a3','authenticity unclear',0.45]};
+                   likely_synthetic:['#f87171','leans AI-generated',0.95],
+                   inconclusive:['#8a86a3','could go either way',0.45]};
   const auStyle=au?AU_STYLES[au.origin_result]:null;
   // EVIDENCE LEADS: when there is nothing to fact-check but the media
   // lane HAS an answer, the media answer is the headline — no sad empty
@@ -1096,6 +1098,11 @@ function renderList(d){
       +'<div class="dial-state" style="color:'+auStyle[0]+'">'+esc(auStyle[1])+'</div>'
       +(au.manipulation_scope==='face'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">signals concentrated on a face \u2014 rest not verified</div>':'')
       +(au.manipulation_scope==='voice'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">the voice itself shows signs of cloning</div>':'')
+      // v0.66.48: say the size of the doubt, not just that doubt exists.
+      // Independent testing in 2026 put detectors near chance on the newest
+      // generators, so "no signal" deserves a plain warning, not a link
+      // nobody clicks. The link stays for the reader who wants the detail.
+      +(au.origin_result==='no_synthetic_signal'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">detectors miss much of today\u2019s AI video \u2014 this is not evidence it is real</div>':'')
       +'<div class="dial-state" style="font-weight:400"><a href="/about#aimedia" target="_blank" style="color:#8a86a3">limits of AI detection \u2197</a></div>'
       +'</div></div>'+verdictPill(rep)+fbRowAi(d)+
     fbRow(d)+
@@ -1127,6 +1134,14 @@ function renderList(d){
         // the card used to read identically to a brand-new failure.
         :'<div class="meta" style="opacity:.75">This check was saved before Glowby started recording why a detector failed, so there is nothing to show here. Re-check it and the reason will appear.</div>')+'</div>';
   }
+  // FACTS FIRST (v0.66.49). The old panel led with the detector, so a
+  // reader met an opinion about pixels before meeting anything solid —
+  // and a quiet detector read as "it's real". This block leads with what
+  // is actually knowable about the file, says plainly that an absence is
+  // normal rather than suspicious, states what was looked at, and only
+  // then gives the detector's leaning. The research behind the demotion
+  // is on /about#aimedia.
+  html+=aiFacts(au);
   // AI-CHECK DETAILS: the promised evidence panel. Categories lead the
   // headline; the detector's own numbers live here, where a reader who
   // wants to judge for themselves can see exactly what was found.
@@ -1157,7 +1172,8 @@ function renderList(d){
     }
     html+='<div class="meta" style="margin-top:8px">Stage 1 '+esc(st[au.assessment_status]||au.assessment_status||'not run')
       +(au.stage2_status?(' \u00b7 forensic detector '+esc(st[au.stage2_status]||au.stage2_status)):'')
-      +'. Strong signals only at very high detector confidence; the middle band is \u201cunclear\u201d; anything lower is \u201cno signal\u201d, which never means proven real. '
+      +'. '+(au.thresholds?('Bands in force: leans AI at '+au.thresholds.likely+' and above, unclear from '+au.thresholds.unclear+', below that no signal. '):'Strong signals only above the detector\u2019s decision threshold; the middle band is \u201cunclear\u201d; anything lower is \u201cno signal\u201d. ')
+      +'\u201cNo signal\u201d never means proven real. '
       +'<a href="/about#aimedia" target="_blank">how this works \u2197</a></div>';
     html+='</div></details>';
   }
@@ -1372,6 +1388,52 @@ function auWeak(au){
   const ev=(au&&au.evidence)||[];
   const h=ev.find(e=>e&&e.provider==='hive'&&e.band==='weak');
   return h?(h.raw_score):null;
+}
+// v0.66.49: how far the detector leans, in words. Never a percentage —
+// a number in the headline implies a precision this field has not earned
+// (DF26, Sept 2026). The raw score stays in the details panel below.
+function aiLean(au){
+  const o=au.origin_result||'';
+  if(o==='verified_ai_provenance')return 'This is not a leaning. The file carries a signed record saying it was AI-generated.';
+  if(o==='declared_ai')return 'This is not a leaning either. Whoever posted it said it was AI-made.';
+  if(o==='likely_synthetic')return au.corroboration==='confirmed'
+    ? 'Towards AI-generated — and a second look at different parts of the video found the same thing. That is the strongest the detector gets, and it is still a leaning, not proof.'
+    : 'Towards AI-generated. Treat it as a reason to look harder, not as a finding.';
+  if(o==='inconclusive')return 'Nowhere in particular. Part of what it saw looked unusual and part did not — which happens in ordinary video all the time.';
+  return 'Nothing in either direction. It found no sign of AI, and on the newest generators detectors miss a great deal, so this is not a reason to believe the video is real.';
+}
+function aiFacts(au){
+  if(!au||!(au.stage===2||au.stage2_status))return '';
+  const ev=au.evidence||[];
+  const has=p=>ev.some(e=>e.provider===p);
+  const row=(ok,label,yes,no)=>'<div class="audet-row"><b>'+(ok?'✓ ':'— ')+esc(label)+'</b>'
+    +'<div class="meta">'+(ok?yes:no)+'</div></div>';
+  let h='<div class="aicard"><div class="aicard-t">🧾 What we actually know about this file</div><div class="audet-body">';
+  h+=row(has('c2pa'),'Content credentials',
+    'The file carries a signed record of how it was made. This is the strongest evidence that exists, and it is why it outranks everything below.',
+    'None in this file. Most videos carry none yet, so this is normal — it is not a point against the video.');
+  h+=row(has('caption')||has('transcript'),'Creator or platform label',
+    'The poster, or the platform, says this is AI-made.',
+    'Nobody labeled it as AI. An unlabeled real video looks exactly the same, so this tells you very little on its own.');
+  h+=row(!!(au.earliest&&au.earliest.url),'Where it appeared before',
+    'Earlier copies were found on the web — the earliest match is linked below.',
+    'No earlier copy found. The search covers only part of the web, so this is not evidence the video is new.');
+  h+='</div>';
+  const n=au.frames_analyzed||0, bits=[];
+  if(n)bits.push(n+' still frame'+(n===1?'':'s')+' sampled from across the video');
+  if(ev.some(e=>e.signal_type==='forensic_audio_voice'))bits.push('the audio, for a cloned voice');
+  if(ev.some(e=>e.provider==='claude_vision'))bits.push('a frame-by-frame read for visual tells');
+  if(bits.length)h+='<div class="meta" style="margin-top:8px"><b>What was looked at:</b> '+esc(bits.join('; '))+'. Sampling means a short manipulated stretch inside a long video can be missed.</div>';
+  // v0.66.50: when provenance or the creator's label already settled it,
+  // say the detector was deliberately not run. Silence there used to look
+  // like a failure; it is the system declining to pay to double-check a
+  // signature it already trusts more than the detector.
+  if(au.stage2_gate_reason==='already settled by provenance/label')
+    h+='<div class="meta" style="margin-top:6px"><b>The forensic detector was not run.</b> It did not need to be — the evidence above outranks anything it could have said, so Glowby did not spend a paid check to second-guess it.</div>';
+  else h+='<div class="meta" style="margin-top:6px"><b>Which way the detector leans:</b> '+aiLean(au)+'</div>';
+  if(au.demoted_reason)h+='<div class="meta" style="margin-top:4px;opacity:.85">'+esc(au.demoted_reason)+'</div>';
+  h+='<div class="meta" style="margin-top:6px"><a href="/about#aimedia" target="_blank">why the detector is ranked last ↗</a></div>';
+  return h+'</div>';
 }
 function aiRow(au,mediaLeads){
   if(!au||au.stage!==2||mediaLeads)return '';

@@ -45,14 +45,34 @@ HIVE_MODEL = os.environ.get(
     "HIVE_MODEL_SLUG", "hive/ai-generated-and-deepfake-content-detection")
 HIVE_TIMEOUT_S = 45
 
-# Conservative thresholds (calibration may later tighten/loosen these
-# against the test jar — never loosen without jar evidence):
-#   >= 0.90  -> likely_synthetic ("strong synthetic-media signals")
-#   0.50-0.90 -> inconclusive     (detector unsure; say so, never guess)
-#   < 0.50   -> no finding from this detector (absence proves nothing)
-THRESH_LIKELY = 0.90
-THRESH_INCONCLUSIVE = 0.50
-THRESH_WEAK = 0.10  # below this: nothing; 0.10-0.50: "weak signals", still no verdict
+# Thresholds (v0.66.49 — lowered on Inderpreet's call, Oct 29 2026):
+#   >= 0.70  -> likely_synthetic ("leans AI-generated", never "is AI")
+#   0.35-0.70 -> inconclusive     (could go either way; say so, never guess)
+#   < 0.35   -> no finding from this detector (absence proves nothing)
+#
+# WHY THEY MOVED. At 0.90 the lane effectively never spoke, and silence
+# reads to a human as "it's real" — the one thing Glowby must never imply.
+# At 0.70 it speaks more often, which also means it will be wrong more
+# often in the other direction. That trade is only safe because of the
+# CORROBORATION RULE in detection.py: a frame-based "likely" must survive
+# a second pass on DIFFERENT frames or it drops to inconclusive. One odd
+# frame is not an accusation. Tune without a deploy via the env vars.
+#
+# The honest caveat, from DF26 (arXiv:2609.07369, Sept 2026): detectors
+# score near chance on the newest generators. Moving a line on a weak
+# signal does not create accuracy — it only changes which way we are
+# wrong. The reader-feedback split (ai_missed vs false_alarm) in admin is
+# how we find out whether this was the right direction.
+THRESH_LIKELY = float(os.environ.get("GLOWBY_AI_THRESH_LIKELY", "0.70"))
+THRESH_INCONCLUSIVE = float(os.environ.get("GLOWBY_AI_THRESH_UNCLEAR", "0.35"))
+THRESH_WEAK = float(os.environ.get("GLOWBY_AI_THRESH_WEAK", "0.10"))
+
+
+def thresholds() -> dict:
+    """The bands in force, recorded on every result so an old card can be
+    read with the numbers that actually produced it."""
+    return {"likely": THRESH_LIKELY, "unclear": THRESH_INCONCLUSIVE,
+            "weak": THRESH_WEAK}
 
 # class names that count as "synthetic" in Hive AI-content responses
 _SYNTHETIC_CLASSES = {"ai_generated", "deepfake", "yes_deepfake",

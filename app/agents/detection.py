@@ -38,7 +38,11 @@ def _needs_second_pass(s2: dict) -> bool:
     if not isinstance(s2, dict) or s2.get("assessment_status") != "completed":
         return False
     top = s2.get("top_score")
-    return top is not None and SECOND_PASS_LOW <= float(top) < SECOND_PASS_HIGH
+    # v0.66.49: no upper bound any more. A strong first pass used to skip
+    # the second look because it was "already strong" — exactly backwards
+    # once the bar came down to 0.70. The stronger the claim, the more it
+    # deserves a second look at different frames before Glowby says it.
+    return top is not None and float(top) >= SECOND_PASS_LOW
 
 
 def _opinion_evidence(op: dict) -> dict:
@@ -122,6 +126,7 @@ def run_media_detection(au: dict, *, frames=None, extra_frames=None, image_b64=N
         au["audio_only"] = True
 
     # 2. adaptive second pass on uncertain videos
+    _pass2_top = None
     if extra_frames and _needs_second_pass(s2):
         try:
             s2b = hive_detect.detect_video_frames(extra_frames)
@@ -130,10 +135,32 @@ def run_media_detection(au: dict, *, frames=None, extra_frames=None, image_b64=N
                     ev["signal_type"] = "forensic_video_frames_pass2"
                 au = merge_stage2(au, s2b, reason)
                 au["frames_analyzed"] = (s2.get("frames_analyzed") or 0) + (s2b.get("frames_analyzed") or 0)
-                au["top_score"] = max(float(s2.get("top_score") or 0), float(s2b.get("top_score") or 0))
+                _pass2_top = float(s2b.get("top_score") or 0)
+                au["top_score"] = max(float(s2.get("top_score") or 0), _pass2_top)
                 au["second_pass"] = True
         except Exception:
             pass
+
+    # 2b. CORROBORATION (v0.66.49). The bar for "leans AI-generated" came
+    # down from 0.90 to 0.70, so a single odd frame can now reach it. One
+    # frame is not an accusation: a frame-based "likely" has to be backed
+    # by a second pass on DIFFERENT frames that at least reaches the
+    # unclear band. Otherwise it drops to inconclusive and says why.
+    # Declared and verified origins are untouched — they outrank the
+    # detector and are facts about the file, not opinions about pixels.
+    if au.get("origin_result") == ORIGIN_LIKELY and frames and not image_b64:
+        if _pass2_top is None:
+            au["corroboration"] = "not_available"
+        elif _pass2_top >= hive_detect.THRESH_INCONCLUSIVE:
+            au["corroboration"] = "confirmed"
+        else:
+            au["corroboration"] = "not_confirmed"
+            au["origin_result"] = ORIGIN_INCONCLUSIVE
+            au["display"] = ("could go either way — one part of the video "
+                             "looked synthetic, the rest did not")
+            au["demoted_reason"] = (
+                "a second look at different frames did not find the same "
+                "signal, so this is reported as unclear rather than as AI")
 
     # 3. audio
     if audio_b64 and hive_detect.audio_available():
@@ -197,4 +224,10 @@ def run_media_detection(au: dict, *, frames=None, extra_frames=None, image_b64=N
         except Exception:
             pass
     au["stage"] = 2
+    # v0.66.49: record the bands that produced this result, so a card read
+    # months from now can be interpreted with the numbers in force then
+    try:
+        au["thresholds"] = hive_detect.thresholds()
+    except Exception:
+        pass
     return au

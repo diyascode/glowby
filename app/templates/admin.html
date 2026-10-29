@@ -464,7 +464,16 @@ async function loadFeedback(){
     tile("Harsh rate · 30 days", rate, (sm.harsh||0)+(sm.wrong||0) + " of " + (sm.total||0) + " taps said harsh or wrong", (sm.harsh_rate||0) > 0.3 ? "bad" : "") +
     tile("Fair · 30 days", sm.fair||0, "") + tile("Harsh · 30 days", sm.harsh||0, "") + tile("Wrong · 30 days", sm.wrong||0, "") +
     tile("All-time taps", (sm.all_time?.fair||0)+(sm.all_time?.harsh||0)+(sm.all_time?.wrong||0), "fair " + (sm.all_time?.fair||0) + " · harsh " + (sm.all_time?.harsh||0) + " · wrong " + (sm.all_time?.wrong||0)) +
-    tile("AI check flags · 30 days", (sm.ai_missed||0)+(sm.false_alarm||0), "it’s AI " + (sm.ai_missed||0) + " · it’s real " + (sm.false_alarm||0)) +
+    // v0.66.49: this tile decides the next threshold move. Thresholds were
+    // lowered on Oct 29 (strong 0.90 -> 0.70). If false alarms now overtake
+    // misses, we went too far and the number goes back up — on evidence.
+    (() => { const miss = sm.ai_missed||0, fa = sm.false_alarm||0;
+      const lean = (!miss && !fa) ? "no reader has said either yet"
+        : fa > miss ? "we are flagging real video too often — raise the bar"
+        : miss > fa ? "we are missing more than we over-flag — the bar can come down further"
+        : "evenly split";
+      return tile("Which way we're wrong · 30 days", miss + " missed / " + fa + " false alarm" + (fa === 1 ? "" : "s"),
+                  lean + " · bar lowered Oct 29", fa > miss ? "warn" : ""); })() +
     tile("Scam lens flags · 30 days", (sm.scam_missed||0)+(sm.scam_false_alarm||0), "missed " + (sm.scam_missed||0) + " · not a scam " + (sm.scam_false_alarm||0), (sm.scam_false_alarm||0) > 0 ? "warn" : "");
   // three-series daily chart: fair / harsh / wrong stacked per day
   const daily = d.daily || [];

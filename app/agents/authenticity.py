@@ -42,11 +42,18 @@ _ORIGIN_RANK = [ORIGIN_VERIFIED, ORIGIN_DECLARED, ORIGIN_LIKELY,
                 ORIGIN_INCONCLUSIVE, ORIGIN_NO_SIGNAL]
 
 # display text per category (v1 provisional copy)
+# v0.66.49: likelihood, not certainty. The top two are FACTS about the
+# file — a cryptographic stamp and the creator's own words — and are
+# stated flatly because they are not in doubt. Everything below them is
+# an opinion about pixels, so it is worded as a leaning. No number is put
+# in the headline: a percentage would imply a precision this field has
+# not earned (DF26, Sept 2026). The raw score stays in the details panel
+# for anyone who wants to judge it themselves.
 DISPLAY = {
-    ORIGIN_VERIFIED: "AI-generated — verified provenance",
+    ORIGIN_VERIFIED: "AI-generated — verified by content credentials",
     ORIGIN_DECLARED: "Creator or platform labeled this content as AI-generated",
-    ORIGIN_LIKELY: "Strong synthetic-media signals",
-    ORIGIN_INCONCLUSIVE: "Authenticity could not be determined",
+    ORIGIN_LIKELY: "Leans AI-generated — strong signals, not proof",
+    ORIGIN_INCONCLUSIVE: "Could go either way — the checks are not conclusive",
     ORIGIN_NO_SIGNAL: "No synthetic signal detected (this does not confirm authenticity)",
 }
 

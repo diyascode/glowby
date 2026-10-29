@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.47"
+VERSION = "0.66.50"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -800,7 +800,19 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
                 # PRIVATE AI-ONLY PATH: detector only; nothing kept.
                 _set_job(job_id, stage="assembling")
                 _auo = result.get("authenticity") or {}
-                if AUTHENTICITY_ENABLED:
+                # v0.66.50: the provenance rule applies here too. The main
+                # pipeline asks should_run_stage2() first, which refuses to
+                # pay when a signed credential or the creator's own label
+                # already settled it — but this private path called the
+                # detector directly and skipped that test, so an AI-only
+                # check on a file that announces itself still spent six
+                # Hive calls to learn nothing.
+                _settled = (_auo.get("origin_result") in
+                            ("verified_ai_provenance", "declared_ai"))
+                if AUTHENTICITY_ENABLED and _settled:
+                    _auo["stage2_status"] = "not_assessed"
+                    _auo["stage2_gate_reason"] = "already settled by provenance/label"
+                elif AUTHENTICITY_ENABLED:
                     _auo = run_media_detection(
                         _auo,
                         frames=None if url_key.startswith("img:") else _au_frames,

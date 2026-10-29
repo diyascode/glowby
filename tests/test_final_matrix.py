@@ -469,9 +469,10 @@ if _g5: fails.append("m33 paid despite declared provenance")
 
 # 34. CATEGORIES NOT PERCENTAGES: score mapping + merge hierarchy + no numeric display
 from app.agents.authenticity import merge_stage2 as _ms2, DISPLAY as _DSP
-_o1, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": 0.97}])
-_o2, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": 0.70}])
-_o3, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": 0.20}])
+_bands34 = _hd.thresholds()
+_o1, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": min(0.99, _bands34["likely"] + 0.2)}])
+_o2, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": (_bands34["unclear"] + _bands34["likely"]) / 2}])
+_o3, _, _ = _hd.classes_to_finding([{"class": "ai_generated", "score": _bands34["unclear"] / 2}])
 if _o1 != "likely_synthetic": fails.append("m34 strong map")
 if _o2 != "inconclusive": fails.append("m34 mid map")
 if _o3 is not None: fails.append("m34 weak fired")
@@ -1318,7 +1319,7 @@ _au = _co({"origin_result": "likely_synthetic", "evidence": []}, {"likelihood": 
 if _au["origin_result"] != "likely_synthetic" or not _au.get("methods_agree"): fails.append("m82 agreement not noted")
 _au = _co({"origin_result": "declared_ai", "evidence": []}, {"likelihood": "low", "tells": [], "real_tells": ["noise"], "generator_watermark": None, "summary": "s"})
 if _au["origin_result"] != "declared_ai": fails.append("m82 opinion lowered a declared origin")
-if not _nsp({"assessment_status": "completed", "top_score": 0.223}) or _nsp({"assessment_status": "completed", "top_score": 0.02}) or _nsp({"assessment_status": "completed", "top_score": 0.95}): fails.append("m82 second-pass band")
+if not _nsp({"assessment_status": "completed", "top_score": 0.223}) or _nsp({"assessment_status": "completed", "top_score": 0.02}) or not _nsp({"assessment_status": "completed", "top_score": 0.95}): fails.append("m82 second-pass band: a strong first pass must now be corroborated, not skipped")
 _h82 = open("app/agents/hive_detect.py").read()
 if 'def detect_audio(audio_b64)' not in _h82 or '"forensic_audio_voice"' not in _h82 or '"top_score": round(top, 3)' not in _h82: fails.append("m82 audio adapter / top_score")
 _m82 = open("app/main.py").read()
@@ -3077,6 +3078,109 @@ if _B143.qa_per_day() <= 0 and _B143.active(): fails.append("m143 the harness sh
 _qa143 = open("app/qa.py").read()
 if "qa=True" not in _qa143: fails.append("m143 the harness must still identify itself to the pipeline")
 
+# m144 — say how weak AI detection actually is, not just that it is
+# imperfect. Independent testing (DF26, Sept 2026) put detectors near
+# chance on the newest generators and humans no better. A reader who
+# only learns "detection can be wrong" will still over-read a clean
+# result (Inderpreet, Oct 29).
+_tr144 = open("app/templates/trust.html").read()
+_sec144 = _tr144.split('id="aimedia"')[1][:6000]
+if "close to chance" not in _sec144: fails.append("m144 the size of the doubt must be stated")
+if "arxiv.org/abs/2609.07369" not in _sec144: fails.append("m144 the claim must cite its primary source")
+if "vendor's own" not in _sec144: fails.append("m144 must say every advertised accuracy figure is self-reported")
+if "no accuracy figure of its own" not in _sec144: fails.append("m144 must say Glowby publishes none either")
+# the honesty must not be buried: it belongs above the order of trust,
+# because it is the reason the order is what it is
+if _sec144.index("close to chance") > _sec144.index("order of trust"): fails.append("m144 the caveat must come before the hierarchy it explains")
+_ap144 = open("app/templates/app.html").read()
+if "not evidence it is real" not in _ap144: fails.append("m144 a clean result must carry the warning on the card itself")
+_dial144 = _ap144.split("const auStyle=")[1].split("verdictPill(rep)")[0]
+if "no_synthetic_signal" not in _dial144: fails.append("m144 the warning must be scoped to a no-signal result")
+# and it must never appear next to a finding that DID find something
+if "limits of AI detection" not in _dial144: fails.append("m144 the explainer link must stay")
+import app.agents.authenticity as _AU144
+if "does not confirm" not in _AU144.DISPLAY[_AU144.ORIGIN_NO_SIGNAL]: fails.append("m144 no-signal display must still disclaim")
+
+# m145 — lower the bar, but make it be cleared twice. Strong moved from
+# 0.90 to 0.70 and unclear from 0.50 to 0.35 (Inderpreet's call, Oct 29),
+# which means a single odd frame can now reach "leans AI". It must not:
+# a frame-based likely has to survive a second pass on DIFFERENT frames
+# or it drops to inconclusive. Findings read as leanings, never as
+# certainty, and never as a percentage in the headline.
+import os as _os145
+_os145.environ.setdefault("HIVE_API_KEY", "test-key-m145")
+import app.agents.hive_detect as _HV145, app.agents.detection as _DT145
+_b145 = _HV145.thresholds()
+if not (0.5 < _b145["likely"] <= 0.75): fails.append(f"m145 strong band out of range: {_b145['likely']}")
+if not (_b145["weak"] < _b145["unclear"] < _b145["likely"]): fails.append("m145 the bands must stay ordered")
+if "GLOWBY_AI_THRESH_LIKELY" not in open("app/agents/hive_detect.py").read(): fails.append("m145 bands must be tunable without a deploy")
+# a strong first pass must still be looked at again
+if not _DT145._needs_second_pass({"assessment_status": "completed", "top_score": 0.95}): fails.append("m145 a strong result must still get a second look")
+if _DT145._needs_second_pass({"assessment_status": "completed", "top_score": 0.01}): fails.append("m145 a clearly-nothing result must not pay for a second pass")
+_base145 = {"assessment_status": "completed", "origin_result": "no_synthetic_signal", "evidence": [], "stage": 1}
+_real145 = _HV145.detect_video_frames
+try:
+    def _mk145(seq):
+        def _f(frames):
+            s = seq.pop(0)
+            return {"assessment_status": "completed", "evidence": [], "top_score": s, "frames_analyzed": 6,
+                    "origin": ("likely_synthetic" if s >= _HV145.THRESH_LIKELY
+                               else ("inconclusive" if s >= _HV145.THRESH_INCONCLUSIVE else None))}
+        return _f
+    _seq145 = [0.78, 0.61]
+    _HV145.detect_video_frames = _mk145(_seq145)
+    _a145 = _DT145.run_media_detection(dict(_base145), frames=["x"] * 6, extra_frames=["y"] * 6,
+                                       reason="m145", allow_reverse=False, forensic=False)
+    if _a145.get("origin_result") != "likely_synthetic": fails.append("m145 a corroborated finding must stand")
+    if _a145.get("corroboration") != "confirmed": fails.append("m145 corroboration must be recorded")
+    _seq145b = [0.78, 0.04]
+    _HV145.detect_video_frames = _mk145(_seq145b)
+    _b145b = _DT145.run_media_detection(dict(_base145), frames=["x"] * 6, extra_frames=["y"] * 6,
+                                        reason="m145", allow_reverse=False, forensic=False)
+    if _b145b.get("origin_result") != "inconclusive": fails.append("m145 one odd frame must NOT become an accusation")
+    if not _b145b.get("demoted_reason"): fails.append("m145 a demotion must say why")
+    if not _b145b.get("thresholds"): fails.append("m145 the bands must be recorded on the result")
+finally:
+    _HV145.detect_video_frames = _real145
+# a declared or verified origin is a fact about the file and is never demoted
+import app.agents.authenticity as _AU145
+if "Leans" not in _AU145.DISPLAY[_AU145.ORIGIN_LIKELY]: fails.append("m145 a detector finding must read as a leaning")
+if "%" in "".join(_AU145.DISPLAY.values()): fails.append("m145 no percentage belongs in a headline")
+# the panel leads with facts, not with the detector
+_ap145 = open("app/templates/app.html").read()
+if "function aiFacts(" not in _ap145 or "What we actually know about this file" not in _ap145: fails.append("m145 no facts-first panel")
+_f145 = _ap145.split("function aiFacts(")[1].split("\nfunction ")[0]
+for _need in ("Content credentials", "Creator or platform label", "Where it appeared before", "What was looked at"):
+    if _need not in _f145: fails.append(f"m145 facts panel missing: {_need}")
+if "not a point against" not in _f145: fails.append("m145 an absent credential must be called normal, not suspicious")
+if "html+=aiFacts(au);" not in _ap145: fails.append("m145 the facts panel must actually render")
+if _ap145.index("html+=aiFacts(au);") > _ap145.index("AI check details ("): fails.append("m145 facts must come before the detector detail")
+if "function aiLean(" not in _ap145: fails.append("m145 no worded leaning")
+if "is not a reason to believe the video is real" not in _ap145: fails.append("m145 silence must not read as proof of real")
+_adm145 = open("app/templates/admin.html").read()
+if "Which way we're wrong" not in _adm145: fails.append("m145 admin must show which direction we err")
+
+# m146 — the provenance rule, enforced on EVERY path. If a signed
+# credential or the creator's own label already settled it, the paid
+# detector does not run: it would be paying to second-guess evidence
+# that outranks it. The main pipeline asked should_run_stage2() first,
+# but the private AI-only path called the detector directly and skipped
+# the test (Inderpreet, Oct 29).
+import app.agents.hive_detect as _HV146
+for _o146 in ("verified_ai_provenance", "declared_ai"):
+    _go146, _why146 = _HV146.should_run_stage2(stage1_origin=_o146, on_demand=True)
+    if _go146: fails.append(f"m146 paid despite {_o146}, even on demand")
+    if "settled" not in _why146: fails.append("m146 the refusal must say why")
+# ...and it must still fire when nothing has settled it
+if not _HV146.should_run_stage2(stage1_origin="no_synthetic_signal", on_demand=True)[0]: fails.append("m146 an explicit request must still run")
+_mn146 = open("app/main.py").read()
+_priv146 = _mn146.split("PRIVATE AI-ONLY PATH")[1][:1500]
+if "verified_ai_provenance" not in _priv146 or "declared_ai" not in _priv146: fails.append("m146 the private path still skips the provenance test")
+if "already settled by provenance/label" not in _priv146: fails.append("m146 the private path must record why it declined")
+if _priv146.index("_settled") > _priv146.index("run_media_detection"): fails.append("m146 the test must come before the spend")
+_ap146 = open("app/templates/app.html").read()
+if "The forensic detector was not run." not in _ap146: fails.append("m146 a deliberate skip must not read as a failure")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 143/143 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing")
+    "FINAL MATRIX PASS: 146/146 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector")
