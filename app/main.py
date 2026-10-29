@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.44"
+VERSION = "0.66.46"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -570,6 +570,13 @@ def _save(url_key, url, result) -> None:
     """save_result, unless this thread is a consistency re-check."""
     if getattr(_QA_TL, "no_save", False):
         return
+    # v0.66.46: stamp which build produced this. A stored result used to
+    # be undatable, so an old card missing a new field was indistinguishable
+    # from a new card that had broken — which cost us an evening (Oct 29).
+    try:
+        result["app_version"] = VERSION
+    except Exception:
+        pass
     save_result(url_key, url, result)
 
 
@@ -2634,6 +2641,31 @@ def api_admin_hivetest(key: str = ""):
         out["result"] = hive_detect.selftest()
     except Exception as e:
         out["result"] = {"ok": False, "stage": "crash", "detail": str(e)[:400]}
+    return out
+
+
+@app.get("/api/admin/gfctest")
+def api_admin_gfctest(key: str = "", claim: str = ""):
+    """One real Google Fact Check Tools call. Admin only. This lane fails
+    silently by design — every error becomes an empty list so a check
+    never breaks — which also means a rejected key looks identical to a
+    claim nobody has fact-checked. This is how we tell them apart."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents import evidence as _ev
+    # a claim with well-known published fact-checks: a working key returns
+    # several reviews, so an empty answer here means the lane is dead
+    probe = (claim or "the earth is flat").strip()[:250]
+    src = "GOOGLE_API_KEY" if os.environ.get("GOOGLE_API_KEY") else (
+        "YOUTUBE_API_KEY" if os.environ.get("YOUTUBE_API_KEY") else "")
+    out = {"key_variable": src or None, "key_present": bool(src), "claim": probe}
+    try:
+        r = _ev.fact_check_db_call(probe)
+    except Exception as e:
+        r = {"ok": False, "results": [], "detail": f"crash: {e}"[:400]}
+    out["result"] = {"ok": bool(r.get("ok")), "detail": str(r.get("detail") or "")[:400],
+                     "found": len(r.get("results") or []),
+                     "publishers": [x.get("publisher", "") for x in (r.get("results") or [])[:5]]}
     return out
 
 

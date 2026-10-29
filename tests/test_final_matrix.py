@@ -2979,6 +2979,86 @@ for _adapter in ("detect_image", "detect_video_frames", "detect_deepfake_faces")
     if "_post_v3(" in _src140: fails.append(f"m140 {_adapter} still calls Hive unpaced")
 if "cooldown_s" not in open("app/templates/admin.html").read(): fails.append("m140 admin must show the cooldown")
 
+# m141 — a silent lane is not a working lane. Google's fact-check search
+# turned every error into an empty list, so a key Google rejects looked
+# exactly like a claim nobody has checked, and Security read "unused"
+# forever. Every call now reports, and one button asks directly
+# (Inderpreet, Oct 29).
+import app.agents.evidence as _EV141
+if not hasattr(_EV141, "fact_check_db_call"): fails.append("m141 no inspectable fact-check call")
+_os141 = __import__("os")
+_saved141 = (_os141.environ.pop("GOOGLE_API_KEY", None), _os141.environ.pop("YOUTUBE_API_KEY", None))
+try:
+    _r141 = _EV141.fact_check_db_call("the earth is flat")
+    if _r141.get("ok") or _r141.get("results"): fails.append("m141 no key must not look like an answer")
+    if "KEY" not in (_r141.get("detail") or ""): fails.append("m141 a missing key must say so")
+    if _EV141.search_fact_check_db("x") != []: fails.append("m141 the lane must still never break a check")
+    _calls141 = []
+    import app.apihealth as _AH141
+    _realnote141 = _AH141.note
+    _AH141.note = lambda s, ok, err="": _calls141.append((s, ok, err))
+    _os141.environ["GOOGLE_API_KEY"] = "m141-fake"
+    class _E141(Exception):
+        code = 403
+        def read(self): return b'{"error":{"message":"API has not been used in project"}}'
+    _realopen141 = _EV141.urllib.request.urlopen
+    import urllib.error as _UE141
+    _EV141.urllib.error.HTTPError = _UE141.HTTPError
+    def _boom141(url, timeout=0):
+        raise _UE141.HTTPError(url, 403, "Forbidden", None, None)
+    _EV141.urllib.request.urlopen = _boom141
+    try:
+        _r141b = _EV141.fact_check_db_call("anything")
+    finally:
+        _EV141.urllib.request.urlopen = _realopen141
+        _AH141.note = _realnote141
+    if _r141b.get("results") != []: fails.append("m141 a refusal must still return no sources")
+    if "403" not in (_r141b.get("detail") or ""): fails.append("m141 a refusal must carry Google's status")
+    if not any(c[0] == "google_factcheck" and c[1] is False for c in _calls141): fails.append("m141 a refusal must reach the health ledger")
+finally:
+    for _k141, _v141 in zip(("GOOGLE_API_KEY", "YOUTUBE_API_KEY"), _saved141):
+        _os141.environ.pop(_k141, None)
+        if _v141 is not None: _os141.environ[_k141] = _v141
+_ad141 = open("app/templates/admin.html").read()
+if "async function gfcTest(" not in _ad141 or "/api/admin/gfctest?key=" not in _ad141: fails.append("m141 no fact-check self-test in admin")
+if "not switched on for this Google project" not in _ad141: fails.append("m141 no plain-English read of a disabled API")
+if "unused</b> means" not in _ad141: fails.append("m141 unused must be explained, not left to guess")
+if "def api_admin_gfctest" not in open("app/main.py").read(): fails.append("m141 no gfctest endpoint")
+
+# m142 — an old saved check must not look like a new broken one. The warn
+# card showed "could not complete" with no reason for results saved before
+# the reason was recorded, which reads exactly like the fix not working.
+# Results are stamped with the build that made them from now on
+# (Inderpreet, Oct 29).
+_ap142 = open("app/templates/app.html").read()
+_w142 = _ap142.split("au.stage2_status==='failed'")[1][:1400]
+if "saved before Glowby started recording" not in _w142: fails.append("m142 a reasonless failure must say it is old, not stay silent")
+if "Reported: " not in _w142: fails.append("m142 a fresh failure must still show the reason")
+_mn142 = open("app/main.py").read()
+_sv142 = _mn142.split("def _save(")[1].split("\ndef ")[0]
+if "app_version" not in _sv142: fails.append("m142 stored results must carry the build that made them")
+if _sv142.index("no_save") > _sv142.index("app_version"): fails.append("m142 a QA re-check must still never be saved")
+# the lane itself: a rate-limited detector must reach the card with a reason
+import os as _os142
+_os142.environ.setdefault("HIVE_API_KEY", "test-key-m142")
+import app.agents.hive_detect as _HV142, app.agents.detection as _DT142
+_sv = (_HV142._post_v3, _HV142.MIN_GAP_S, _HV142.BACKOFF_S, dict(_HV142._PACE))
+try:
+    def _boom142(key, image_b64=None, media_url=None):
+        raise _HV142.RateLimited('HTTP 429: {"status_code":429,"message":"Too Many Requests"}')
+    _HV142._post_v3, _HV142.MIN_GAP_S, _HV142.BACKOFF_S = _boom142, 0.0, (0.0, 0.0)
+    _HV142._PACE.update({"last": 0.0, "until": 0.0, "row": 0})
+    _out142 = _DT142.run_media_detection(
+        {"assessment_status": "completed", "origin_result": "no_synthetic_signal", "evidence": [], "stage": 1},
+        frames=["aGVsbG8="] * 6, reason="m142", allow_reverse=False, forensic=True,
+        opinion_fn=lambda f: {"likelihood": "low", "summary": "no artifacts", "tells": [], "real_tells": []})
+    if _out142.get("stage2_status") != "failed": fails.append("m142 a refused detector is a failure")
+    if "rate-limited" not in (_out142.get("stage2_reason") or ""): fails.append(f"m142 the reason must survive the whole lane: {_out142.get('stage2_reason')}")
+    if _out142.get("origin_result") != "no_synthetic_signal": fails.append("m142 a failed detector must not change the origin")
+finally:
+    _HV142._post_v3, _HV142.MIN_GAP_S, _HV142.BACKOFF_S = _sv[0], _sv[1], _sv[2]
+    _HV142._PACE.update(_sv[3])
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 140/140 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector")
+    "FINAL MATRIX PASS: 142/142 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so")

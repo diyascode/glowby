@@ -20,6 +20,7 @@ whatever evidence was found; total failure returns empty lists.
 import json
 import os
 import re
+import urllib.error
 import urllib.parse
 import urllib.request
 from app.agents import llm as _llm
@@ -85,11 +86,27 @@ def gather_evidence(claim: str) -> dict:
 # ------------------------------------------------ Google Fact Check Tools
 
 
-def search_fact_check_db(claim: str) -> list:
-    """Query Google's Fact Check Tools API. Empty list on any failure."""
+def _gfc_health(ok: bool, err: str = "") -> None:
+    """v0.66.45: this lane used to fail completely silently — every error
+    became an empty list, so a key Google was rejecting looked exactly
+    like a claim nobody had fact-checked, and Security showed the service
+    as "unused" forever. Now every call reports, so a dead lane is
+    visible. Reporting never affects the result."""
+    try:
+        from app.apihealth import note
+        note("google_factcheck", ok, err)
+    except Exception:
+        pass
+
+
+def fact_check_db_call(claim: str) -> dict:
+    """One real call to Google's Fact Check Tools API. Returns
+    {ok, results, detail} — the detail carries Google's own words when it
+    refuses, which is the only way to tell a rejected key from a claim
+    with no published fact-check."""
     api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("YOUTUBE_API_KEY")
     if not api_key:
-        return []
+        return {"ok": False, "results": [], "detail": "no GOOGLE_API_KEY or YOUTUBE_API_KEY set"}
     params = urllib.parse.urlencode(
         {"query": claim[:250], "key": api_key, "languageCode": "en"}
     )
@@ -97,9 +114,25 @@ def search_fact_check_db(claim: str) -> list:
     try:
         with urllib.request.urlopen(url, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return []
-    return parse_fact_check_response(data)
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", "replace")[:400]
+        except Exception:
+            body = ""
+        detail = f"HTTP {e.code}: {body}"
+        _gfc_health(False, detail[:160])
+        return {"ok": False, "results": [], "detail": detail}
+    except Exception as e:
+        _gfc_health(False, str(e)[:160])
+        return {"ok": False, "results": [], "detail": str(e)[:300]}
+    _gfc_health(True)
+    return {"ok": True, "results": parse_fact_check_response(data),
+            "detail": "answered", "raw_claims": len(data.get("claims") or []) if isinstance(data, dict) else 0}
+
+
+def search_fact_check_db(claim: str) -> list:
+    """Query Google's Fact Check Tools API. Empty list on any failure."""
+    return fact_check_db_call(claim).get("results") or []
 
 
 def parse_fact_check_response(data: dict) -> list:

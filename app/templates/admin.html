@@ -297,10 +297,11 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="seDevices" style="margin-top:8px"></div>
       <div id="seRecent" style="margin-top:8px"></div>
       <h3 style="font-size:.85rem;margin:14px 0 6px">API &amp; keys</h3>
-      <div class="s" style="margin-bottom:6px">Counted as it happens, reviewed weekly. Services report their own calls; nothing here probes anything extra.</div>
+      <div class="s" style="margin-bottom:6px">Counted as it happens, reviewed weekly. Services report their own calls; nothing here probes anything extra. <b>unused</b> means a key is set but nothing has called it since the ledger started — not an error, but not proof it works either. The buttons below ask directly.</div>
       <div id="apiTiles" class="tiles" style="margin-bottom:10px"></div>
       <div id="apiServices"></div>
       <div style="margin-top:8px"><button onclick="hiveTest()">Ask the AI detector now</button> <span class="s">one real call, about 1&cent; — it answers in Hive's own words</span><div id="hiveTestOut" class="s" style="margin-top:6px"></div></div>
+      <div style="margin-top:8px"><button onclick="gfcTest()">Ask the fact-check database now</button> <span class="s">free — searches Google's fact-check index for a claim everyone has checked</span><div id="gfcTestOut" class="s" style="margin-top:6px"></div></div>
       <div class="s" style="margin:10px 0 4px">Key ages — the app keeps a salted fingerprint per secret and logs when it changes; values are never seen. Orange past <span id="apiRotate"></span> days.</div>
       <div id="apiKeys" class="dist"></div>
       <div id="apiPartners" style="margin-top:8px"></div>
@@ -1326,6 +1327,31 @@ async function hiveTest(){
   const pc = r.pace || {};
   const cool = pc.cooldown_s ? `<div class="s" style="margin-top:4px">Glowby has paused its own calls for another ${pc.cooldown_s}s after ${pc.refusals_in_a_row} refusals in a row. This test ignored that pause.</div>` : "";
   out.innerHTML = head + `<div style="color:#f87171"><b>The detector refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Hive's exact words: ${esc(detail.slice(0,300))}</div>` + cool;
+}
+// v0.66.45: "unused" on google_factcheck was a blind spot, not a status —
+// the lane swallowed every error, so a key Google rejects looked exactly
+// like a claim nobody has fact-checked. One call on a famous claim tells
+// the two apart: a working key comes back with several publishers.
+async function gfcTest(){
+  const out = $("gfcTestOut");
+  out.innerHTML = "asking Google…";
+  const d = await getJSON("/api/admin/gfctest?key=" + encodeURIComponent(KEY), 1);
+  if (!d) { out.innerHTML = '<span style="color:#f87171">Could not reach the app.</span>'; return; }
+  const r = d.result || {};
+  const head = `<div class="s">key ${d.key_present ? "set (in <b>"+esc(d.key_variable)+"</b>)" : '<span style="color:#f87171">not set</span>'} · asked about “${esc(d.claim||"")}”</div>`;
+  if (r.ok && r.found){
+    out.innerHTML = head + `<div style="color:#4ade80"><b>The database answered with ${r.found} fact-check(s).</b> ${esc((r.publishers||[]).filter(Boolean).join(", "))}. The lane is alive — “unused” just means no check has needed it since the last restart.</div>`;
+  } else if (r.ok){
+    out.innerHTML = head + `<div style="color:#fab219"><b>Google answered, but found nothing</b> — for a claim this famous that is suspicious. The key probably works but this project may not have the Fact Check Tools API enabled.</div>`;
+  } else {
+    const det = String(r.detail||"");
+    const plain = /API has not been used|not enabled|SERVICE_DISABLED/i.test(det)
+      ? "The key is valid but the Fact Check Tools API is not switched on for this Google project. Enable it in Google Cloud → APIs & Services, then try again."
+      : /API key not valid|API_KEY_INVALID|400|403/i.test(det)
+      ? "Google is refusing this key for this API. A YouTube key is not automatically allowed to use Fact Check Tools — either enable it or set a separate GOOGLE_API_KEY."
+      : /quota|429/i.test(det) ? "The daily quota for this key is used up. It resets tomorrow." : "";
+    out.innerHTML = head + `<div style="color:#f87171"><b>The database refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Google's exact words: ${esc(det.slice(0,300))}</div>`;
+  }
 }
 async function seAudited(){
   try { await fetch("/api/admin/security/audited", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}
