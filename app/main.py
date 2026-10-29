@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.43"
+VERSION = "0.66.44"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the

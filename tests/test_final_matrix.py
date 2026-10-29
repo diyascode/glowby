@@ -2939,6 +2939,46 @@ for _k in ("blocked", "geo_blocked", "private_or_deleted"):
     if f"{_k}:\"web\"" not in _ad139.replace("'", '"'): fails.append(f"m139 {_k} is not ours to fix")
 if "ours to fix" not in _ad139: fails.append("m139 no count of what is ours")
 
+# m140 — one video must not cost six refusals. Hive answered HTTP 429 to
+# every call (0 ok / 15 failed, Oct 28) because six frames went out
+# back-to-back. Calls are now spaced, a 429 is retried after a pause, a
+# run of refusals starts a cooldown, and a rate-limited video stops at
+# the first refusal instead of spending the rest of its frames.
+import os as _os140
+_os140.environ.setdefault("HIVE_API_KEY", "test-key-m140")
+import app.agents.hive_detect as _HV140
+if not hasattr(_HV140, "RateLimited"): fails.append("m140 no typed rate-limit error")
+_saved140 = (_HV140._post_v3, _HV140.MIN_GAP_S, _HV140.BACKOFF_S, dict(_HV140._PACE))
+try:
+    _n140 = {"c": 0}
+    def _fake140(key, image_b64=None, media_url=None):
+        _n140["c"] += 1
+        raise _HV140.RateLimited('HTTP 429: {"status_code":429,"message":"Too Many Requests"}')
+    _HV140._post_v3, _HV140.MIN_GAP_S, _HV140.BACKOFF_S = _fake140, 0.0, (0.0, 0.0)
+    _HV140._PACE.update({"last": 0.0, "until": 0.0, "row": 0})
+    _r140 = _HV140.detect_video_frames(["aGVsbG8="] * 6)
+    if _r140.get("assessment_status") != "failed": fails.append("m140 a rate-limited video is a typed failure")
+    if "rate-limited" not in (_r140.get("reason") or ""): fails.append(f"m140 reason must name the rate limit: {_r140.get('reason')}")
+    if _n140["c"] >= 6: fails.append(f"m140 a refused video must stop early, not spend 6 frames ({_n140['c']})")
+    if _HV140.cooldown_left() <= 0: fails.append("m140 a run of refusals must start a cooldown")
+    _before140 = _n140["c"]
+    _r140b = _HV140.detect_image("aGVsbG8=")
+    if _n140["c"] != _before140: fails.append("m140 the cooldown must stop calls going out at all")
+    if "rate-limited" not in (_r140b.get("reason") or ""): fails.append("m140 cooldown must say why")
+    # the admin button bypasses the cooldown: one call is the only way to
+    # tell "we asked too fast" from "the project is throttled to zero"
+    _st140 = _HV140.selftest()
+    if _n140["c"] != _before140 + 1: fails.append("m140 the self-test must still reach Hive mid-cooldown")
+    if not _st140.get("rate_limited") or not _st140.get("single_call"): fails.append("m140 self-test must flag a single-call 429")
+finally:
+    _HV140._post_v3, _HV140.MIN_GAP_S, _HV140.BACKOFF_S = _saved140[0], _saved140[1], _saved140[2]
+    _HV140._PACE.update(_saved140[3])
+_hv140src = open("app/agents/hive_detect.py").read()
+for _adapter in ("detect_image", "detect_video_frames", "detect_deepfake_faces"):
+    _src140 = _hv140src.split(f"def {_adapter}(")[1].split("\ndef ")[0]
+    if "_post_v3(" in _src140: fails.append(f"m140 {_adapter} still calls Hive unpaced")
+if "cooldown_s" not in open("app/templates/admin.html").read(): fails.append("m140 admin must show the cooldown")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 139/139 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector")
+    "FINAL MATRIX PASS: 140/140 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector")

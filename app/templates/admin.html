@@ -1301,7 +1301,7 @@ const HIVE_PLAIN = [
   [/HTTP 402|out of credit|insufficient|balance|quota/i, "The Hive project has no credit left. Top it up in the Hive dashboard — nothing to change in the app."],
   [/HTTP 403/, "The key works but this project is not allowed to use this model. Enable the AI-generated-content model for it in the Hive dashboard."],
   [/HTTP 404/, "Hive does not know this model name for this account — it was renamed or moved. The model we ask for is shown above."],
-  [/HTTP 429/, "Hive is throttling us: too many calls at once. Nothing to fix; it clears by itself."],
+  [/HTTP 429/, "Hive refused even this one call with “Too Many Requests”. A single call cannot breach a rate limit, so the project itself is being throttled to zero — usually a trial project, or a plan with no requests left on it. Open the Hive dashboard and check this project's plan and remaining quota."],
   [/HTTP 5\d\d/, "Hive's own servers are erroring. Nothing to fix on our side; try again later."],
   [/timed out|timeout/i, "Hive did not answer in time. Usually temporary."],
   [/missing in environment/i, "No Hive key is set at all. Add HIVE_API_KEY in Railway → Variables."],
@@ -1323,7 +1323,9 @@ async function hiveTest(){
   }
   const detail = String(r.detail || "no detail");
   const plain = hivePlain(detail);
-  out.innerHTML = head + `<div style="color:#f87171"><b>The detector refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Hive's exact words: ${esc(detail.slice(0,300))}</div>`;
+  const pc = r.pace || {};
+  const cool = pc.cooldown_s ? `<div class="s" style="margin-top:4px">Glowby has paused its own calls for another ${pc.cooldown_s}s after ${pc.refusals_in_a_row} refusals in a row. This test ignored that pause.</div>` : "";
+  out.innerHTML = head + `<div style="color:#f87171"><b>The detector refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Hive's exact words: ${esc(detail.slice(0,300))}</div>` + cool;
 }
 async function seAudited(){
   try { await fetch("/api/admin/security/audited", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}

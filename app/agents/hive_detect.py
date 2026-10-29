@@ -30,6 +30,8 @@ import base64
 import json
 import os
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -223,10 +225,85 @@ def _post_v3(key, image_b64=None, media_url=None):
         except Exception:
             detail = ""
         _health(False, f"HTTP {e.code}: {detail[:120]}")
+        if e.code == 429:
+            raise RateLimited(f"HTTP 429: {detail}") from None
         raise RuntimeError(f"HTTP {e.code}: {detail}") from None
     except Exception as e:
         _health(False, str(e)[:160])
         raise
+
+
+# ------------------------------------------------- pacing (v0.66.44)
+# Every Hive call was fired back-to-back: one video meant six requests
+# in about a second. Hive answered HTTP 429 "Too Many Requests" to all
+# of them (0 ok / 15 failed, Oct 28), so the whole video's budget was
+# spent on refusals. Three rules now:
+#   1. never two calls closer together than MIN_GAP_S
+#   2. a 429 is retried after a pause, not abandoned
+#   3. after REPEATS_BEFORE_COOLDOWN refusals in a row, stop calling
+#      Hive for COOLDOWN_S — hammering a closed door only deepens it
+# All three are off the critical path: a rate-limited detector returns
+# a typed failure, and the check completes without it as it always has.
+MIN_GAP_S = float(os.environ.get("HIVE_MIN_GAP_S", "1.5"))
+RETRIES_429 = int(os.environ.get("HIVE_RETRIES_429", "2"))
+BACKOFF_S = (3.0, 9.0)
+COOLDOWN_S = float(os.environ.get("HIVE_COOLDOWN_S", "900"))
+# three in a row is one video's worth of asking and being refused — enough
+REPEATS_BEFORE_COOLDOWN = int(os.environ.get("HIVE_REPEATS_BEFORE_COOLDOWN", "3"))
+
+_PACE = {"last": 0.0, "until": 0.0, "row": 0}
+_PACE_LOCK = threading.Lock()
+
+
+class RateLimited(RuntimeError):
+    """Hive refused because of its own rate limit, not because of us."""
+
+
+def cooldown_left() -> int:
+    """Seconds Hive is being left alone for; 0 when calls are flowing."""
+    return max(0, int(_PACE["until"] - time.time()))
+
+
+def pace_state() -> dict:
+    return {"cooldown_s": cooldown_left(), "refusals_in_a_row": _PACE["row"],
+            "min_gap_s": MIN_GAP_S}
+
+
+def _wait_turn() -> None:
+    with _PACE_LOCK:
+        gap = MIN_GAP_S - (time.time() - _PACE["last"])
+        if gap > 0:
+            time.sleep(min(gap, MIN_GAP_S))
+        _PACE["last"] = time.time()
+
+
+def _call(key, image_b64=None, media_url=None, pace=True, retries=None):
+    """_post_v3 with spacing, retries on 429, and a cooldown."""
+    retries = RETRIES_429 if retries is None else int(retries)
+    if pace:
+        left = cooldown_left()
+        if left:
+            raise RateLimited(
+                f"HTTP 429: Hive refused {_PACE['row']} calls in a row; "
+                f"pausing for another {left}s before asking again")
+    last = None
+    for attempt in range(retries + 1):
+        if pace:
+            _wait_turn()
+        try:
+            out = _post_v3(key, image_b64=image_b64, media_url=media_url)
+            _PACE["row"] = 0
+            _PACE["until"] = 0.0
+            return out
+        except RateLimited as e:
+            last = e
+            _PACE["row"] += 1
+            if pace and _PACE["row"] >= REPEATS_BEFORE_COOLDOWN:
+                _PACE["until"] = time.time() + COOLDOWN_S
+                break
+            if attempt < retries:
+                time.sleep(BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)])
+    raise last if last else RuntimeError("no response")
 
 
 def _health(ok, err=""):
@@ -298,7 +375,7 @@ def detect_image(image_b64):
     except Exception:
         return _failed("image bytes unreadable")
     try:
-        payload = _post_v3(_key(), image_b64=image_b64)
+        payload = _call(_key(), image_b64=image_b64)
         best = (None, 0.0, None)
         df_top = 0.0
         for classes in _extract_class_lists(payload):
@@ -318,6 +395,8 @@ def detect_image(image_b64):
         if df_top >= THRESH_LIKELY:
             res["manipulation_scope"] = "face"
         return res
+    except RateLimited as e:
+        return _failed(f"detector is rate-limited: {e}")
     except Exception as e:  # network/HTTP/parse: typed failure, no guess
         return _failed(f"detector call failed: {e}")
 
@@ -334,19 +413,27 @@ def detect_video_frames(frames_b64):
     best = (None, 0.0, None)
     ran = 0
     seen = 0
+    limited = ""
     for fb in frames_b64[:6]:  # cost cap: at most 6 frames per video
         try:
             base64.b64decode(fb)  # validate only
-            payload = _post_v3(_key(), image_b64=fb)
+            payload = _call(_key(), image_b64=fb)
             ran += 1
             for classes in _extract_class_lists(payload):
                 seen += len(classes)
                 f = classes_to_finding(classes)
                 if f[1] >= best[1]:
                     best = f
+        except RateLimited as e:
+            # v0.66.44: stop the video here. Five more frames into a
+            # rate limit is five more refusals and a longer cooldown.
+            limited = str(e)
+            break
         except Exception:
             continue
     if ran == 0:
+        if limited:
+            return _failed(f"detector is rate-limited: {limited}")
         return _failed("no frame could be analyzed")
     res = _finding_to_result(*best, "forensic_video_frames",
                              classes_seen=seen)
@@ -362,7 +449,7 @@ def detect_deepfake_faces(image_b64):
         return _not_assessed("no HIVE_DEEPFAKE_KEY configured")
     try:
         base64.b64decode(image_b64)  # validate only
-        payload = _post_v3(_key("HIVE_DEEPFAKE_KEY"), image_b64=image_b64)
+        payload = _call(_key("HIVE_DEEPFAKE_KEY"), image_b64=image_b64)
         best = (None, 0.0, None)
         for classes in _extract_class_lists(payload):
             f = classes_to_finding(classes)
@@ -372,6 +459,8 @@ def detect_deepfake_faces(image_b64):
         if res.get("origin") == ORIGIN_LIKELY:
             res["manipulation_scope"] = "face"
         return res
+    except RateLimited as e:
+        return _failed(f"detector is rate-limited: {e}")
     except Exception as e:
         return _failed(f"deepfake call failed: {e}")
 
@@ -481,9 +570,17 @@ def selftest(image_b64=None):
             "wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAA"
             "AAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
     try:
-        payload = _post_v3(_key(), image_b64=image_b64)
+        # pace=False: the button must always reach Hive, even mid-cooldown.
+        # One call cannot breach a sane rate limit, so a 429 HERE means the
+        # project itself is refusing us, not that we asked too fast.
+        payload = _call(_key(), image_b64=image_b64, pace=False, retries=0)
+    except RateLimited as e:
+        return {"ok": False, "stage": "call", "rate_limited": True,
+                "single_call": True, "detail": str(e)[:500],
+                "pace": pace_state()}
     except Exception as e:
-        return {"ok": False, "stage": "call", "detail": str(e)[:500]}
+        return {"ok": False, "stage": "call", "detail": str(e)[:500],
+                "pace": pace_state()}
     lists = _extract_class_lists(payload)
     return {"ok": True, "stage": "parsed",
             "class_lists_found": len(lists),
