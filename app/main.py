@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.46"
+VERSION = "0.66.47"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -1066,7 +1066,15 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
         # folded in when both are done. Same work, same result, less wait.
         _media_box = {}
         _media_thread = None
-        if AUTHENTICITY_ENABLED:
+        # v0.66.47: the nightly consistency harness must not spend the paid
+        # detector. It exists to measure whether the SCORE drifts, and the
+        # detector does not move the score — but 30 re-checks a night, each
+        # firing up to 6 Hive calls in a burst, is what started the HTTP 429
+        # refusals on Oct 21 when the credit window turned the harness on.
+        # (The lane runs in its own thread, so the thread-local flag has to
+        # be read HERE, in the parent, and closed over.)
+        _qa_run = bool(qa)
+        if AUTHENTICITY_ENABLED and not _qa_run:
             def _media_lane():
                 try:
                     _au = result.get("authenticity") or {}
