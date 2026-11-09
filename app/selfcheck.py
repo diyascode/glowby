@@ -123,7 +123,13 @@ def check_failures(series_fn, today_fn) -> dict:
     fortnight — not against a number somebody guessed."""
     try:
         days = series_fn(14) or []
-        today = sum((today_fn() or {}).values())
+        # v0.66.53: failures_today() is {'total': n, 'top': kind} — summing
+        # its values added an int to a string and the check reported itself
+        # unreadable on the first morning it ran. Caught by the check's own
+        # rule that an unreadable check is "unknown", not "ok" (Nov 9).
+        raw = today_fn() or {}
+        today = int(raw.get("total") or 0) if "total" in raw else \
+            sum(v for v in raw.values() if isinstance(v, (int, float)))
     except Exception as e:
         return _row("failures", "Checks that didn't run", UNKNOWN, f"unreadable: {str(e)[:100]}")
     past = [d.get("total", 0) for d in days[:-1]] or [0]

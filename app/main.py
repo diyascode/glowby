@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.52"
+VERSION = "0.66.54"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -2686,6 +2686,24 @@ def api_admin_gfctest(key: str = "", claim: str = ""):
     out["result"] = {"ok": bool(r.get("ok")), "detail": str(r.get("detail") or "")[:400],
                      "found": len(r.get("results") or []),
                      "publishers": [x.get("publisher", "") for x in (r.get("results") or [])[:5]]}
+    return out
+
+
+@app.get("/api/admin/visiontest")
+def api_admin_visiontest(key: str = ""):
+    """One real Google Vision call, with Google's exact answer. Admin.
+    Added after the Cloud Vision console showed 100% errors while Glowby
+    showed nothing at all — the reverse-image lane was swallowing every
+    failure the same way the Hive and fact-check lanes did."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.agents import reverse_search as _rs
+    out = {"key_present": bool((os.environ.get("GOOGLE_VISION_KEY") or "").strip()),
+           "endpoint": _rs.VISION_URL}
+    try:
+        out["result"] = _rs.selftest()
+    except Exception as e:
+        out["result"] = {"ok": False, "stage": "crash", "detail": str(e)[:300]}
     return out
 
 

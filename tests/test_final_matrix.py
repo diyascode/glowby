@@ -3279,6 +3279,61 @@ _fbblk148 = _ing148.split('if platform == "facebook" and not _fb_looks_like_vide
 if 'rescue_media(url, "facebook")' not in _fbblk148: fails.append("m148 a facebook video must try rescue before yt-dlp gives up")
 if _ing148.index('rescue_media(url, "facebook")') > _ing148.index('rescue_media(url, "instagram")'): fails.append("m148 the facebook lane must come before the instagram one it was copied from")
 
+# m149 — the system check's own first morning. It reported "Checks that
+# didn't run — unreadable: unsupported operand type(s) for +" because
+# failures_today() is {'total': n, 'top': kind} and the check summed its
+# values. It also showed `proxy` red over a yt-dlp PARSE error, which put
+# a red light on a healthy service (Inderpreet, Nov 9).
+import app.selfcheck as _SC149
+_r149 = _SC149.check_failures(lambda d=14: [{"day": "a", "total": 2}, {"day": "b", "total": 3}],
+                              lambda: {"total": 4, "top": "blocked"})
+if _r149["state"] == "unknown": fails.append(f"m149 the real failures_today shape must be readable: {_r149['detail']}")
+if "4 today" not in _r149["detail"]: fails.append(f"m149 wrong count: {_r149['detail']}")
+# and the older {kind: n} shape must still work
+_r149b = _SC149.check_failures(lambda d=14: [{"day": "a", "total": 2}], lambda: {"blocked": 3, "router": 1})
+if _r149b["state"] == "unknown": fails.append("m149 a {kind: n} shape must still be readable")
+# blame the proxy only for things the proxy did
+from app.agents.ingest import _is_extractor_fault as _ef149
+for _e, _want in (("ERROR: [facebook] 294288: Cannot parse data; please report this issue", True),
+                  ("Unsupported URL: https://x.test/a", True),
+                  ("unable to extract player response", True),
+                  ("HTTPSConnectionPool: Max retries exceeded", False),
+                  ("Sign in to confirm you're not a bot", False),
+                  ("[Errno 111] Connection refused", False)):
+    if _ef149(_e) != _want: fails.append(f"m149 misread as {'network' if _want else 'parser'}: {_e[:40]}")
+if _ef149("") or _ef149(None): fails.append("m149 an empty error is not a parser fault")
+_ing149 = open("app/agents/ingest.py").read()
+_blk149 = _ing149.split("if info is None:")[1][:700]
+if "_is_extractor_fault" not in _blk149: fails.append("m149 a parse error must not mark the proxy down")
+
+# m150 — the same silent-failure pattern, a third time. Google's console
+# showed Cloud Vision erroring on 100% of calls while Glowby reported
+# nothing: the reverse-image lane kept only the exception TYPE and told
+# no one. Every outbound lane must report, and must keep the vendor's own
+# words (Inderpreet, Nov 9).
+import app.agents.reverse_search as _RS150
+if not hasattr(_RS150, "_health"): fails.append("m150 the reverse-image lane still reports to nobody")
+if not hasattr(_RS150, "selftest"): fails.append("m150 no way to ask Vision directly")
+_src150 = open("app/agents/reverse_search.py").read()
+_blk150 = _src150.split("def analyze(")[1] if "def analyze(" in _src150 else _src150
+if "_health(True)" not in _blk150: fails.append("m150 a working call must be recorded too, not only a failure")
+if "urllib.error.HTTPError" not in _src150: fails.append("m150 Google's status and body must be kept")
+if 'f"vision call failed: {type(e).__name__}"' in _src150: fails.append("m150 the exception type alone is not a reason")
+import app.apihealth as _AH150
+if "reverse_search" not in _AH150.SERVICES: fails.append("m150 reverse_search must appear on the API ledger")
+_cfg150 = {r["service"]: r for r in _AH150.services()}
+if "reverse_search" not in _cfg150: fails.append("m150 the ledger must list it")
+_mn150 = open("app/main.py").read()
+if '"/api/admin/visiontest"' not in _mn150: fails.append("m150 no Vision diagnostic endpoint")
+_ad150 = open("app/templates/admin.html").read()
+if "async function visionTest(" not in _ad150: fails.append("m150 no button to ask Vision")
+for _need in ("not switched on for this Google project", "billing", "restricted"):
+    if _need not in _ad150.split("async function visionTest(")[1][:2200]: fails.append(f"m150 Vision answer not translated: {_need}")
+# every lane that calls out must report: the rule, enforced
+for _mod, _name in (("app/agents/hive_detect.py", "hive"), ("app/agents/evidence.py", "google_factcheck"),
+                    ("app/agents/reverse_search.py", "reverse_search"), ("app/agents/rescue.py", "rescue")):
+    if "from app.apihealth import note" not in open(_mod).read(): fails.append(f"m150 {_name} does not report to the ledger")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 148/148 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue")
+    "FINAL MATRIX PASS: 150/150 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue, blame-the-right-thing, no-silent-lanes")

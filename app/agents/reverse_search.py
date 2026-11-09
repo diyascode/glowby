@@ -23,6 +23,7 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 
 VISION_URL = "https://vision.googleapis.com/v1/images:annotate"
@@ -57,6 +58,48 @@ def _spend():
 def _not_assessed(reason):
     return {"assessment_status": "not_assessed", "evidence": [],
             "earliest": None, "context_note": None, "reason": reason}
+
+
+def _health(ok, err=""):
+    """Report to the API ledger. A lane that fails silently is a lane
+    nobody fixes (v0.66.54)."""
+    try:
+        from app.apihealth import note
+        note("reverse_search", ok, err)
+    except Exception:
+        pass
+
+
+def selftest(image_b64: str = None) -> dict:
+    """Admin diagnostic: one real Vision call, with Google's exact answer.
+    Uses a 1x1 JPEG — enough to prove the key and the API are live."""
+    if not available():
+        return {"ok": False, "stage": "config", "detail": "GOOGLE_VISION_KEY is not set"}
+    img = image_b64 or (
+        "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL"
+        "DBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/"
+        "wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAA"
+        "AAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
+    key = (os.environ.get("GOOGLE_VISION_KEY") or "").strip()
+    body = json.dumps({"requests": [{"image": {"content": img},
+                                     "features": [{"type": "WEB_DETECTION", "maxResults": 1}]}]}).encode()
+    req = urllib.request.Request(f"{VISION_URL}?key={key}", data=body, method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+            payload = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")[:400]
+        except Exception:
+            detail = ""
+        return {"ok": False, "stage": "call", "detail": f"HTTP {e.code}: {detail}"}
+    except Exception as e:
+        return {"ok": False, "stage": "call", "detail": f"{type(e).__name__}: {str(e)[:200]}"}
+    resp = (payload.get("responses") or [{}])[0]
+    if resp.get("error"):
+        return {"ok": False, "stage": "api", "detail": json.dumps(resp["error"])[:300]}
+    return {"ok": True, "stage": "parsed", "detail": "Vision answered and the response parsed"}
 
 
 def _failed(reason):
@@ -144,12 +187,28 @@ def analyze(image_b64, posted_date=None):
     req = urllib.request.Request(
         f"{VISION_URL}?key={key}", data=body, method="POST",
         headers={"Content-Type": "application/json"})
+    # v0.66.54: this lane used to swallow its own errors — the exception
+    # type and nothing else, reported to nobody. Google's console showed
+    # 100% errors on Cloud Vision while Glowby had no idea anything was
+    # wrong, which is the third time the same silent-failure pattern has
+    # cost us (Hive, the fact-check lane, now this). Google's own words
+    # are kept, and every call reports to the health ledger.
     try:
         _spend()
         with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
             payload = json.loads(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            body = ""
+        detail = f"HTTP {e.code}: {body}"
+        _health(False, detail[:160])
+        return _failed(f"vision call failed: {detail}")
     except Exception as e:
-        return _failed(f"vision call failed: {type(e).__name__}")
+        _health(False, f"{type(e).__name__}: {str(e)[:120]}")
+        return _failed(f"vision call failed: {type(e).__name__}: {str(e)[:120]}")
+    _health(True)
 
     try:
         web = (payload.get("responses") or [{}])[0].get("webDetection") or {}

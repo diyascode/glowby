@@ -313,6 +313,7 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="apiServices"></div>
       <div style="margin-top:8px"><button onclick="hiveTest()">Ask the AI detector now</button> <span class="s">one real call, about 1&cent; — it answers in Hive's own words</span><div id="hiveTestOut" class="s" style="margin-top:6px"></div></div>
       <div style="margin-top:8px"><button onclick="gfcTest()">Ask the fact-check database now</button> <span class="s">free — searches Google's fact-check index for a claim everyone has checked</span><div id="gfcTestOut" class="s" style="margin-top:6px"></div></div>
+      <div style="margin-top:8px"><button onclick="visionTest()">Ask the reverse-image search now</button> <span class="s">one tiny call — this is the lane that finds where footage appeared before</span><div id="visionTestOut" class="s" style="margin-top:6px"></div></div>
       <div class="s" style="margin:10px 0 4px">Key ages — the app keeps a salted fingerprint per secret and logs when it changes; values are never seen. Orange past <span id="apiRotate"></span> days.</div>
       <div id="apiKeys" class="dist"></div>
       <div id="apiPartners" style="margin-top:8px"></div>
@@ -1484,6 +1485,26 @@ async function gfcTest(){
       : /quota|429/i.test(det) ? "The daily quota for this key is used up. It resets tomorrow." : "";
     out.innerHTML = head + `<div style="color:#f87171"><b>The database refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Google's exact words: ${esc(det.slice(0,300))}</div>`;
   }
+}
+// v0.66.54: the reverse-image lane is the "where did this footage appear
+// before" row on every result. Google's console showed it erroring on
+// every call while Glowby reported nothing, because the lane kept only
+// the exception TYPE and told no one. Now it answers in Google's words.
+async function visionTest(){
+  const out = $("visionTestOut");
+  out.innerHTML = "asking Google Vision…";
+  const d = await getJSON("/api/admin/visiontest?key=" + encodeURIComponent(KEY), 1);
+  if (!d) { out.innerHTML = '<span style="color:#f87171">Could not reach the app.</span>'; return; }
+  const r = d.result || {}, det = String(r.detail || "");
+  const head = `<div class="s">key ${d.key_present ? "set" : '<span style="color:#f87171">not set</span>'}</div>`;
+  if (r.ok){ out.innerHTML = head + '<div style="color:#4ade80"><b>Vision answered.</b> The lane that finds earlier copies of a video is alive.</div>'; return; }
+  const plain = /has not been used|not enabled|SERVICE_DISABLED/i.test(det)
+    ? "The Cloud Vision API is not switched on for this Google project. Enable it in Google Cloud → APIs & Services → Library, same as the fact-check one."
+    : /billing/i.test(det) ? "Vision needs billing enabled on that Google project. It has a free monthly tier, but the project still needs a billing account attached."
+    : /API key not valid|API_KEY_INVALID/i.test(det) ? "Google is refusing this key. Check GOOGLE_VISION_KEY in Railway, and that the key is not restricted to other APIs."
+    : /PERMISSION_DENIED|restricted|referer/i.test(det) ? "The key exists but is restricted — an API or referrer restriction is blocking this call. Loosen it in Google Cloud → Credentials."
+    : /quota|RESOURCE_EXHAUSTED|429/i.test(det) ? "The free monthly quota is used up. It resets at the start of the month." : "";
+  out.innerHTML = head + `<div style="color:#f87171"><b>Vision refused.</b>${plain ? " " + esc(plain) : ""}</div><div class="s" style="margin-top:4px;opacity:.75">Google's exact words: ${esc(det.slice(0,300))}</div>`;
 }
 async function seAudited(){
   try { await fetch("/api/admin/security/audited", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY})}); } catch(e){}

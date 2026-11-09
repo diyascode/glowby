@@ -31,7 +31,7 @@ import time
 from datetime import datetime, timezone
 
 _ROOT = os.path.dirname(__file__)
-SERVICES = ("anthropic", "openai", "brave", "turnstile", "proxy", "rescue", "hive", "tiktok", "linkedin", "google_factcheck")
+SERVICES = ("anthropic", "openai", "brave", "turnstile", "proxy", "rescue", "hive", "tiktok", "linkedin", "google_factcheck", "reverse_search")
 ROTATE_DAYS = int(os.environ.get("GLOWBY_KEY_ROTATE_DAYS", "90"))
 PARTNER_DAILY_CAP = int(os.environ.get("GLOWBY_PARTNER_DAILY_CAP", "500"))
 
@@ -138,7 +138,8 @@ def services() -> list:
                   "proxy": bool(env.get("WEBSHARE_PROXY_USERNAME") or env.get("PROXY_URL")), "rescue": bool(env.get("GLOWBY_RESCUE_TOKEN") or env.get("SCRAPECREATORS_KEY")),
                   "hive": bool(_hive_key_source()),
                   "tiktok": bool(env.get("GLOWBY_TIKTOK_CLIENT_KEY")), "linkedin": bool(env.get("GLOWBY_LINKEDIN_CLIENT_ID")),
-                  "google_factcheck": bool(env.get("GOOGLE_API_KEY") or env.get("YOUTUBE_API_KEY"))}
+                  "google_factcheck": bool(env.get("GOOGLE_API_KEY") or env.get("YOUTUBE_API_KEY")),
+                  "reverse_search": bool(env.get("GOOGLE_VISION_KEY"))}
     out = []
     with _LOCK:
         mem = {k: dict(v) for k, v in _MEM.items()}

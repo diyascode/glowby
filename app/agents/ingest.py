@@ -101,6 +101,18 @@ def detect_platform(url: str) -> str:
     return "other"
 
 
+_EXTRACTOR_FAULT = re.compile(
+    r"(cannot parse data|unsupported url|unable to extract|no video formats|"
+    r"this video is unavailable|video unavailable|private video|members-only|"
+    r"has been removed|is not available|requested format is not available)", re.I)
+
+
+def _is_extractor_fault(err: str) -> bool:
+    """Pure: did the downloader fail to READ the page, rather than fail to
+    REACH it? A parse error says the network path was fine."""
+    return bool(_EXTRACTOR_FAULT.search(err or ""))
+
+
 def _fb_looks_like_video(url: str) -> bool:
     """Facebook VIDEO urls sometimes open without login; posts never do."""
     u = url.lower()
@@ -232,7 +244,15 @@ def ingest(url: str) -> dict:
             if attempt == 1:
                 time.sleep(1.5)
     if info is None:
-        _health("proxy", False, err_text)
+        # v0.66.53: only blame the proxy for things the proxy did. A
+        # yt-dlp parser error ("Cannot parse data", "Unsupported URL") means
+        # the connection worked fine and the extractor could not read the
+        # page — recording that as a proxy failure put a red light on a
+        # healthy service and sent us looking in the wrong place (Nov 9).
+        if _is_extractor_fault(err_text):
+            _health("proxy", True)
+        else:
+            _health("proxy", False, err_text)
     _mark("meta", _t_meta)
     if info is None:
         bot_blocked = "Sign in to confirm" in err_text or "not a bot" in err_text
