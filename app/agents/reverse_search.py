@@ -31,9 +31,43 @@ TIMEOUT_S = 30
 MONTHLY_CAP = int(os.environ.get("GLOWBY_VISION_MONTHLY_CAP", "900"))
 RECYCLED_GAP_DAYS = 30  # older than the post by this much = flagged
 
-# in-memory monthly counter (resets on redeploy — conservative enough
-# under the 10% headroom left below Google's free tier)
+# v0.66.57: this counter used to live only in memory and reset on every
+# redeploy. That was harmless while Vision had no billing account and
+# simply refused past the free tier — but the moment billing is attached,
+# Google stops refusing and starts charging, and a counter that forgets
+# itself ten times a day is no cap at all. It is now kept in the database
+# so a month means a month. (Inderpreet, Nov 9)
 _counter = {"month": "", "count": 0}
+
+
+def _load_count(m: str) -> int:
+    try:
+        from app.marketing import setting
+        return int(setting(f"vision:used:{m}") or 0)
+    except Exception:
+        return 0
+
+
+def _save_count(m: str, n: int) -> None:
+    try:
+        from app.marketing import set_setting
+        set_setting(f"vision:used:{m}", str(n))
+    except Exception:
+        pass
+
+
+def _sync(m: str) -> None:
+    """Pull the stored total in whenever the month turns or we just booted."""
+    if _counter["month"] != m:
+        _counter["month"], _counter["count"] = m, _load_count(m)
+
+
+def usage() -> dict:
+    """Where this month's free allowance stands — for the system check."""
+    m = _month()
+    _sync(m)
+    return {"month": m, "used": _counter["count"], "cap": MONTHLY_CAP,
+            "left": max(0, MONTHLY_CAP - _counter["count"])}
 
 
 def available():
@@ -46,13 +80,15 @@ def _month():
 
 def _budget_ok():
     m = _month()
-    if _counter["month"] != m:
-        _counter["month"], _counter["count"] = m, 0
+    _sync(m)
     return _counter["count"] < MONTHLY_CAP
 
 
 def _spend():
+    m = _month()
+    _sync(m)
     _counter["count"] += 1
+    _save_count(m, _counter["count"])
 
 
 def _not_assessed(reason):

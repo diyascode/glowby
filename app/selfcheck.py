@@ -178,6 +178,29 @@ def check_harness(qa_summary_fn) -> dict:
                 f"{last.get('n')} re-checked on {last.get('day')}, average drift {drift if drift is not None else '—'}")
 
 
+def check_vision_budget() -> dict:
+    """Google Vision is free for the first 1,000 web-detection calls a
+    month and charged after that, so the only thing standing between us
+    and a bill is this counter. It is worth a check of its own."""
+    try:
+        from app.agents import reverse_search as rs
+        if not rs.available():
+            return _row("vision_budget", "Reverse-image allowance", OK,
+                        "no key set, so nothing can be spent")
+        u = rs.usage()
+    except Exception as e:
+        return _row("vision_budget", "Reverse-image allowance", UNKNOWN, str(e)[:120])
+    detail = f"{u['used']} of {u['cap']} free calls used in {u['month']}"
+    if u["left"] <= 0:
+        return _row("vision_budget", "Reverse-image allowance", WARN,
+                    detail + " — the lane is paused until the month turns",
+                    "nothing is being charged; raise GLOWBY_VISION_MONTHLY_CAP only "
+                    "if you mean to pay past Google's free tier")
+    if u["left"] < u["cap"] * 0.15:
+        return _row("vision_budget", "Reverse-image allowance", WARN, detail)
+    return _row("vision_budget", "Reverse-image allowance", OK, detail)
+
+
 def check_secrets() -> dict:
     try:
         from app.apihealth import scan_source
@@ -215,6 +238,7 @@ def run(budget_fn, usage_fn, series_fn, today_fn, qa_summary_fn, version: str = 
                lambda: check_budget(budget_fn, usage_fn),
                lambda: check_failures(series_fn, today_fn),
                lambda: check_harness(qa_summary_fn),
+               lambda: check_vision_budget(),
                lambda: check_secrets(),
                lambda: check_detector_bands()):
         try:
