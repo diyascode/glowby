@@ -150,6 +150,24 @@ def ingest(url: str) -> dict:
     if platform == "facebook" and not _fb_looks_like_video(url):
         raise IngestError(FB_POST_MSG)
 
+    # FACEBOOK VIDEO / REEL: same login wall as Instagram, and until
+    # v0.66.52 it was the one platform that never got the rescue tier —
+    # it went straight to yt-dlp, which Facebook turns away nearly every
+    # time. That is why reels "didn't check" (Inderpreet, Nov 9).
+    if platform == "facebook":
+        try:
+            from app.agents.rescue import rescue_media
+
+            rescued = rescue_media(url, "facebook")
+        except Exception:
+            rescued = None
+        if rescued and rescued.get("media_url"):
+            saved = _ingest_rescued(url, "facebook", rescued)
+            if saved is not None:
+                return saved
+        # nothing came back — fall through to yt-dlp; some public
+        # Facebook videos do still open without the rescue tier
+
     # INSTAGRAM: yt-dlp almost never gets a Reel (login wall) and when it
     # "succeeds" it often yields an empty file. Go straight to the rescue
     # tier, which is the only door that reliably opens for Instagram.

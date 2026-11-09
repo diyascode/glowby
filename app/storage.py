@@ -2024,3 +2024,33 @@ def resolve_failure(fid: int, status: str) -> bool:
             return cur.rowcount > 0
     except Exception:
         return False
+
+
+def score_histogram(days: int = 90) -> dict:
+    """v0.66.51: how every headline score is distributed, in 0.1 steps.
+
+    Why this exists: the verdict WORD is decided by cut-offs at 8.0, 7.5
+    and 4.0. If the judges keep landing on a value that IS a cut-off, a
+    large share of all results sit one hair from flipping their own
+    headline word, and the nightly harness reports that as Glowby
+    changing its mind. This is how we find out (Inderpreet, Oct 29).
+    """
+    conn = _get_conn()
+    empty = {"buckets": [], "total": 0, "edges": [4.0, 7.5, 8.0], "on_edge": 0, "days": days}
+    if conn is None:
+        return empty
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT round((result->'report'->>'headline_score')::numeric, 1) AS s, count(*) "
+                "FROM checks WHERE created_at > now() - make_interval(days => %s) "
+                "AND result->'report'->>'headline_score' IS NOT NULL "
+                "GROUP BY 1 ORDER BY 1", (days,))
+            rows = [(float(r[0]), int(r[1])) for r in cur.fetchall()]
+    except Exception:
+        return empty
+    total = sum(n for _, n in rows)
+    edges = [4.0, 7.5, 8.0]
+    on_edge = sum(n for s, n in rows if s in edges)
+    return {"buckets": [{"score": s, "n": n} for s, n in rows], "total": total,
+            "edges": edges, "on_edge": on_edge, "days": days}

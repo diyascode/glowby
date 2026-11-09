@@ -296,14 +296,58 @@ def _sc_tiktok(url: str):
     return _with_platform_label(parse_sc_tiktok(body), body, "tiktok")
 
 
+def parse_sc_facebook(body) -> dict | None:
+    """Pure (unit-tested): Scrape Creators /v1/facebook/post body ->
+    {media_url, title, uploader, duration_seconds} or None.
+
+    Documented shape (confirmed against the vendor's own Python tutorial,
+    Nov 2026): video.hd_url / video.sd_url hold the .mp4, the caption is
+    the top-level `description` (there is no `title`), the poster is
+    author.name, and the length is video.length_in_second — seconds, as a
+    float. Prefer SD: it is a smaller download and Whisper and the frame
+    sampler do not benefit from HD. The link is also deep-searched, so a
+    change to the wrapper shape degrades instead of breaking."""
+    if not isinstance(body, dict):
+        return None
+    data = body.get("data") if isinstance(body.get("data"), dict) else body
+    vid = data.get("video") if isinstance(data.get("video"), dict) else {}
+    media = vid.get("sd_url") or vid.get("hd_url") or _deep_find_video(data)
+    if not media:
+        return None
+    author = data.get("author") if isinstance(data.get("author"), dict) else {}
+    try:
+        dur = float(vid.get("length_in_second")) if vid.get("length_in_second") is not None else None
+    except Exception:
+        dur = None
+    return {"media_url": media,
+            "title": (data.get("description") or "")[:300] or None,
+            "uploader": author.get("name") or author.get("handle") or None,
+            "duration_seconds": dur,
+            "posted_date": data.get("posted_date") or data.get("creation_time")}
+
+
+def _sc_facebook(url: str):
+    # v0.66.52: Facebook reels never reached the rescue tier at all —
+    # Instagram was routed to it and Facebook was left to yt-dlp, which
+    # the login wall turns away nearly every time. That was the whole
+    # reason a reel "didn't check" (Inderpreet, Nov 9).
+    body = _sc_get("/facebook/post", {"url": url.split("?")[0]})
+    return _with_platform_label(parse_sc_facebook(body), body, "facebook")
+
+
 def rescue_media(url: str, platform: str):
     """Blocked URL in -> {media_url, title, uploader, duration_seconds,
     posted_date} out, or None. Counts against the daily rescue cap."""
-    if platform not in ("tiktok", "instagram") or not _allowed():
+    if platform not in ("tiktok", "instagram", "facebook") or not _allowed():
+        return None
+    # Facebook is Scrape Creators only — EnsembleData has no endpoint for it
+    if platform == "facebook" and provider() != "scrapecreators":
         return None
     _count()
     try:
-        if provider() == "scrapecreators":
+        if platform == "facebook":
+            out = _sc_facebook(url)
+        elif provider() == "scrapecreators":
             out = _sc_tiktok(url) if platform == "tiktok" else _sc_instagram(url)
         elif platform == "tiktok":
             out = _rescue_tiktok(url)

@@ -177,6 +177,14 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <button data-nav="security">Security</button>
     </nav>
     <div id="panes">
+    <div class="card" data-pane="overview" id="scheckCard" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">System check</h2>
+        <span><span class="s" id="scheckMeta"></span> <button id="scheckRun" class="fbf" style="font-size:.78rem;padding:6px 12px">Run now</button></span>
+      </div>
+      <div class="s" style="margin:6px 0 8px">Runs itself every morning at 7 Pacific and costs nothing — it only reads what the app already knows. It asks the questions that caught the last fortnight's problems: is the database writing, is there budget left, is every key that is set actually being used, did the nightly consistency run happen, is anything key-shaped sitting in the code.</div>
+      <div id="scheckBody"></div>
+    </div>
     <div class="tiles" id="tiles" data-pane="overview"></div>
 
     <div class="card" data-pane="overview">
@@ -196,6 +204,9 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div class="s" style="margin-bottom:2px">Per night · <span style="color:#38bdf8">■ re-checked</span> <span style="color:#f87171">■ flipped</span></div>
       <div id="qaBars"></div>
       <div id="qaFlips" style="margin-top:8px"></div>
+      <h3 style="font-size:.85rem;margin:16px 0 4px">Where the scores land</h3>
+      <div class="s" style="margin-bottom:6px">Every headline score of the last 90 days, in tenths. The vertical lines are the cut-offs that decide the verdict word — <b>4.0</b>, <b>7.5</b>, <b>8.0</b>. A pile of scores sitting exactly ON a line is why re-checks flip: those results are one tenth of a point from changing their own headline. <span id="scOnEdge"></span></div>
+      <div id="scChart"></div>
     </div>
 
     <div class="card" data-pane="checks">
@@ -718,8 +729,12 @@ async function loadFailures(){
     return `<div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);opacity:${f.status==='new'?1:.55}">
       <div><b style="color:${FL_COLOR[f.kind]||'#9aa0b0'}">${esc(FL_LABEL[f.kind]||f.kind)}</b> · ${esc(f.platform||"")} · ${esc(when)}${f.source === "crawler" ? ' · <span style="color:#9aa0b0">trending crawler, nobody was waiting</span>' : ""} · <span style="font-size:.62rem;padding:1px 6px;border-radius:999px;background:rgba(255,255,255,.07);color:${flBlame(f.kind)==='ours'?'#f87171':'#9aa0b0'}">${esc(FL_BLAME_TAG[flBlame(f.kind)])}</span></div>
       <div class="s">${link}</div>
-      <div class="s" style="margin-top:2px">${esc(f.message||"")}</div>
-      <div class="racts">${acts}</div>
+      <div class="s" style="margin-top:2px">${esc((f.message||"").slice(0,160))}${(f.message||"").length>160?"…":""}</div>
+      ${(f.message||"").length>160||f.url_key?`<details style="margin-top:2px"><summary class="s" style="cursor:pointer">what happened ↓</summary>
+        <div class="s" style="padding:4px 0 0 10px;border-left:1px solid rgba(255,255,255,.12);white-space:pre-wrap">${esc(f.message||"(nothing was recorded)")}</div>
+        <div class="s" style="padding:4px 0 0 10px">asked by <b>${esc(f.source||"user")}</b> · key <code>${esc((f.url_key||"").slice(0,48))}</code>${f.url_key?` · <a href="/r/${encodeURIComponent(f.url_key)}" target="_blank">the last good report for this link ↗</a>`:""}</div>
+      </details>`:""}
+      <div class="racts">${acts}${f.url?` <button onclick="flRetry(${f.id},'${esc(f.url).replace(/'/g,"%27")}')">run it again now</button><span id="flOut${f.id}"></span>`:""}</div>
     </div>`;
   }).join("");
 }
@@ -730,6 +745,67 @@ async function flResolve(id, status){
   loadFailures();
 }
 
+// v0.66.51: retry a failed link from the card and watch it, instead of
+// opening the app in another tab and losing your place in the list. This
+// is a real check: it is saved and it costs, which is the point — we want
+// to know whether whatever blocked it has cleared.
+async function flRetry(id, url){
+  const out = $("flOut" + id);
+  out.innerHTML = " · starting…";
+  let jid = "";
+  try {
+    const r = await fetch("/api/admin/failures/retry", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, failure_id: id, url: decodeURIComponent(url)})});
+    const j = await r.json();
+    if (!j.ok) { out.innerHTML = ` · <span style="color:#f87171">${esc(j.detail || "could not start")}</span>`; return; }
+    jid = j.job_id;
+    out.innerHTML = ' · running…';
+  } catch(e){ out.innerHTML = ' · <span style="color:#f87171">could not reach the app</span>'; return; }
+  for (let i = 0; i < 40; i++){
+    await new Promise(res => setTimeout(res, 3000));
+    let s = null;
+    try { const r = await fetch("/api/job/" + encodeURIComponent(jid)); if (r.ok) s = await r.json(); } catch(e){}
+    if (!s) continue;
+    if (s.status === "done"){
+      out.innerHTML = ` · <span style="color:#4ade80">it worked this time</span> · <a href="/r/${encodeURIComponent(s.url_key || "")}" target="_blank">see the report ↗</a>`;
+      return;
+    }
+    if (s.status === "error"){
+      out.innerHTML = ` · <span style="color:#f87171">failed again: ${esc((s.error || "").slice(0,120))}</span>`;
+      return;
+    }
+    out.innerHTML = ` · running… <span style="opacity:.7">${esc(s.stage || "")}</span>`;
+  }
+  out.innerHTML = ' · <span style="opacity:.7">still running — refresh the card in a minute</span>';
+}
+const SC_STYLE = {ok:["#4ade80","✓"], warn:["#fab219","!"], fail:["#f87171","✕"], unknown:["#9aa0b0","?"]};
+async function loadSelfCheck(force){
+  const meta = $("scheckMeta");
+  if (force) meta.textContent = "running…";
+  const d = await getJSON("/api/admin/selfcheck?key=" + encodeURIComponent(KEY) + (force ? "&run=1" : ""), force ? 1 : 2);
+  if (!d) { if (!window.__scLoaded) $("scheckBody").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
+  window.__scLoaded = true;
+  const v = SC_STYLE[d.verdict] || SC_STYLE.unknown;
+  meta.textContent = d.at ? ("last run " + String(d.at).slice(0,16).replace("T"," ") + " UTC") : "";
+  const bad = (d.checks||[]).filter(c => c.state !== "ok");
+  const good = (d.checks||[]).filter(c => c.state === "ok");
+  $("scheckBody").innerHTML =
+    `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;background:rgba(255,255,255,.04);margin-bottom:${bad.length?10:0}px">
+       <span style="font-size:1.2rem;color:${v[0]}">${v[1]}</span>
+       <b style="color:${v[0]}">${esc(d.headline||"")}</b>
+       <span class="s">${(d.counts||{}).ok||0} fine · v${esc(d.version||"")}</span>
+     </div>` +
+    bad.map(c => {
+      const s = SC_STYLE[c.state] || SC_STYLE.unknown;
+      return `<div class="s" style="padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+        <div><span style="color:${s[0]}">${s[1]}</span> <b style="color:var(--ink)">${esc(c.title||c.id)}</b> — ${esc(c.detail||"")}</div>
+        ${c.fix?`<div class="s" style="opacity:.8;margin-top:2px">→ ${esc(c.fix)}</div>`:""}
+      </div>`;
+    }).join("") +
+    (good.length ? `<details style="margin-top:6px"><summary class="s" style="cursor:pointer">the ${good.length} that passed ↓</summary>`
+      + good.map(c => `<div class="s" style="padding:3px 0"><span style="color:#4ade80">✓</span> <b style="color:var(--ink)">${esc(c.title||c.id)}</b> — ${esc(c.detail||"")}</div>`).join("")
+      + '</details>' : "");
+}
+$("scheckRun").onclick = async () => { $("scheckRun").disabled = true; await loadSelfCheck(1); $("scheckRun").disabled = false; };
 async function loadQA(){
   const d = await getJSON("/api/admin/qa?key=" + encodeURIComponent(KEY));
   if (!d) { if (!window.__qaLoaded) $("qaTiles").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
@@ -742,13 +818,59 @@ async function loadQA(){
   $("qaTiles").innerHTML =
     tile("Re-checked (14 days)", tot, last ? `last night: ${last.n}` : "no runs yet") +
     tile("Average drift", avg, "points of score, same clip a day later", +avg > 1.0 ? "warn" : "good") +
-    tile("Verdicts flipped", fl, `${tot ? Math.round(fl / tot * 100) : 0}% of re-checks · ${big} moved 1.5+ points`, tot && fl / tot > 0.1 ? "warn" : "good") +
+    // v0.66.51: the old tile said "49% flipped", which was true and useless.
+    // A verdict word is decided by cut-offs, so 7.5 -> 7.4 reads as a flip
+    // while being a tenth of a point stepping over a line. Count them apart.
+    (() => { const k = d.kinds || {}, real = (k.real||0) + (k.unclassified||0), wob = k.wobble||0, lost = k.lost||0;
+      return tile("Real disagreements", real, `${wob} were only the 7.5/8.0 boundary wobbling · ${lost} lost their evidence`,
+                  tot && real / tot > 0.1 ? "warn" : "good"); })() +
     (() => { const er = days.reduce((a, x) => a + (x.errors || 0), 0);
       return tile("Re-checks that errored", er, "the harness's own failures — not in the “didn’t run” card", er > tot * 0.2 ? "warn" : "good"); })();
   const mx = Math.max(1, ...days.map(x => x.n));
   $("qaBars").innerHTML = !days.length ? '<div class="empty">First numbers appear the morning after the first run.</div>' : '<div style="display:flex;gap:4px;align-items:flex-end;height:80px">' + days.map(x => `<div style="flex:1;text-align:center" title="${x.day}: ${x.n} re-checked, ${x.flips} flipped, avg drift ${x.avg_drift ?? "—"}"><div style="display:flex;flex-direction:column-reverse;height:60px"><i style="display:block;height:${Math.max(2, x.n / mx * 56)}px;background:#38bdf8;border-radius:2px"></i><i style="display:block;height:${x.flips ? Math.max(2, x.flips / mx * 56) : 0}px;background:#f87171;border-radius:2px"></i></div><div class="s" style="font-size:.6rem">${fmtDay(x.day)}</div></div>`).join("") + '</div>';
+  // v0.66.51: a row now says WHICH KIND of flip it is, opens to the claims
+  // that actually changed, and can be re-run on the spot — "it flipped" was
+  // never enough to act on (Inderpreet, Oct 29).
+  const KIND = {real:["#f87171","real disagreement"], wobble:["#9aa0b0","boundary wobble — under half a point"],
+                lost:["#fb923c","lost its evidence — stopped being scoreable"], "":["#9aa0b0","big move, same verdict"]};
   const fl2 = d.flips || [];
-  $("qaFlips").innerHTML = !fl2.length ? "" : '<div class="s" style="margin-bottom:4px">Flips and big moves (newest first)</div>' + fl2.map(f => `<div class="s" style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05)"><b style="color:var(--ink)">${esc(f.title || f.url_key)}</b> · ${esc(f.old_word || "")} ${f.old_score ?? "—"} → <span style="color:#fab219">${esc(f.new_word || "")} ${f.new_score ?? "—"}</span> (${f.drift > 0 ? "+" : ""}${f.drift ?? "—"}) · <a href="/r/${encodeURIComponent(f.url_key)}" target="_blank">open ↗</a></div>`).join("");
+  $("qaFlips").innerHTML = !fl2.length ? "" : '<div class="s" style="margin-bottom:4px">Flips and big moves (newest first)</div>' + fl2.map(f => {
+    const k = KIND[f.kind || ""] || KIND[""];
+    const det = (f.detail || []);
+    const rows = det.map(c => `<div class="s" style="padding:3px 0 3px 10px;border-left:1px solid rgba(255,255,255,.12)"><b style="color:var(--ink)">${esc(c.claim || "")}</b><br>${esc(c.old || "—")} ${c.old_score ?? ""} → <span style="color:#fab219">${esc(c.new || "—")} ${c.new_score ?? ""}</span></div>`).join("");
+    return `<div class="s" id="qaRow${f.id}" style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,.05)">
+      <div><b style="color:var(--ink)">${esc(f.title || f.url_key)}</b> <span style="font-size:.62rem;padding:1px 6px;border-radius:999px;background:rgba(255,255,255,.07);color:${k[0]}">${esc(k[1])}</span></div>
+      <div>${esc(f.old_word || "")} ${f.old_score ?? "—"} → <span style="color:#fab219">${esc(f.new_word || "")} ${f.new_score ?? "—"}</span> (${f.drift > 0 ? "+" : ""}${f.drift ?? "—"})
+        · <a href="/r/${encodeURIComponent(f.url_key)}" target="_blank">open the saved report ↗</a>${f.url ? ` · <a href="${esc(f.url)}" target="_blank" rel="noopener">the video ↗</a>` : ""}
+        · <button onclick="qaOne('${esc(f.url_key)}',${f.id})" style="font-size:.72rem;padding:3px 9px">run it again now</button>
+        <span id="qaOut${f.id}"></span></div>
+      ${det.length ? `<details style="margin-top:3px"><summary class="s" style="cursor:pointer">what changed underneath (${det.length}) ↓</summary>${rows}</details>`
+                   : '<div class="s" style="opacity:.6">no per-claim detail — this re-check ran before v0.66.51</div>'}
+    </div>`;
+  }).join("");
+  loadScores();
+}
+async function qaOne(urlKey, id){
+  const out = $("qaOut" + id);
+  out.innerHTML = " · re-running…";
+  try {
+    const r = await fetch("/api/admin/qa/one", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({key: KEY, url_key: urlKey})});
+    const j = await r.json();
+    out.innerHTML = j.ok
+      ? ` · <span style="color:${j.flipped ? "#fab219" : "#4ade80"}">just now: ${esc(j.new_word || "")} ${j.new_score ?? "—"} (${j.drift > 0 ? "+" : ""}${j.drift ?? "—"}) in ${j.seconds}s</span>`
+      : ` · <span style="color:#f87171">${esc(j.detail || "failed")}</span>`;
+  } catch(e){ out.innerHTML = ' · <span style="color:#f87171">could not reach the app</span>'; }
+}
+async function loadScores(){
+  const d = await getJSON("/api/admin/scores?key=" + encodeURIComponent(KEY) + "&days=90");
+  if (!d || !(d.buckets || []).length) { $("scChart").innerHTML = '<div class="empty">No scored checks yet.</div>'; return; }
+  const bs = d.buckets, mx = Math.max(1, ...bs.map(x => x.n));
+  const pct = d.total ? Math.round(d.on_edge / d.total * 100) : 0;
+  $("scOnEdge").innerHTML = `<b style="color:${pct > 10 ? "#fab219" : "#4ade80"}">${d.on_edge} of ${d.total} scores (${pct}%) sit exactly on a cut-off.</b>`;
+  $("scChart").innerHTML = '<div style="display:flex;gap:1px;align-items:flex-end;height:110px">' + bs.map(x => {
+    const edge = (d.edges || []).includes(x.score);
+    return `<div style="flex:1;text-align:center" title="${x.score}: ${x.n}"><div style="display:flex;flex-direction:column-reverse;height:92px"><i style="display:block;height:${Math.max(1, x.n / mx * 88)}px;background:${edge ? "#fab219" : "#38bdf8"};border-radius:1px"></i></div><div class="s" style="font-size:.55rem;color:${edge ? "#fab219" : "var(--ink2)"}">${x.score % 1 === 0 || edge ? x.score : ""}</div></div>`;
+  }).join("") + '</div>';
 }
 $("qaRun").onclick = async () => {
   $("qaRun").disabled = true;
@@ -1031,6 +1153,7 @@ function render(d){
 
   // ---- calendar (click a day for its visitors / checks / spend) ----
   if (!window.__calMonth) window.__calMonth = new Date().toISOString().slice(0,7);
+  loadSelfCheck();
   loadCalendar(window.__calMonth);
   loadFeedback();
   loadReview();

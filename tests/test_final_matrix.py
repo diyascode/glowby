@@ -3181,6 +3181,104 @@ if _priv146.index("_settled") > _priv146.index("run_media_detection"): fails.app
 _ap146 = open("app/templates/app.html").read()
 if "The forensic detector was not run." not in _ap146: fails.append("m146 a deliberate skip must not read as a failure")
 
+# m147 — "49% of verdicts flipped" was true and useless. The verdict word
+# is decided by cut-offs (8.0 / 7.5 / 4.0), so 7.5 -> 7.4 reads as a flip
+# while being a tenth of a point stepping over a line we drew. Count the
+# kinds apart, record WHICH claim moved, and let a row be re-run and a
+# failure retried from the card (Inderpreet, Oct 29).
+import app.qa as _QA147
+_rows147 = [("Accurate", "Mostly accurate", -0.7, "wobble"),
+            ("Mostly accurate", "Mixed", -0.1, "wobble"),
+            ("Inaccurate", "Mostly accurate", 3.6, "real"),
+            ("Inaccurate", "Unverified", None, "lost"),
+            ("Mostly accurate", "Mixed", -2.0, "real"),
+            ("Accurate", "Mixed", -1.3, "real")]
+for _o, _n, _d, _want in _rows147:
+    _got = _QA147.flip_kind({"flipped": True, "old_word": _o, "new_word": _n, "drift": _d})
+    if _got != _want: fails.append(f"m147 {_o}->{_n} ({_d}) classed {_got}, expected {_want}")
+if _QA147.flip_kind({"flipped": False, "old_word": "Mixed", "new_word": "Mixed", "drift": 1.5}): fails.append("m147 a same-word move is not a flip")
+if _QA147.band_gap("Accurate", "Mixed") != 2: fails.append("m147 band distance wrong")
+if _QA147.band_gap("Accurate", "Unverified") is not None: fails.append("m147 an off-scale word has no band distance")
+# the diff names the claim that moved, and stays quiet about the ones that did not
+_old147 = {"claims": [{"claim": "A", "verdict": {"verdict_state": "false", "truth_score": 3.5}},
+                      {"claim": "B", "verdict": {"verdict_state": "true", "truth_score": 9.2}}]}
+_new147 = {"claims": [{"claim": "A", "verdict": {"verdict_state": "mixed", "truth_score": 6.0}},
+                      {"claim": "B", "verdict": {"verdict_state": "true", "truth_score": 9.2}}]}
+_d147 = _QA147.claim_diff(_old147, _new147)
+if len(_d147) != 1 or _d147[0]["claim"] != "A": fails.append(f"m147 the diff must name only what moved: {_d147}")
+if _d147[0]["old"] != "false" or _d147[0]["new"] != "mixed": fails.append("m147 the diff must carry both verdicts")
+if not _QA147.claim_diff(_old147, {"claims": []}): fails.append("m147 a claim that vanished is a change too")
+_cmp147 = _QA147.compare({"report": {"headline_score": 7.5}, "claims": []}, {"report": {"headline_score": 7.4}, "claims": []})
+if _cmp147.get("kind") != "wobble": fails.append("m147 compare must classify, not just flag")
+if "detail" not in _cmp147: fails.append("m147 compare must carry the per-claim diff")
+if not hasattr(_QA147, "recheck_one"): fails.append("m147 no way to re-run one from the card")
+_qsrc147 = open("app/qa.py").read()
+if "qa=True" not in _qsrc147.split("def recheck_one(")[1].split("\ndef ")[0]: fails.append("m147 a one-off re-run must still never be saved")
+# the histogram, with the cut-offs on it
+import app.storage as _ST147
+_h147 = _ST147.score_histogram(90)
+for _k in ("buckets", "total", "edges", "on_edge"): 
+    if _k not in _h147: fails.append(f"m147 histogram missing {_k}")
+if _h147.get("edges") != [4.0, 7.5, 8.0]: fails.append("m147 the histogram must carry the real cut-offs")
+_mn147 = open("app/main.py").read()
+for _route in ("/api/admin/scores", "/api/admin/qa/one", "/api/admin/failures/retry"):
+    if f'"{_route}"' not in _mn147: fails.append(f"m147 no {_route}")
+_ad147 = open("app/templates/admin.html").read()
+if "Real disagreements" not in _ad147: fails.append("m147 the tile must count real ones, not all flips")
+if "boundary wobble" not in _ad147: fails.append("m147 the wobble count must be shown beside it")
+if "what changed underneath" not in _ad147: fails.append("m147 a flip must open to the claims that moved")
+if "run it again now" not in _ad147: fails.append("m147 no way to re-run from the row")
+if "what happened" not in _ad147: fails.append("m147 a failed check must open to the full error")
+if "sit exactly on a cut-off" not in _ad147: fails.append("m147 the histogram must say how many land on a line")
+
+# m148 — the morning system check, and the Facebook hole. Every problem
+# of the last fortnight was found by a human spotting something odd in a
+# screenshot; all of them were already visible in data the app held. And
+# Facebook was the one platform that never reached the rescue tier, which
+# is why reels "didn't check" (Inderpreet, Nov 9).
+import app.selfcheck as _SC148
+_rep148 = _SC148.run(lambda: 50.0, lambda: (12, 3.4),
+                     lambda d=14: [{"day": "2026-11-08", "total": 3}, {"day": "2026-11-09", "total": 4}],
+                     lambda: {"blocked": 4},
+                     lambda d=3: {"days": [{"day": "2026-11-09", "n": 28, "avg_drift": 1.11}]}, "test")
+for _k in ("verdict", "headline", "counts", "checks", "at"):
+    if _k not in _rep148: fails.append(f"m148 report missing {_k}")
+if not _rep148["checks"]: fails.append("m148 the check ran nothing")
+if _rep148["verdict"] not in ("ok", "warn", "fail", "unknown"): fails.append("m148 bad verdict")
+_by148 = {c["id"]: c for c in _rep148["checks"]}
+if _by148.get("harness", {}).get("state") != "warn": fails.append("m148 a drift above 1.0 must be raised, not passed")
+if "evidence hunt is the variable" not in (_by148.get("harness", {}).get("fix") or ""): fails.append("m148 the drift warning must say where to look")
+if _by148.get("budget", {}).get("state") != "ok": fails.append("m148 money left must read ok")
+_broke148 = _SC148.check_budget(lambda: 50.0, lambda: (99, 50.0))
+if _broke148["state"] != "fail": fails.append("m148 an exhausted budget must fail")
+_un148 = _SC148.check_failures(lambda d: (_ for _ in ()).throw(RuntimeError("x")), lambda: {})
+if _un148["state"] != "unknown": fails.append("m148 a check that cannot be evaluated is unknown, never ok")
+_spike148 = _SC148.check_failures(lambda d=14: [{"day": "a", "total": 2}, {"day": "b", "total": 40}], lambda: {"blocked": 40})
+if _spike148["state"] != "fail": fails.append("m148 a failure spike must be caught")
+# it must never cost money: no vendor call anywhere in the module
+_src148 = open("app/selfcheck.py").read()
+for _banned in ("urlopen", "requests.", "selftest(", "run_pipeline"):
+    if _banned in _src148: fails.append(f"m148 the system check must spend nothing ({_banned})")
+if "def run(" not in _src148 or "def store(" not in _src148 or "def last(" not in _src148: fails.append("m148 the report must be storable")
+_mn148 = open("app/main.py").read()
+if '"/api/admin/selfcheck"' not in _mn148: fails.append("m148 no system-check endpoint")
+if '"selfcheck", int(os.environ.get("GLOWBY_SELFCHECK_HOUR"' not in _mn148: fails.append("m148 it must run itself every morning")
+if "System check" not in open("app/templates/admin.html").read(): fails.append("m148 no system-check card")
+# Facebook now reaches the rescue tier, and parses what the vendor sends
+from app.agents.rescue import parse_sc_facebook as _pf148
+_got148 = _pf148({"description": "cap", "author": {"name": "A"},
+                  "video": {"sd_url": "https://v.fbcdn.net/a.mp4", "hd_url": "https://v/hd.mp4", "length_in_second": 23.36}})
+if not _got148 or _got148["media_url"] != "https://v.fbcdn.net/a.mp4": fails.append("m148 facebook parser must prefer the smaller sd file")
+if _got148["uploader"] != "A" or round(_got148["duration_seconds"], 2) != 23.36: fails.append("m148 facebook parser dropped fields")
+if _pf148({"description": "x"}) is not None: fails.append("m148 no media must mean no rescue, not a half result")
+_rs148 = open("app/agents/rescue.py").read()
+if '"tiktok", "instagram", "facebook"' not in _rs148: fails.append("m148 facebook must be allowed through rescue_media")
+if "/facebook/post" not in _rs148: fails.append("m148 wrong facebook endpoint")
+_ing148 = open("app/agents/ingest.py").read()
+_fbblk148 = _ing148.split('if platform == "facebook" and not _fb_looks_like_video(url):')[1][:900]
+if 'rescue_media(url, "facebook")' not in _fbblk148: fails.append("m148 a facebook video must try rescue before yt-dlp gives up")
+if _ing148.index('rescue_media(url, "facebook")') > _ing148.index('rescue_media(url, "instagram")'): fails.append("m148 the facebook lane must come before the instagram one it was copied from")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 146/146 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector")
+    "FINAL MATRIX PASS: 148/148 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue")

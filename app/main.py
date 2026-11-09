@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.50"
+VERSION = "0.66.52"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -3158,6 +3158,36 @@ def _qa_nightly() -> dict:
 _mkt.DAILY_HOOKS.append(("qa", int(os.environ.get("GLOWBY_QA_HOUR", "3")), _qa_nightly))
 
 
+# v0.66.52: the morning system check. Every problem of the last fortnight
+# was found by Inderpreet spotting something odd in a screenshot — Hive
+# refusing calls for a week, the Google lane silent since it was built,
+# the harness quietly eating the detector's quota. All of them were
+# already visible in data the app held. This asks those questions on a
+# schedule so the app notices first. It spends nothing.
+from app import selfcheck as _selfcheck  # noqa: E402
+
+
+def _system_check() -> dict:
+    report = _selfcheck.run(_budget, today_usage, failure_series, failures_today,
+                            _qa.summary, VERSION)
+    _selfcheck.store(report)
+    return report
+
+
+_mkt.DAILY_HOOKS.append(("selfcheck", int(os.environ.get("GLOWBY_SELFCHECK_HOUR", "7")), _system_check))
+
+
+@app.get("/api/admin/selfcheck")
+def api_admin_selfcheck(key: str = "", run: int = 0):
+    """The morning system check. `run=1` re-runs it now; otherwise the
+    stored one is returned so opening admin costs nothing."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if run:
+        return _system_check()
+    return _selfcheck.last() or _system_check()
+
+
 @app.get("/api/admin/qa")
 def api_admin_qa(key: str = ""):
     if not _admin_ok(key):
@@ -3165,6 +3195,63 @@ def api_admin_qa(key: str = ""):
     out = _qa.summary(14)
     out["boost"] = _boost.status()
     return out
+
+
+class FailureRetry(BaseModel):
+    key: str = ""
+    failure_id: int = 0
+    url: str = ""
+
+
+@app.post("/api/admin/failures/retry")
+def api_admin_failure_retry(req: FailureRetry):
+    """v0.66.51: run a failed URL again from the admin card and watch what
+    happens, instead of opening the app in another tab and losing the row.
+    This is a REAL check and it is saved and charged — the point is to find
+    out whether the thing that blocked it has cleared."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    url = (req.url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return {"ok": False, "detail": "that row has no link to retry"}
+    spent_n, spent = today_usage()
+    if spent >= _budget():
+        return {"ok": False, "detail": "the daily budget is used up; try tomorrow"}
+    url_key = canonical_key(url)
+    job_id = uuid.uuid4().hex[:12]
+    _set_job(job_id, status="queued", stage="fetching", started=time.time(),
+             url=url, url_key=url_key)
+    threading.Thread(target=_run_pipeline,
+                     args=(job_id, url, url_key, "", None, None, False, False, None, False),
+                     daemon=True).start()
+    return {"ok": True, "job_id": job_id, "url_key": url_key}
+
+
+@app.get("/api/admin/scores")
+def api_admin_scores(key: str = "", days: int = 90):
+    """Every headline score, in 0.1 steps, with the band cut-offs. Admin."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    from app.storage import score_histogram
+    return score_histogram(min(max(int(days), 1), 365))
+
+
+class QaOne(BaseModel):
+    key: str = ""
+    url_key: str = ""
+
+
+@app.post("/api/admin/qa/one")
+def api_admin_qa_one(req: QaOne):
+    """Re-run ONE stored check and return the fresh comparison. Never
+    saves the new result — a shared link keeps the score it was shared
+    with. This is how a flip on the consistency card gets re-tested now
+    instead of tomorrow night."""
+    if not _admin_ok(req.key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    if not (req.url_key or "").strip():
+        return {"ok": False, "detail": "no url_key"}
+    return _qa.recheck_one(_run_pipeline, _job_result, req.url_key.strip())
 
 
 @app.post("/api/admin/qa/run")
