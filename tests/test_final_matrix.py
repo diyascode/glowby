@@ -3334,6 +3334,65 @@ for _mod, _name in (("app/agents/hive_detect.py", "hive"), ("app/agents/evidence
                     ("app/agents/reverse_search.py", "reverse_search"), ("app/agents/rescue.py", "rescue")):
     if "from app.apihealth import note" not in open(_mod).read(): fails.append(f"m150 {_name} does not report to the ledger")
 
+# m151 — the diagnostic that was meant to end silent failure was itself
+# silent. All three ask-it-now buttons said "Could not reach the app"
+# whether the admin key was rejected, the deployed build was older than
+# the button, or the request timed out. A button that cannot say what
+# went wrong is no better than the lane it was built to interrogate
+# (Inderpreet, Nov 9).
+_ad151 = open("app/templates/admin.html").read()
+if "async function askJSON(" not in _ad151 or "function askFail(" not in _ad151: fails.append("m151 no precise reporter")
+_ask151 = _ad151.split("async function askJSON(")[1].split("\nasync function getJSON(")[0]
+for _code in ("403", "404", "500", "503", "504"):
+    if f"{_code}:" not in _ask151: fails.append(f"m151 HTTP {_code} is not explained")
+if "older than the button" not in _ask151: fails.append("m151 a 404 must point at the deploy, not at the network")
+if "admin key was rejected" not in _ask151: fails.append("m151 a 403 must say the key was rejected")
+for _fn in ("hiveTest", "gfcTest", "visionTest"):
+    _blk151 = _ad151.split(f"async function {_fn}(")[1].split("\nasync function ")[0]
+    if "askJSON(" not in _blk151: fails.append(f"m151 {_fn} still swallows the status")
+    if "Could not reach the app" in _blk151: fails.append(f"m151 {_fn} still gives one answer for every failure")
+    if "askFail(" not in _blk151: fails.append(f"m151 {_fn} does not report the status")
+# a button must answer while someone is watching it
+import app.agents.hive_detect as _HV151
+_was151 = _HV151.HIVE_TIMEOUT_S
+_real151 = _HV151._post_v3
+try:
+    _seen151 = {}
+    def _cap151(*a, **k):
+        _seen151["t"] = _HV151.HIVE_TIMEOUT_S
+        raise RuntimeError("HTTP 500: x")
+    _HV151._post_v3 = _cap151
+    _HV151.selftest()
+finally:
+    _HV151._post_v3 = _real151
+if _seen151.get("t", 99) > 20: fails.append(f"m151 the self-test must not wait the pipeline's patience ({_seen151.get('t')}s)")
+if _HV151.HIVE_TIMEOUT_S != _was151: fails.append("m151 the self-test must put the real timeout back")
+
+# the Run now button on the system check must never look dead: a forced
+# run that fails has to say so, not return in silence leaving the old
+# report on screen (Inderpreet, Nov 9).
+_sc151 = _ad151.split("async function loadSelfCheck(")[1].split("\nasync function ")[0]
+if "askJSON(" not in _sc151: fails.append("m151 the system check must report its own failure precisely")
+if "askFail(" not in _sc151: fails.append("m151 a failed Run now must show why")
+if "if (force || !window.__scLoaded)" not in _sc151: fails.append("m151 a forced run must always update the card")
+if "Ran just now" not in _sc151: fails.append("m151 a successful Run now must visibly confirm it ran")
+if 'b.onclick = async () =>' not in _ad151: fails.append("m151 the Run now handler must be bound defensively")
+
+
+# buttons must read as controls, not as labels: a surface, a real edge,
+# hover and pressed states, a focus ring, and a thumb-sized hit area
+# (Inderpreet, Nov 9).
+for _sel151 in (".fbf", ".racts button"):
+    _css151 = _ad151.split(_sel151 + "{")[1][:420]
+    if "cursor:pointer" not in _css151: fails.append(f"m151 {_sel151} does not look clickable")
+    if "min-height:3" not in _css151: fails.append(f"m151 {_sel151} is below a thumb's target size")
+for _state151 in (".fbf:hover", ".fbf:active", ".fbf:focus-visible", ".fbf:disabled",
+                  ".racts button:hover", ".racts button:active", ".racts button:focus-visible"):
+    if _state151 + "{" not in _ad151: fails.append(f"m151 no {_state151} state")
+if ".card button.doit" not in _ad151: fails.append("m151 an action button must look different from a filter")
+if _ad151.count('class="doit"') < 5: fails.append("m151 the ask-it-now and re-run buttons are not marked as actions")
+
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 150/150 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue, blame-the-right-thing, no-silent-lanes")
+    "FINAL MATRIX PASS: 151/151 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue, blame-the-right-thing, no-silent-lanes, buttons-that-say-why, run-now-says-so, buttons-look-like-buttons")

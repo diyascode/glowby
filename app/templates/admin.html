@@ -64,8 +64,18 @@ a{color:var(--brand);text-decoration:none}
 .bar:hover .tip{display:block}
 .bar .tip b{color:var(--ink)}
 .xlab{display:flex;gap:2px;margin-top:6px}
-.fbf{background:none;border:1px solid var(--border);color:var(--muted);border-radius:999px;padding:3px 10px;font-size:.72rem;cursor:pointer;font-family:inherit}
-.fbf.on{border-color:var(--brand);color:var(--ink)}
+/* v0.66.55: these read as labels, not controls — flat, borderless-ish,
+   and far below a thumb's target size. Every button now has a surface,
+   a real edge, a hover lift, a pressed state and a 32px+ hit area, and
+   the ones that DO something get the brand edge. (Inderpreet, Nov 9) */
+.fbf{background:var(--surface,rgba(255,255,255,.05));border:1px solid var(--border);color:var(--ink2);
+  border-radius:999px;padding:7px 15px;font-size:.76rem;font-weight:600;cursor:pointer;font-family:inherit;
+  min-height:32px;line-height:1;transition:background .13s,border-color .13s,color .13s,transform .06s}
+.fbf:hover{background:rgba(255,255,255,.1);border-color:var(--brand);color:var(--ink)}
+.fbf:active{transform:translateY(1px);background:rgba(255,255,255,.14)}
+.fbf:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.fbf:disabled{opacity:.55;cursor:default;transform:none}
+.fbf.on{border-color:var(--brand);color:var(--ink);background:rgba(167,139,250,.16)}
 .bar i.f{background:#4ade80} .bar i.h{background:#fab219} .bar i.w{background:#f87171}
 .bar .stack{display:flex;flex-direction:column-reverse;justify-content:flex-start;height:100%}
 .rv{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:8px}
@@ -120,9 +130,23 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .st.fixed{background:rgba(74,222,128,.14);color:var(--good)}
 .st.rejected{background:rgba(255,255,255,.08);color:var(--muted)}
 .racts{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
-.racts button{font-size:.7rem;padding:3px 10px;border-radius:7px;border:1px solid var(--border);
-  background:none;color:var(--ink2);cursor:pointer;font-family:inherit}
-.racts button:hover{border-color:var(--brand);color:var(--ink)}
+.racts button{font-size:.74rem;font-weight:600;padding:7px 13px;border-radius:9px;border:1px solid var(--border);
+  background:var(--surface,rgba(255,255,255,.05));color:var(--ink2);cursor:pointer;font-family:inherit;
+  min-height:34px;line-height:1;transition:background .13s,border-color .13s,color .13s,transform .06s}
+.racts button:hover{border-color:var(--brand);color:var(--ink);background:rgba(255,255,255,.1)}
+.racts button:active{transform:translateY(1px);background:rgba(255,255,255,.14)}
+.racts button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.racts button:disabled{opacity:.55;cursor:default;transform:none}
+
+/* the ask-it-now diagnostics and anything else that costs a call or
+   starts work: a filled button, because it is an action, not a filter */
+.card > div > button, .card button.doit{font-size:.78rem;font-weight:600;padding:9px 16px;border-radius:10px;
+  border:1px solid var(--border);background:rgba(255,255,255,.07);color:var(--ink);cursor:pointer;
+  font-family:inherit;min-height:38px;line-height:1;transition:background .13s,border-color .13s,transform .06s}
+.card > div > button:hover, .card button.doit:hover{background:rgba(167,139,250,.18);border-color:var(--brand)}
+.card > div > button:active, .card button.doit:active{transform:translateY(1px)}
+.card > div > button:focus-visible, .card button.doit:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.card > div > button:disabled{opacity:.55;cursor:default;transform:none}
 .rmsg{color:var(--ink);margin:2px 0 2px}
 .rmeta{font-size:.7rem;color:var(--muted)}
 .foot{color:var(--muted);font-size:.72rem;text-align:center;margin-top:24px}
@@ -311,9 +335,9 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div class="s" style="margin-bottom:6px">Counted as it happens, reviewed weekly. Services report their own calls; nothing here probes anything extra. <b>unused</b> means a key is set but nothing has called it since the ledger started — not an error, but not proof it works either. The buttons below ask directly.</div>
       <div id="apiTiles" class="tiles" style="margin-bottom:10px"></div>
       <div id="apiServices"></div>
-      <div style="margin-top:8px"><button onclick="hiveTest()">Ask the AI detector now</button> <span class="s">one real call, about 1&cent; — it answers in Hive's own words</span><div id="hiveTestOut" class="s" style="margin-top:6px"></div></div>
-      <div style="margin-top:8px"><button onclick="gfcTest()">Ask the fact-check database now</button> <span class="s">free — searches Google's fact-check index for a claim everyone has checked</span><div id="gfcTestOut" class="s" style="margin-top:6px"></div></div>
-      <div style="margin-top:8px"><button onclick="visionTest()">Ask the reverse-image search now</button> <span class="s">one tiny call — this is the lane that finds where footage appeared before</span><div id="visionTestOut" class="s" style="margin-top:6px"></div></div>
+      <div style="margin-top:8px"><button class="doit" onclick="hiveTest()">Ask the AI detector now</button> <span class="s">one real call, about 1&cent; — it answers in Hive's own words</span><div id="hiveTestOut" class="s" style="margin-top:6px"></div></div>
+      <div style="margin-top:8px"><button class="doit" onclick="gfcTest()">Ask the fact-check database now</button> <span class="s">free — searches Google's fact-check index for a claim everyone has checked</span><div id="gfcTestOut" class="s" style="margin-top:6px"></div></div>
+      <div style="margin-top:8px"><button class="doit" onclick="visionTest()">Ask the reverse-image search now</button> <span class="s">one tiny call — this is the lane that finds where footage appeared before</span><div id="visionTestOut" class="s" style="margin-top:6px"></div></div>
       <div class="s" style="margin:10px 0 4px">Key ages — the app keeps a salted fingerprint per secret and logs when it changes; values are never seen. Orange past <span id="apiRotate"></span> days.</div>
       <div id="apiKeys" class="dist"></div>
       <div id="apiPartners" style="margin-top:8px"></div>
@@ -692,6 +716,38 @@ const FL_BLAME = {blocked:"web", geo_blocked:"web", private_or_deleted:"web", no
 const FL_BLAME_TAG = {web:"nothing to fix · the web said no", limit:"a limit we set, working as intended", ours:"ours to fix"};
 const flBlame = k => FL_BLAME[k] || "ours";
 window.__flDay = ""; window.__flKind = "";
+// v0.66.55: getJSON collapses every failure into null, so the three
+// ask-it-now buttons all said "Could not reach the app" whether the
+// admin key was rejected, the endpoint did not exist in the deployed
+// build, or the request timed out. That is the same silent-failure
+// habit we have been removing from the lanes themselves, committed in
+// the diagnostic that was supposed to end it (Inderpreet, Nov 9).
+function askFail(a){
+  return '<div style="color:#f87171"><b>The button could not run.</b> ' + esc(a.why || "") + '</div>'
+    + (a.status ? '<div class="s" style="margin-top:4px;opacity:.75">HTTP ' + a.status + (a.body ? ' · ' + esc(a.body) : '') + '</div>' : '');
+}
+async function askJSON(url){
+  let r;
+  try { r = await fetch(url); }
+  catch(e){ return {ok:false, why:"The browser could not reach Glowby at all — the app may be restarting, or the connection dropped."}; }
+  if (r.ok){
+    try { return {ok:true, data: await r.json()}; }
+    catch(e){ return {ok:false, status:r.status, why:"Glowby answered, but not with readable JSON."}; }
+  }
+  const why = {
+    401: "The admin key was rejected. Log out and back in.",
+    403: "The admin key was rejected. Log out and back in.",
+    404: "This build of Glowby does not have that endpoint — the deployed version is older than the button. Upload the current zip.",
+    429: "Too many requests at once. Wait a moment and press it again.",
+    500: "Glowby hit an error running the check. Security → Last errors will have it.",
+    502: "The request did not come back in time — the outside service was slow. Try once more.",
+    503: "Glowby is restarting. Try again in a few seconds.",
+    504: "The request timed out on the way out. The outside service was too slow to answer."
+  }[r.status] || `Glowby answered HTTP ${r.status}.`;
+  let body = "";
+  try { body = (await r.text()).slice(0, 200); } catch(e){}
+  return {ok:false, status:r.status, why, body};
+}
 async function getJSON(url, tries){
   // one retry after a short wait: a flaky connection used to wipe a loaded card with "Could not load"
   for (let i = 0; i < (tries || 2); i++){
@@ -735,7 +791,7 @@ async function loadFailures(){
         <div class="s" style="padding:4px 0 0 10px;border-left:1px solid rgba(255,255,255,.12);white-space:pre-wrap">${esc(f.message||"(nothing was recorded)")}</div>
         <div class="s" style="padding:4px 0 0 10px">asked by <b>${esc(f.source||"user")}</b> · key <code>${esc((f.url_key||"").slice(0,48))}</code>${f.url_key?` · <a href="/r/${encodeURIComponent(f.url_key)}" target="_blank">the last good report for this link ↗</a>`:""}</div>
       </details>`:""}
-      <div class="racts">${acts}${f.url?` <button onclick="flRetry(${f.id},'${esc(f.url).replace(/'/g,"%27")}')">run it again now</button><span id="flOut${f.id}"></span>`:""}</div>
+      <div class="racts">${acts}${f.url?` <button class="doit" onclick="flRetry(${f.id},'${esc(f.url).replace(/'/g,"%27")}')">run it again now</button><span id="flOut${f.id}"></span>`:""}</div>
     </div>`;
   }).join("");
 }
@@ -780,11 +836,22 @@ async function flRetry(id, url){
 }
 const SC_STYLE = {ok:["#4ade80","✓"], warn:["#fab219","!"], fail:["#f87171","✕"], unknown:["#9aa0b0","?"]};
 async function loadSelfCheck(force){
+  // v0.66.55: a forced run that failed returned here in silence, leaving
+  // the previous report on screen — so pressing Run now looked like a
+  // dead button. It says what happened either way now (Nov 9).
   const meta = $("scheckMeta");
-  if (force) meta.textContent = "running…";
-  const d = await getJSON("/api/admin/selfcheck?key=" + encodeURIComponent(KEY) + (force ? "&run=1" : ""), force ? 1 : 2);
-  if (!d) { if (!window.__scLoaded) $("scheckBody").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
+  if (force) meta.textContent = "running the checks…";
+  const a = await askJSON("/api/admin/selfcheck?key=" + encodeURIComponent(KEY) + (force ? "&run=1" : ""));
+  if (!a.ok) {
+    meta.textContent = "";
+    const msg = askFail(a);
+    if (force || !window.__scLoaded) $("scheckBody").innerHTML = msg;
+    else $("scheckBody").insertAdjacentHTML("afterbegin", msg);
+    return;
+  }
+  const d = a.data;
   window.__scLoaded = true;
+  if (force) { const b = $("scheckRun"); if (b) { b.textContent = "Ran just now"; setTimeout(() => { b.textContent = "Run now"; }, 2500); } }
   const v = SC_STYLE[d.verdict] || SC_STYLE.unknown;
   meta.textContent = d.at ? ("last run " + String(d.at).slice(0,16).replace("T"," ") + " UTC") : "";
   const bad = (d.checks||[]).filter(c => c.state !== "ok");
@@ -806,7 +873,13 @@ async function loadSelfCheck(force){
       + good.map(c => `<div class="s" style="padding:3px 0"><span style="color:#4ade80">✓</span> <b style="color:var(--ink)">${esc(c.title||c.id)}</b> — ${esc(c.detail||"")}</div>`).join("")
       + '</details>' : "");
 }
-$("scheckRun").onclick = async () => { $("scheckRun").disabled = true; await loadSelfCheck(1); $("scheckRun").disabled = false; };
+(() => { const b = $("scheckRun"); if (!b) return;
+  b.onclick = async () => {
+    b.disabled = true;
+    try { await loadSelfCheck(1); }
+    catch(e){ $("scheckBody").innerHTML = '<div style="color:#f87171"><b>The system check crashed in the browser.</b> ' + esc(String(e && e.message || e)) + '</div>'; }
+    b.disabled = false;
+  }; })();
 async function loadQA(){
   const d = await getJSON("/api/admin/qa?key=" + encodeURIComponent(KEY));
   if (!d) { if (!window.__qaLoaded) $("qaTiles").innerHTML = '<div class="empty">Could not load — will retry on the next refresh.</div>'; return; }
@@ -843,7 +916,7 @@ async function loadQA(){
       <div><b style="color:var(--ink)">${esc(f.title || f.url_key)}</b> <span style="font-size:.62rem;padding:1px 6px;border-radius:999px;background:rgba(255,255,255,.07);color:${k[0]}">${esc(k[1])}</span></div>
       <div>${esc(f.old_word || "")} ${f.old_score ?? "—"} → <span style="color:#fab219">${esc(f.new_word || "")} ${f.new_score ?? "—"}</span> (${f.drift > 0 ? "+" : ""}${f.drift ?? "—"})
         · <a href="/r/${encodeURIComponent(f.url_key)}" target="_blank">open the saved report ↗</a>${f.url ? ` · <a href="${esc(f.url)}" target="_blank" rel="noopener">the video ↗</a>` : ""}
-        · <button onclick="qaOne('${esc(f.url_key)}',${f.id})" style="font-size:.72rem;padding:3px 9px">run it again now</button>
+        · <button class="doit" onclick="qaOne('${esc(f.url_key)}',${f.id})" style="font-size:.72rem;padding:3px 9px">run it again now</button>
         <span id="qaOut${f.id}"></span></div>
       ${det.length ? `<details style="margin-top:3px"><summary class="s" style="cursor:pointer">what changed underneath (${det.length}) ↓</summary>${rows}</details>`
                    : '<div class="s" style="opacity:.6">no per-claim detail — this re-check ran before v0.66.51</div>'}
@@ -1447,9 +1520,9 @@ function hivePlain(text){
 async function hiveTest(){
   const out = $("hiveTestOut");
   out.innerHTML = "asking Hive…";
-  const d = await getJSON("/api/admin/hivetest?key=" + encodeURIComponent(KEY), 1);
-  if (!d) { out.innerHTML = '<span style="color:#f87171">Could not reach the app.</span>'; return; }
-  const r = d.result || {};
+  const a = await askJSON("/api/admin/hivetest?key=" + encodeURIComponent(KEY));
+  if (!a.ok) { out.innerHTML = askFail(a); return; }
+  const d = a.data, r = d.result || {};
   const head = `<div class="s">model <b>${esc(d.model||"")}</b> · key ${d.key_present ? "set ("+d.key_length+" chars)" : '<span style="color:#f87171">not set</span>'} · AI check ${d.authenticity_enabled ? "on" : '<span style="color:#f87171">switched off</span>'}</div>`;
   if (r.ok){
     out.innerHTML = head + `<div style="color:#4ade80"><b>The detector answered.</b> It read the test image and returned ${r.class_lists_found} score list(s). Hive is working — if a video still says the check could not complete, the problem is that video's frames, not the key.</div>`;
@@ -1468,9 +1541,9 @@ async function hiveTest(){
 async function gfcTest(){
   const out = $("gfcTestOut");
   out.innerHTML = "asking Google…";
-  const d = await getJSON("/api/admin/gfctest?key=" + encodeURIComponent(KEY), 1);
-  if (!d) { out.innerHTML = '<span style="color:#f87171">Could not reach the app.</span>'; return; }
-  const r = d.result || {};
+  const a = await askJSON("/api/admin/gfctest?key=" + encodeURIComponent(KEY));
+  if (!a.ok) { out.innerHTML = askFail(a); return; }
+  const d = a.data, r = d.result || {};
   const head = `<div class="s">key ${d.key_present ? "set (in <b>"+esc(d.key_variable)+"</b>)" : '<span style="color:#f87171">not set</span>'} · asked about “${esc(d.claim||"")}”</div>`;
   if (r.ok && r.found){
     out.innerHTML = head + `<div style="color:#4ade80"><b>The database answered with ${r.found} fact-check(s).</b> ${esc((r.publishers||[]).filter(Boolean).join(", "))}. The lane is alive — “unused” just means no check has needed it since the last restart.</div>`;
@@ -1493,9 +1566,9 @@ async function gfcTest(){
 async function visionTest(){
   const out = $("visionTestOut");
   out.innerHTML = "asking Google Vision…";
-  const d = await getJSON("/api/admin/visiontest?key=" + encodeURIComponent(KEY), 1);
-  if (!d) { out.innerHTML = '<span style="color:#f87171">Could not reach the app.</span>'; return; }
-  const r = d.result || {}, det = String(r.detail || "");
+  const a = await askJSON("/api/admin/visiontest?key=" + encodeURIComponent(KEY));
+  if (!a.ok) { out.innerHTML = askFail(a); return; }
+  const d = a.data, r = d.result || {}, det = String(r.detail || "");
   const head = `<div class="s">key ${d.key_present ? "set" : '<span style="color:#f87171">not set</span>'}</div>`;
   if (r.ok){ out.innerHTML = head + '<div style="color:#4ade80"><b>Vision answered.</b> The lane that finds earlier copies of a video is alive.</div>'; return; }
   const plain = /has not been used|not enabled|SERVICE_DISABLED/i.test(det)

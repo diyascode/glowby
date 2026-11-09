@@ -593,7 +593,14 @@ def selftest(image_b64=None):
         # pace=False: the button must always reach Hive, even mid-cooldown.
         # One call cannot breach a sane rate limit, so a 429 HERE means the
         # project itself is refusing us, not that we asked too fast.
-        payload = _call(_key(), image_b64=image_b64, pace=False, retries=0)
+        # a short leash: the button must answer while someone is
+        # watching it, not sit on the pipeline's 45s patience (v0.66.55)
+        _was = globals()["HIVE_TIMEOUT_S"]
+        globals()["HIVE_TIMEOUT_S"] = min(_was, 20)
+        try:
+            payload = _call(_key(), image_b64=image_b64, pace=False, retries=0)
+        finally:
+            globals()["HIVE_TIMEOUT_S"] = _was
     except RateLimited as e:
         return {"ok": False, "stage": "call", "rate_limited": True,
                 "single_call": True, "detail": str(e)[:500],

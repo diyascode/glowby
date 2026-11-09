@@ -86,7 +86,7 @@ def selftest(image_b64: str = None) -> dict:
     req = urllib.request.Request(f"{VISION_URL}?key={key}", data=body, method="POST",
                                  headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+        with urllib.request.urlopen(req, timeout=min(TIMEOUT_S, 20)) as r:
             payload = json.loads(r.read().decode("utf-8", "replace"))
     except urllib.error.HTTPError as e:
         try:
