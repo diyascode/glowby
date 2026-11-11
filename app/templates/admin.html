@@ -227,6 +227,8 @@ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
       <div id="qaTiles" class="tiles" style="margin-bottom:8px"></div>
       <div class="s" style="margin-bottom:2px">Per night · <span style="color:#38bdf8">■ re-checked</span> <span style="color:#f87171">■ flipped</span></div>
       <div id="qaBars"></div>
+      <div style="margin-top:10px"><button class="doit" onclick="qaReview()">Review all the flips at once</button> <span class="s">free — re-scores every past re-check against today's bands and groups what moved</span></div>
+      <div id="qaReviewOut" style="margin-top:8px"></div>
       <div id="qaFlips" style="margin-top:8px"></div>
       <h3 style="font-size:.85rem;margin:16px 0 4px">Where the scores land</h3>
       <div class="s" style="margin-bottom:6px">Every headline score of the last 90 days, in tenths. The vertical lines are the cut-offs that decide the verdict word — <b>4.0</b>, <b>7.5</b>, <b>8.0</b>. A pile of scores sitting exactly ON a line is why re-checks flip: those results are one tenth of a point from changing their own headline. <span id="scOnEdge"></span></div>
@@ -923,6 +925,36 @@ async function loadQA(){
     </div>`;
   }).join("");
   loadScores();
+}
+// v0.66.59: reviewing 150 flips one row at a time is not reviewing them.
+// Both scores are stored on every past re-check, so the whole history can
+// be re-scored against today's bands — that answers "did the band fix
+// work" without waiting a fortnight — and the per-claim diffs aggregate
+// into the only question that matters: did the CLAIMS change, or did the
+// judgements of the same claims change? Those have different fixes.
+async function qaReview(){
+  const out = $("qaReviewOut");
+  out.innerHTML = '<div class="s">reading every re-check…</div>';
+  const a = await askJSON("/api/admin/qa/review?key=" + encodeURIComponent(KEY) + "&days=14");
+  if (!a.ok) { out.innerHTML = askFail(a); return; }
+  const r = a.data.reclassify || {}, p = a.data.patterns || {};
+  if (!r.rows) { out.innerHTML = '<div class="empty">No completed re-checks stored yet.</div>'; return; }
+  const better = (r.flips_before || 0) - (r.flips_now || 0);
+  out.innerHTML =
+    `<div style="padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.04)">
+       <b>Re-scored ${r.rows} past re-checks against today's bands (${(r.cuts||[]).join(" · ")}, sticky ${r.sticky}).</b>
+       <div style="margin-top:4px">Flips then: <b>${r.flips_before}</b> (${r.pct_before}%) → flips under the new bands: <b style="color:${better > 0 ? "#4ade80" : "#fab219"}">${r.flips_now}</b> (${r.pct_now}%).
+       ${better > 0 ? `<span style="color:#4ade80">${better} of them stop being flips at all.</span>` : "The bands did not change these."}</div>
+       <div class="s" style="margin-top:3px">Of the ones that remain: ${(r.kinds_now||{}).real||0} real · ${(r.kinds_now||{}).wobble||0} still boundary wobble · ${(r.kinds_now||{}).lost||0} lost their evidence.</div>
+     </div>` +
+    (p.rows ? `<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:rgba(255,255,255,.04)">
+       <b>What moved underneath</b>
+       <div style="margin-top:4px">Same claims, different judgement: <b>${p.same_claims}</b> · the claim set itself changed: <b>${p.changed_claims}</b></div>
+       <div class="s" style="margin-top:3px;color:#fab219">${esc(p.reading || "")}</div>
+       ${(p.top_moves||[]).length ? '<div class="s" style="margin-top:6px"><b>Most common verdict moves</b></div>' + (p.top_moves||[]).map(m => `<div class="s">${esc(m[0])} — <b>${m[1]}×</b></div>`).join("") : ""}
+       ${(p.repeat_offenders||[]).length ? '<div class="s" style="margin-top:6px"><b>Claims that keep moving</b></div>' + (p.repeat_offenders||[]).map(m => `<div class="s">${esc(m[0])} — <b>${m[1]}×</b></div>`).join("") : ""}
+       ${p.no_detail ? `<div class="s" style="margin-top:5px;opacity:.7">${p.no_detail} flip(s) have no per-claim detail — recorded before v0.66.51.</div>` : ""}
+     </div>` : "");
 }
 async function qaOne(urlKey, id){
   const out = $("qaOut" + id);

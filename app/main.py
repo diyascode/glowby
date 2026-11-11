@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.58"
+VERSION = "0.66.59"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -3287,6 +3287,17 @@ def api_admin_scores(key: str = "", days: int = 90):
     except Exception as e:
         out["recommend"] = {"enough_data": False, "note": str(e)[:160]}
     return out
+
+
+@app.get("/api/admin/qa/review")
+def api_admin_qa_review(key: str = "", days: int = 14):
+    """Review every flip at once instead of one row at a time: how many
+    survive today's bands (both scores are stored, so the past can be
+    re-scored without waiting), and what moved underneath them."""
+    if not _admin_ok(key):
+        return JSONResponse(status_code=403, content={"detail": "Forbidden."})
+    d = min(max(int(days), 1), 120)
+    return {"days": d, "reclassify": _qa.reclassify(d), "patterns": _qa.patterns(d)}
 
 
 class QaOne(BaseModel):

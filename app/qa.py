@@ -317,3 +317,98 @@ def summary(days: int = 14) -> dict:
                 "last": _STATE["last"], "running": _STATE["running"]}
     except Exception:
         return {"days": [], "flips": [], "last": _STATE["last"], "running": _STATE["running"]}
+
+
+# ------------------------------------------------- review them all
+# v0.66.59: "how do I review all of these" — by not reading 150 rows one
+# at a time. Two questions answer most of it in one screen:
+#   1. How many of those flips survive the NEW bands? Both scores are
+#      stored, so every past re-check can be re-scored against today's
+#      cut-offs without waiting a fortnight for fresh data.
+#   2. When a verdict did move, WHAT moved underneath — the same claims
+#      scoring differently, or a different set of claims being found?
+#      Those have completely different fixes. (Inderpreet, Nov 11)
+
+def reclassify(days: int = 14) -> dict:
+    """Re-score every stored re-check against the bands in force now."""
+    from app import bands as _b
+    conn = _ensure()
+    if conn is None:
+        return {"rows": 0}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT old_score, new_score, old_word, new_word, flipped "
+                        "FROM qa_runs WHERE error = '' AND old_score IS NOT NULL "
+                        "AND new_score IS NOT NULL AND day > CURRENT_DATE - make_interval(days => %s)",
+                        (days,))
+            rows = cur.fetchall()
+    except Exception as e:
+        return {"rows": 0, "error": str(e)[:160]}
+    was = now = 0
+    kinds = {"real": 0, "wobble": 0, "lost": 0}
+    for o_s, n_s, o_w, n_w, flip in rows:
+        if flip:
+            was += 1
+        # the word each score WOULD get today, stickiness included
+        ob = _b.band_of(o_s)
+        nb = _b.band_of(n_s, ob)
+        if ob == nb:
+            continue
+        now += 1
+        cmp = {"flipped": True, "old_word": _b.LEADS[ob], "new_word": _b.LEADS[nb],
+               "drift": (float(n_s) - float(o_s)) if o_s is not None and n_s is not None else None}
+        kinds[flip_kind(cmp) or "real"] = kinds.get(flip_kind(cmp) or "real", 0) + 1
+    return {"rows": len(rows), "flips_before": was, "flips_now": now,
+            "kinds_now": kinds, "cuts": list(_b.cuts()), "sticky": _b.STICKY_MARGIN,
+            "removed": max(0, was - now),
+            "pct_before": round(was / len(rows) * 100) if rows else 0,
+            "pct_now": round(now / len(rows) * 100) if rows else 0}
+
+
+def patterns(days: int = 14, limit: int = 12) -> dict:
+    """What actually moved underneath the flips, in aggregate."""
+    conn = _ensure()
+    if conn is None:
+        return {"rows": 0}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT title, url_key, coalesce(detail,'') FROM qa_runs "
+                        "WHERE flipped AND coalesce(detail,'') <> '' "
+                        "AND day > CURRENT_DATE - make_interval(days => %s) ORDER BY id DESC LIMIT 400",
+                        (days,))
+            rows = cur.fetchall()
+    except Exception as e:
+        return {"rows": 0, "error": str(e)[:160]}
+    moves, repeat, same_set, changed_set, no_detail = {}, {}, 0, 0, 0
+    for title, key, raw in rows:
+        try:
+            det = json.loads(raw) or []
+        except Exception:
+            det = []
+        if not det:
+            no_detail += 1
+            continue
+        # a claim that appeared or vanished means the EXTRACTION moved;
+        # everything else means the same claims were judged differently
+        vanished = any("not found" in str(c.get("old", "")) + str(c.get("new", "")) for c in det)
+        if vanished:
+            changed_set += 1
+        else:
+            same_set += 1
+        for c in det:
+            a, b = str(c.get("old", "?"))[:30], str(c.get("new", "?"))[:30]
+            if a != b:
+                moves[f"{a} → {b}"] = moves.get(f"{a} → {b}", 0) + 1
+            t = (c.get("claim") or "")[:90]
+            if t:
+                repeat[t] = repeat.get(t, 0) + 1
+    top_moves = sorted(moves.items(), key=lambda x: -x[1])[:limit]
+    top_claims = [(t, n) for t, n in sorted(repeat.items(), key=lambda x: -x[1])[:limit] if n > 1]
+    verdict = ("the same claims are being judged differently — the evidence hunt is the variable"
+               if same_set > changed_set * 2 else
+               "the claim set itself keeps changing — extraction is the variable"
+               if changed_set > same_set * 2 else
+               "both the claim set and the judgements move — look at the examples")
+    return {"rows": len(rows), "same_claims": same_set, "changed_claims": changed_set,
+            "no_detail": no_detail, "top_moves": top_moves, "repeat_offenders": top_claims,
+            "reading": verdict}
