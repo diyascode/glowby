@@ -79,8 +79,10 @@ if r["headline_score"] != 3.8 or r["headline_state"] != "misleading": fails.appe
 r = report([mk("a", 9.0), mk("b", 9.0), mk("c", 6.0, state="partly_supported")])
 if r["headline_score"] != 7.9 or r["headline_state"] != "mostly_accurate": fails.append(f"9c {r['headline_score']} {r['headline_state']}")
 r = report([mk("a", 8.6), mk("b", 8.2), mk("c", 8.0)])
-if r["headline_score"] != 8.3 or r["headline_state"] != "accurate": fails.append(f"9d {r['headline_score']} {r['headline_state']}")
+if r["headline_score"] != 8.3 or r["headline_state"] != "mostly_accurate": fails.append(f"9d {r['headline_score']} {r['headline_state']}")
+r = report([mk("a", 9.4), mk("b", 9.2), mk("c", 9.0)])
+if r["headline_state"] != "accurate": fails.append(f"9f a clean video must still reach accurate: {r['headline_state']}")
 from app.agents.output import blend_score
 if blend_score([8.5, 8.0, 2.5], [mk("a", 8.5), mk("b", 8.0), mk("c", 2.5)]) > 5.9: fails.append("9e false cap")
 
-print("FAILURES:", fails) if fails else print("ALL 9 PASS: side-detail cap, floor, backstop, no-central fallback, blend")
+print("FAILURES:", fails) if fails else print("ALL 10 PASS: side-detail cap, floor, backstop, no-central fallback, blend")

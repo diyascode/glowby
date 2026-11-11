@@ -41,12 +41,26 @@ BANNED_INTENSIFIERS = re.compile(
 
 FORWARD_LABELS = {"factual", "prediction"}
 
-STATE_BANDS = [
-    (8.0, "accurate", "The judged claims in this video check out."),
-    (7.5, "mostly_accurate", "The judged claims mostly check out."),
-    (4.0, "mixed", "This video mixes accurate and questionable claims."),
-    (0.0, "misleading", "This video contains claims contradicted by evidence."),
-]
+# v0.66.58: built from app/bands.py so this table and summary.BAND can
+# never drift apart again — they were two hand-kept copies of the same
+# cut-offs, and a verdict word disagreeing with the score band is the
+# worst bug this file could have.
+from app import bands as _bands  # noqa: E402
+
+_BAND_TEXT = {
+    "accurate": "The judged claims in this video check out.",
+    "mostly_accurate": "The judged claims mostly check out.",
+    "mixed": "This video mixes accurate and questionable claims.",
+    "misleading": "This video contains claims contradicted by evidence.",
+}
+
+
+def _state_bands():
+    return [(floor, _bands.STATES[key], _BAND_TEXT[_bands.STATES[key]])
+            for floor, key in _bands.table()]
+
+
+STATE_BANDS = _state_bands()
 
 UNVERIFIED_LABEL = (
     "Glowby could not verify the claims in this video — no reliable "
@@ -125,7 +139,15 @@ def is_safety_instruction(claim_text: str) -> bool:
 # the old lowest-claim rule.
 HEADLINE_RULE = os.environ.get("GLOWBY_HEADLINE_RULE", "blend").strip().lower()
 FALSE_CAP = 5.9
-DANGEROUS_FALSE_CAP = 3.9
+# v0.66.58: tied to the band, not typed as a number. This cap exists to
+# land a high-risk false claim in "Inaccurate"; hard-coding 3.9 meant a
+# later edit to the bottom edge would silently promote those videos to
+# "Mixed" without anyone noticing.
+def _dangerous_false_cap() -> float:
+    return round(_bands.cuts()[0] - 0.1, 2)
+
+
+DANGEROUS_FALSE_CAP = _dangerous_false_cap()
 NOT_PERFECT_CAP = 7.9
 FALSE_BAND = 4.0
 
@@ -156,7 +178,7 @@ def blend_score(vals, claims) -> float:
         dangerous = any(
             v < FALSE_BAND and (c.get("risk_level") in ("high", "critical"))
             for v, c in zip(vals, claims))
-        score = min(score, DANGEROUS_FALSE_CAP if dangerous else FALSE_CAP)
+        score = min(score, _dangerous_false_cap() if dangerous else FALSE_CAP)
     if any(v < 7.5 for v in vals):
         score = min(score, NOT_PERFECT_CAP)
     return max(0.0, min(9.9, score))
@@ -264,8 +286,9 @@ def build_report(result: dict) -> dict:
         else:
             state, label = "unverified", UNVERIFIED_LABEL
     else:
-        state, label = "misleading", STATE_BANDS[-1][2]
-        for cutoff, s, text in STATE_BANDS:
+        _sb = _state_bands()
+        state, label = "misleading", _sb[-1][2]
+        for cutoff, s, text in _sb:
             if headline >= cutoff:
                 state, label = s, text
                 break

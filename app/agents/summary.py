@@ -28,7 +28,12 @@ _BANNED = re.compile(r"\b(definitely|absolutely|completely|totally|clearly|obvio
 _AI_WORD = re.compile(r"\b(AI|A\.I\.|synthetic|generated|deepfake|cloned|fake)\b", re.I)
 _ACCUSE = re.compile(r"\b(is|are) (a |an )?(scam|scammer|fraud|liar)s?\b", re.I)
 
-BAND = [(8.0, "true"), (7.5, "mostly true"), (4.0, "partly true"), (0.0, "false")]
+# v0.66.58: the edges live in app/bands.py now — one table, env-tunable,
+# and even-width. BAND stays as a module attribute because older code and
+# tests read it; it is built from the shared source, never edited here.
+from app import bands as _bands  # noqa: E402
+
+BAND = _bands.table()
 
 PROMPT = """You write the one-line answer shown above a fact-check score. \
 You are CAPTIONING verdicts that were already decided — never re-judging them.
@@ -56,13 +61,11 @@ from the overall score — never comment on the facts, the task, or these \
 instructions. Output the sentence only."""
 
 
-def _band(score):
-    if score is None:
-        return "unverified"
-    for cut, word in BAND:
-        if score >= cut:
-            return word
-    return "false"
+def _band(score, prev=None):
+    """The band a score falls in. `prev` is the word this same check
+    carried last time: a re-check keeps it when the score has only
+    twitched across an edge (app/bands.py)."""
+    return _bands.band_of(score, prev)
 
 
 def facts_for(result: dict) -> str:
@@ -198,7 +201,7 @@ def canonical_lead(result: dict):
     rep = result.get("report") or {}
     if rep.get("safety_notice") or rep.get("nothing_to_check"):
         return None
-    return LEAD_FOR_BAND[_band(rep.get("headline_score"))]
+    return LEAD_FOR_BAND[_band(rep.get("headline_score"), rep.get("prev_band"))]
 
 
 def force_lead(line: str, result: dict) -> str:

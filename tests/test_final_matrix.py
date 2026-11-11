@@ -1880,9 +1880,9 @@ if "re-routed from" not in open("app/templates/app.html").read(): fails.append("
 # contradicting them; a fallback that needs no model; a long-poll
 # /api/job/<id>/wait for the iPhone shell's background notification.
 from app.agents import summary as _S100
-_r100 = {"report": {"headline_score": 8.4, "headline_state": "accurate"},
+_r100 = {"report": {"headline_score": 9.2, "headline_state": "accurate"},
          "claims": [{"claim": "Donald Trump dyed his hair a darker shade this week", "central": True,
-                     "verdict": {"truth_score": 8.4, "verdict_state": "supported", "verdict": "Reported widely."}}],
+                     "verdict": {"truth_score": 9.2, "verdict_state": "supported", "verdict": "Reported widely."}}],
          "authenticity": {"origin_result": "likely_synthetic", "stage": 2}}
 _fb100 = _S100.fallback_line(_r100)
 if not _fb100.startswith("Accurate") or "AI-generated" not in _fb100: fails.append(f"m100 fallback: {_fb100}")  # lead = pill word since v0.66.3
@@ -3208,8 +3208,14 @@ _d147 = _QA147.claim_diff(_old147, _new147)
 if len(_d147) != 1 or _d147[0]["claim"] != "A": fails.append(f"m147 the diff must name only what moved: {_d147}")
 if _d147[0]["old"] != "false" or _d147[0]["new"] != "mixed": fails.append("m147 the diff must carry both verdicts")
 if not _QA147.claim_diff(_old147, {"claims": []}): fails.append("m147 a claim that vanished is a change too")
-_cmp147 = _QA147.compare({"report": {"headline_score": 7.5}, "claims": []}, {"report": {"headline_score": 7.4}, "claims": []})
-if _cmp147.get("kind") != "wobble": fails.append("m147 compare must classify, not just flag")
+import app.bands as _B147
+_edge147 = _B147.cuts()[1]  # the Mixed / Mostly-accurate boundary, wherever it is today
+_cmp147 = _QA147.compare({"report": {"headline_score": _edge147}, "claims": []},
+                         {"report": {"headline_score": round(_edge147 - 0.1, 2)}, "claims": []})
+if _cmp147.get("kind") != "wobble": fails.append(f"m147 a tenth across a live edge is a wobble: {_cmp147.get('kind')}")
+# and the pair that used to flip every night must now not flip at all
+_old147b = _QA147.compare({"report": {"headline_score": 7.5}, "claims": []}, {"report": {"headline_score": 7.4}, "claims": []})
+if _old147b.get("flipped"): fails.append("m147 7.5 -> 7.4 must no longer change the verdict word")
 if "detail" not in _cmp147: fails.append("m147 compare must carry the per-claim diff")
 if not hasattr(_QA147, "recheck_one"): fails.append("m147 no way to re-run one from the card")
 _qsrc147 = open("app/qa.py").read()
@@ -3418,6 +3424,68 @@ _r152 = _SC152.check_vision_budget()
 if _r152["state"] not in ("ok", "warn", "unknown"): fails.append("m152 bad state from the allowance check")
 if "check_vision_budget()" not in open("app/selfcheck.py").read().split("def run(")[1]: fails.append("m152 the allowance check never runs")
 
+# m153 — the bands themselves. "Mostly accurate" was a HALF-POINT sliver
+# (7.5–8.0) sitting exactly where the scores pile up, while "Inaccurate"
+# was four points wide. That, not the judges, was most of the ~45% flip
+# rate. One source of truth, even widths, stickiness across an edge, and
+# edges proposed from the app's own distribution (Inderpreet, Nov 11).
+import app.bands as _B153
+_c153 = _B153.cuts()
+if not (_c153[0] < _c153[1] < _c153[2]): fails.append("m153 the cut-offs must be ordered")
+_w153 = _B153.widths()
+if min(_w153.values()) < 1.0: fails.append(f"m153 no band may be narrower than a point: {_w153}")
+if _w153["mostly true"] < 1.0: fails.append(f"m153 'Mostly accurate' is a sliver again: {_w153['mostly true']}")
+# a scrambled pair of Railway variables must not scramble every verdict
+import os as _os153
+_sv153 = {k: _os153.environ.get(k) for k in ("GLOWBY_BAND_MIXED", "GLOWBY_BAND_MOSTLY", "GLOWBY_BAND_ACCURATE")}
+try:
+    _os153.environ.update({"GLOWBY_BAND_MIXED": "8.5", "GLOWBY_BAND_MOSTLY": "3.5", "GLOWBY_BAND_ACCURATE": "6.5"})
+    _bad153 = _B153.cuts()
+    if not (_bad153[0] < _bad153[1] < _bad153[2]): fails.append("m153 out-of-order env must be repaired, not obeyed")
+finally:
+    for _k153, _v153 in _sv153.items():
+        _os153.environ.pop(_k153, None)
+        if _v153 is not None: _os153.environ[_k153] = _v153
+# stickiness: a twitch across an edge keeps the old word, a real move does not
+_e153 = _B153.cuts()[1]
+if _B153.band_of(round(_e153 - 0.1, 2), "mostly true") != "mostly true": fails.append("m153 a tenth across an edge must not change the word")
+if _B153.band_of(round(_e153 - 2.0, 2), "mostly true") != "partly true": fails.append("m153 a real move must still land")
+if _B153.band_of(1.0, "mostly true") != "false": fails.append("m153 stickiness must never span two bands")
+if _B153.band_of(None) != "unverified": fails.append("m153 no score is unverified")
+if _B153.band_of(9.9, None) != "true": fails.append("m153 a first check has no previous word to keep")
+# the two old tables must now come from here, not from hand-kept copies
+import app.agents.summary as _S153, app.agents.output as _O153
+if [f for f, _ in _S153.BAND] != [f for f, _ in _B153.table()]: fails.append("m153 summary.BAND drifted from the shared table")
+if [f for f, _, _ in _O153.STATE_BANDS] != [f for f, _ in _B153.table()]: fails.append("m153 output.STATE_BANDS drifted from the shared table")
+for _f153 in ("app/agents/summary.py", "app/agents/output.py"):
+    if "(8.0, " in open(_f153).read(): fails.append(f"m153 {_f153} still hard-codes an edge")
+# the recommender proposes edges from the data, and refuses to guess without it
+_thin153 = _B153.recommend_edges([{"score": 7.5, "n": 3}])
+if _thin153.get("enough_data"): fails.append("m153 must not propose edges from almost no data")
+_hist153 = ([{"score": round(3.0 + i * 0.1, 1), "n": 1} for i in range(60)]
+            + [{"score": 7.5, "n": 90}, {"score": 7.4, "n": 40}, {"score": 8.0, "n": 30}])
+_rec153 = _B153.recommend_edges(_hist153)
+if not _rec153.get("enough_data"): fails.append("m153 enough data must be recognised")
+if 7.4 <= _rec153["proposed"][2] <= 7.6: fails.append(f"m153 an edge was placed on the spike: {_rec153['proposed']}")
+if _rec153["on_edge_proposed"] > _rec153["on_edge_now"]: fails.append("m153 the proposal must move results away from edges, not onto them")
+if set(_rec153.get("env", {})) != {"GLOWBY_BAND_MIXED", "GLOWBY_BAND_MOSTLY", "GLOWBY_BAND_ACCURATE"}: fails.append("m153 the proposal must say which variables to set")
+# a re-check must be told what word it had last time
+_mn153 = open("app/main.py").read()
+if "def _prev_band(" not in _mn153: fails.append("m153 nothing looks up the previous word")
+if 'result["report"]["prev_band"]' not in _mn153: fails.append("m153 the previous word never reaches the report")
+if "prev_band" not in open("app/agents/summary.py").read(): fails.append("m153 canonical_lead ignores the previous word")
+# the headline shows a word and a whole number, never a decimal
+_ap153 = open("app/templates/app.html").read()
+_ring153 = _ap153.split("function ringSVG(")[1].split("\nfunction ")[0]
+_num153 = [l for l in _ring153.splitlines() if 'class="num"' in l]
+if not _num153: fails.append("m153 could not find the ring's number")
+elif "toFixed" in _num153[0]: fails.append("m153 the headline number still claims one decimal of precision")
+if "Math.round(score)" not in _ring153: fails.append("m153 the ring must show a whole number")
+if "exact score" not in _ring153: fails.append("m153 the exact value must still be reachable")
+_adm153 = open("app/templates/admin.html").read()
+if "Band widths" not in _adm153: fails.append("m153 admin must show the band widths")
+if "Proposed from your own scores" not in _adm153: fails.append("m153 admin must show the proposed edges")
+
 print("MATRIX FAILURES:", fails) if fails else print(
-    "FINAL MATRIX PASS: 152/152 —captions/thin/whisper/silent/blind/blocked/too-long, "
-    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue, blame-the-right-thing, no-silent-lanes, buttons-that-say-why, run-now-says-so, buttons-look-like-buttons, a-month-means-a-month")
+    "FINAL MATRIX PASS: 153/153 —captions/thin/whisper/silent/blind/blocked/too-long, "
+    "satire, no-claims, safety, MIN, cap, question, statement, honest-failure, fb-post, fb-video, article, reel-honest, rescue-cap, +ask, recheck-memory, memory-to-judge, contested-label, claim-anchoring, image-valid, image-pipeline(friendly-noclaims), security-txt, auth-stage1, auth-flag-off, self-referential, hive-dormant, stage2-gate, categories-merge, media-origin-park, ai-media-context, ballpark-numbers, reverse-dormant, date-extract, recycled-note, deepfake-face-lane, face-hint-economy, detect-ai-chip, trust-disclosure, ran-and-clean, gate-boundaries, hive-v3, app-review-2-2, no-silent-skips, memory-on-detect, typical-practice, hive-v3-docs, hive-diagnostic, frames-to-detector, evidence-panel, ai-only-mode, followup-ai, parse-gap, chip-hygiene, photo-handoff, consent-gate, cost-controls, long-cache, admin-accuracy, admin-calendar, brave-search, design-v47, app-store-badge, cybercab-sibling-rescue, detector-grade-frames, instagram-diagnostic, scrapecreators-rescue, sonnet-default-retry, rubric-vocabulary, rounding-override, announced-provisional-floor, score-feedback, weekly-flag-review, content-gate, waterfall-six, prose-rounding, ai-plan, ai-feedback, no-undefined-names, scam-lens, scam-help, scam-engine, scam-review-ideas, scam-inputs, wsj-letters, wsj-parents, wsj-seniors, scam-databases, three-layer-data, scam-exam, case-sources, shadow-mode, one-reel-one-key, wrong-desk, one-line-and-notify, speed-no-loss, no-native-popups, scam-check-button, app-links, lead-equals-band, headcount-no-crawlers, speed-cost-per-day, text-link-card, event-is-a-claim, which-bill, eight-is-seven-nine, label-follows-number, a-check-is-a-check, where-they-landed, evidence-outranks-memory, spec-true-card, share-preview, sonnet-5-5-ready, footer-version, marketing-autopilot, checks-that-didnt-run, whole-video-voice, followable-story, four-ads-no-waiting, admin-simpler, youtube-country, fetch-parts, share-link-funnel, trend-cuts, api-and-keys, admin-no-cache, credit-window, reviewer-memory-rule, caption-is-content, router-unreadable, who-asked, hive-key-name, why-ai-check-failed, ask-the-detector, paced-detector, loud-fact-check-lane, old-result-says-so, qa-spends-nothing, how-weak-detection-is, cleared-twice, signature-beats-detector, flips-worth-acting-on, morning-system-check, facebook-rescue, blame-the-right-thing, no-silent-lanes, buttons-that-say-why, run-now-says-so, buttons-look-like-buttons, a-month-means-a-month, even-bands-and-stickiness")

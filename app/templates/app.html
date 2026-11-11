@@ -807,13 +807,18 @@ function verdictWord(rep){
 function verdictPill(rep){const v=verdictWord(rep);return v?'<div><span class="vw" style="color:'+v[1]+';border-color:'+v[1]+';background:'+v[1]+'22">'+v[0]+'</span></div>':'';}
 function ncChip(nc,small){return '<span class="ncchip'+(small?' sm':'')+'">'+nc.icon+' '+esc(nc.word)+'</span>';}
 function ringSVG(score,size,width,forceCol){
+  // v0.66.58: whole numbers only. One decimal claimed a precision this
+  // cannot defend — there is no honest answer to "why 7.8 and not 8.1".
+  // The verdict WORD is the answer; the ring is a rough gauge beside it.
+  // The exact score is still in the data, and on hover.
   const r=(size/2)-width-1, c=2*Math.PI*r;
   const frac=(score===null||score===undefined)?0:Math.max(.03,score/9.9);
   const col=forceCol||ringColor(score===undefined?null:score);
-  return '<div class="ring"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+
+  const exact=(score===null||score===undefined)?'not scored':('exact score '+score.toFixed(1)+' of 10');
+  return '<div class="ring" title="'+esc(exact)+'"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+
     '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="var(--track)" stroke-width="'+width+'"/>'+
     '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+width+'" stroke-linecap="round" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+(c*(1-frac)).toFixed(1)+'"/></svg>'+
-    '<div class="v"><div class="num" style="font-size:'+(size*.28)+'px;color:'+col+'">'+(score===null||score===undefined?'&mdash;':esc(score.toFixed(1)))+'</div>'+
+    '<div class="v"><div class="num" style="font-size:'+(size*.28)+'px;color:'+col+'">'+(score===null||score===undefined?'&mdash;':esc(String(Math.round(score))))+'</div>'+
     (size>60?'<div style="color:var(--muted);font-size:.62rem;font-weight:700">/ 10</div>':'')+'</div></div>';
 }
 function chips(c){
@@ -1233,7 +1238,7 @@ function resultText(d){
     if(d.scam&&(d.scam.risk==='high'||d.scam.risk==='medium'))lines.push('\u26a0 '+(d.scam.risk==='high'?'Matches scam patterns':'Scam warning signs')+': '+(d.scam.pattern_names||[]).slice(0,3).join('; '));
     const ncT=noCheck(d);
     if(ncT)lines.push('Nothing to fact-check \u2014 '+ncT.word.toLowerCase()+'. '+ncT.line);
-    else lines.push('Score: '+(rep.headline_score===null||rep.headline_score===undefined?'no score (couldn\u2019t verify)':rep.headline_score.toFixed(1)+'/10')+' \u2014 '+String(rep.headline_state||'').replace(/_/g,' '));
+    else lines.push(String(rep.headline_state||'').replace(/_/g,' ')+(rep.headline_score===null||rep.headline_score===undefined?' (not scored)':' ('+Math.round(rep.headline_score)+'/10)'));
     for(const c of (d.claims||[]).filter(c=>c.verdict)){
       const ts=c.verdict.truth_score;
       const lbl=(vLabel[c.verdict.verdict_state]||c.verdict.verdict_state||'').replace(/^\S+ /,'');

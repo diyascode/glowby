@@ -940,7 +940,21 @@ async function loadScores(){
   if (!d || !(d.buckets || []).length) { $("scChart").innerHTML = '<div class="empty">No scored checks yet.</div>'; return; }
   const bs = d.buckets, mx = Math.max(1, ...bs.map(x => x.n));
   const pct = d.total ? Math.round(d.on_edge / d.total * 100) : 0;
-  $("scOnEdge").innerHTML = `<b style="color:${pct > 10 ? "#fab219" : "#4ade80"}">${d.on_edge} of ${d.total} scores (${pct}%) sit exactly on a cut-off.</b>`;
+  const w = d.widths || {}, rc = d.recommend || {};
+  // v0.66.58: the widths are the story. "Mostly accurate" used to be a
+  // half-point sliver sitting exactly where the scores pile up, which is
+  // most of why re-checks flipped. Show the widths and let the app
+  // propose edges from its own distribution instead of a hunch.
+  $("scOnEdge").innerHTML =
+    `<b style="color:${pct > 10 ? "#fab219" : "#4ade80"}">${d.on_edge} of ${d.total} scores (${pct}%) sit exactly on a cut-off.</b>`
+    + `<div style="margin-top:4px">Band widths — Inaccurate <b>${w["false"] ?? "?"}</b> · Mixed <b>${w["partly true"] ?? "?"}</b> · Mostly accurate <b>${w["mostly true"] ?? "?"}</b> · Accurate <b>${w["true"] ?? "?"}</b>. A re-check keeps its old word within <b>${d.sticky_margin ?? "?"}</b> of an edge.</div>`
+    + (rc.enough_data
+      ? `<div style="margin-top:6px;padding:7px 9px;border-radius:7px;background:rgba(255,255,255,.04)">
+           <b>Proposed from your own scores:</b> ${(rc.proposed||[]).join(" · ")}
+           <span class="s">(now ${(rc.current||[]).join(" · ")} — results sitting near an edge would go from <b>${rc.on_edge_now}</b> to <b>${rc.on_edge_proposed}</b>)</span>
+           <div class="s" style="margin-top:3px">To apply, set in Railway: ${Object.entries(rc.env||{}).map(([k,v]) => `<code>${esc(k)}=${v}</code>`).join(" · ")}</div>
+         </div>`
+      : `<div class="s" style="margin-top:4px;opacity:.75">${esc(rc.note || "not enough scored checks yet to propose edges")}</div>`);
   $("scChart").innerHTML = '<div style="display:flex;gap:1px;align-items:flex-end;height:110px">' + bs.map(x => {
     const edge = (d.edges || []).includes(x.score);
     return `<div style="flex:1;text-align:center" title="${x.score}: ${x.n}"><div style="display:flex;flex-direction:column-reverse;height:92px"><i style="display:block;height:${Math.max(1, x.n / mx * 88)}px;background:${edge ? "#fab219" : "#38bdf8"};border-radius:1px"></i></div><div class="s" style="font-size:.55rem;color:${edge ? "#fab219" : "var(--ink2)"}">${x.score % 1 === 0 || edge ? x.score : ""}</div></div>`;

@@ -97,7 +97,7 @@ from app import apihealth as _ah  # noqa: E402
 from app import boost as _boost  # noqa: E402
 from app import qa as _qa  # noqa: E402
 
-VERSION = "0.66.57"
+VERSION = "0.66.58"
 
 # ---- Media Authenticity Engine (Day 1: Stage-1 free checks) ----
 # OFF by default. Set GLOWBY_AUTHENTICITY=1 in Railway to attach the
@@ -564,6 +564,24 @@ _fresh_lock = threading.Lock()
 
 
 _QA_TL = threading.local()  # qa=True: a re-check that must never be saved
+
+
+def _prev_band(url_key: str):
+    """The band key this URL's stored result carried, or None. Read once
+    per fresh check so a re-check can keep a word it only just crossed
+    away from (v0.66.58). Never fatal."""
+    try:
+        from app.storage import load_result_quiet
+        from app import bands as _b
+        old = load_result_quiet(url_key)
+        if not isinstance(old, dict):
+            return None
+        rep = old.get("report") or {}
+        if rep.get("headline_score") is None:
+            return None
+        return _b.band_of(rep.get("headline_score"), rep.get("prev_band"))
+    except Exception:
+        return None
 
 
 def _save(url_key, url, result) -> None:
@@ -1160,6 +1178,13 @@ def _run_pipeline(job_id: str, url: str, url_key: str,
             except Exception:
                 pass
         result = build_report(result)
+        # v0.66.58: STICKINESS. A re-check keeps the verdict word it had
+        # last time when the score has only twitched across a cut-off —
+        # a 7.5 becoming a 7.4 is not Glowby changing its mind. The band
+        # module enforces it; this just tells it what the word was.
+        _prev = _prev_band(url_key)
+        if _prev:
+            result["report"]["prev_band"] = _prev
         result["timings"] = {
             "fetch_s": round(t_fetch, 1),
             "route_s": round(t_route, 1),
@@ -3247,11 +3272,21 @@ def api_admin_failure_retry(req: FailureRetry):
 
 @app.get("/api/admin/scores")
 def api_admin_scores(key: str = "", days: int = 90):
-    """Every headline score, in 0.1 steps, with the band cut-offs. Admin."""
+    """Every headline score, in 0.1 steps, with the band cut-offs, plus
+    edges proposed from the distribution itself. Admin."""
     if not _admin_ok(key):
         return JSONResponse(status_code=403, content={"detail": "Forbidden."})
     from app.storage import score_histogram
-    return score_histogram(min(max(int(days), 1), 365))
+    from app import bands as _b
+    out = score_histogram(min(max(int(days), 1), 365))
+    out["edges"] = list(_b.cuts())  # the live cut-offs, not the old hard-coded ones
+    try:
+        out["recommend"] = _b.recommend_edges(out.get("buckets") or [])
+        out["widths"] = _b.widths()
+        out["sticky_margin"] = _b.STICKY_MARGIN
+    except Exception as e:
+        out["recommend"] = {"enough_data": False, "note": str(e)[:160]}
+    return out
 
 
 class QaOne(BaseModel):
