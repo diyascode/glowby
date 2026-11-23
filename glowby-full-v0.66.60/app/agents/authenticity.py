@@ -1,0 +1,361 @@
+"""
+Media Authenticity Engine — Stage 1 (Day 1 of the v2 build plan).
+
+Answers a SECOND question, separate from claim accuracy: does this media
+carry evidence of being synthetically generated? Two lanes, never merged.
+
+Day-1 scope (free, local, no vendor accounts):
+- C2PA Content Credentials: read AND validate; a validated AI-generation
+  assertion is VERIFIED provenance (the only thing that earns the badge).
+- Weak/declared labels: "made with AI" captions, #AIart tags, visible
+  Sora/Veo watermark text in the OCR channel -> declared_ai (no badge).
+- Metadata generator tags: byte-scan for generator names in EXIF/XMP
+  regions of raw image bytes (weak, easily altered -> declared_ai).
+
+Locked rules (from the reviewed plan):
+- Categories, never percentages. No numeric likelihood is produced here.
+- Evidence hierarchy, not weighted blending: verified > declared. Later
+  stages (forensic, context) slot BELOW declared in authority.
+- Absence proves nothing: "no_synthetic_signal" never renders as
+  "genuine"; there is no green checkmark for authenticity.
+- Failure is typed: readers unavailable or files unreadable produce
+  status "partial"/"failed", never an invented finding.
+"""
+
+import base64
+import re
+
+# ---- vocabulary (the data model, locked) ----
+STATUS_NOT_ASSESSED = "not_assessed"
+STATUS_COMPLETED = "completed"
+STATUS_PARTIAL = "partial"
+STATUS_FAILED = "failed"
+
+ORIGIN_VERIFIED = "verified_ai_provenance"
+ORIGIN_DECLARED = "declared_ai"
+ORIGIN_LIKELY = "likely_synthetic"        # stage 2 (forensic) territory
+ORIGIN_INCONCLUSIVE = "inconclusive"
+ORIGIN_NO_SIGNAL = "no_synthetic_signal"
+
+# authority order: earlier wins (hierarchy, not weights)
+_ORIGIN_RANK = [ORIGIN_VERIFIED, ORIGIN_DECLARED, ORIGIN_LIKELY,
+                ORIGIN_INCONCLUSIVE, ORIGIN_NO_SIGNAL]
+
+# display text per category (v1 provisional copy)
+# v0.66.49: likelihood, not certainty. The top two are FACTS about the
+# file — a cryptographic stamp and the creator's own words — and are
+# stated flatly because they are not in doubt. Everything below them is
+# an opinion about pixels, so it is worded as a leaning. No number is put
+# in the headline: a percentage would imply a precision this field has
+# not earned (DF26, Sept 2026). The raw score stays in the details panel
+# for anyone who wants to judge it themselves.
+DISPLAY = {
+    ORIGIN_VERIFIED: "AI-generated — verified by content credentials",
+    ORIGIN_DECLARED: "Creator or platform labeled this content as AI-generated",
+    ORIGIN_LIKELY: "Leans AI-generated — strong signals, not proof",
+    ORIGIN_INCONCLUSIVE: "Could go either way — the checks are not conclusive",
+    ORIGIN_NO_SIGNAL: "No synthetic signal detected (this does not confirm authenticity)",
+}
+
+# ---- weak/declared label patterns (conservative on purpose:
+# a false "AI-labeled" claim is worse than a miss) ----
+CAPTION_PATTERNS = [
+    r"\bmade with ai\b", r"\bai[- ]generated\b", r"\bcreated with ai\b",
+    # TYPOS ARE STILL DECLARATIONS: "Ai Gernated Video", "AI genrated",
+    # "ai generted" — a creator label misspelled is a creator label
+    r"\bai[- ]?g[a-z]{3,6}t[a-z]?d\b",
+    # "AI video" / "AI clip" / "AI film" in a caption is the creator saying so
+    r"\bai[- ](video|clip|film|short|animation|reel)\b",
+    # a generator named as the maker
+    r"\b(sora|veo\s?\d?|kling|runway|pika|midjourney|hailuo|luma)[- ]?(video|clip|film|generated|made)\b",
+    r"#aiart\b", r"#aigenerated\b", r"#madewithai\b", r"#aivideo\b",
+    r"\bgenerated (?:by|with) (?:ai|sora|veo|midjourney|dall[- ]?e)\b",
+    # AI-video studio tags: a creator tagging the TOOL is declaring origin
+    r"#sora\b", r"#veo\d?\b", r"#runway(?:ml)?\b", r"#kling(?:ai)?\b",
+    r"#midjourney\b", r"#aifilm\b", r"#aivfx\b", r"#aiads?\b",
+    r"#aicommercial\b", r"#aicinema\b", r"#texttovideo\b",
+]
+# OCR channel: visible watermark text burned into frames. Bare tool names
+# only count in the VISUAL channel (a caption merely mentioning "Sora"
+# could be about the tool; a watermark IS the tool's signature).
+OCR_PATTERNS = [
+    r"\bmade with ai\b", r"\bai[- ]generated\b",
+    r"\bsora\b", r"\bveo\b", r"\bpika\b", r"\bkling\b",
+]
+# generator names to byte-scan for in EXIF/XMP regions of raw images
+METADATA_GENERATORS = [
+    b"Midjourney", b"DALL-E", b"DALLE", b"Stable Diffusion",
+    b"Adobe Firefly", b"Sora", b"Imagen", b"FLUX",
+]
+_META_SCAN_BYTES = 131072  # metadata lives in the head of the file
+
+
+def _evidence(provider, signal_type, explanation, raw_score=None,
+              band=None, source_link=None):
+    return {
+        "provider": provider,
+        "signal_type": signal_type,
+        "raw_score": raw_score,
+        "band": band,
+        "explanation": explanation,
+        "source_link": source_link,
+    }
+
+
+# ------------------------------------------------------------ C2PA
+def check_c2pa(image_bytes):
+    """Read + validate Content Credentials. Returns (origin|None, evidence,
+    ok) where ok=False means the reader itself was unavailable/failed
+    (typed, not a finding)."""
+    try:
+        import io
+        import json as _json
+
+        import c2pa
+        try:
+            reader = c2pa.Reader("image/jpeg", io.BytesIO(image_bytes))
+            manifest = _json.loads(reader.json())
+        except Exception:
+            # no manifest present — the normal case; platforms strip them
+            return None, None, True
+        # validation: any recorded failure means the chain is NOT trusted
+        status = manifest.get("validation_status") or []
+        valid = not [s for s in status
+                     if "failure" in str(s.get("code", "")).lower()]
+        active = manifest.get("manifests", {}).get(
+            manifest.get("active_manifest", ""), {})
+        blob = _json.dumps(active).lower()
+        ai_made = ("trainedalgorithmicmedia" in blob
+                   or "compositewithtrainedalgorithmicmedia" in blob)
+        if ai_made and valid:
+            return ORIGIN_VERIFIED, _evidence(
+                "c2pa", "verified_provenance",
+                "Validated Content Credentials record AI generation."), True
+        if ai_made:
+            return ORIGIN_DECLARED, _evidence(
+                "c2pa", "declared_provenance",
+                "Content Credentials record AI generation but the "
+                "signature chain could not be validated."), True
+        # a validated camera chain is evidence TOWARD genuine, never proof
+        if valid and "c2pa.created" in blob:
+            return None, _evidence(
+                "c2pa", "capture_provenance",
+                "Validated capture credentials present (evidence toward "
+                "authentic capture; not proof of content)."), True
+        return None, None, True
+    except Exception:
+        return None, None, False  # reader unavailable/failed: typed
+
+
+# ------------------------------------------------------------ labels
+# spoken or on-screen SELF-declarations ("this video is AI-generated",
+# "everything you're seeing was made with AI") — a creator's own statement
+# about their own content, arriving through the transcript
+SPEECH_PATTERNS = [
+    r"\b(this|the following|everything( you('re| are) (seeing|watching))?|all of this|what you('re| are) (seeing|watching))\b[^.!?\n]{0,60}\b(is|was|are|were)\b[^.!?\n]{0,30}\b(ai[- ]generated|generated (by|with|using) (ai|artificial intelligence|sora|veo|kling|runway|midjourney)|made (with|by|using) (ai|artificial intelligence)|created (with|by|using) (ai|artificial intelligence))\b",
+    r"\b(this|the) (video|clip|footage|reel|short|scene|content)\b[^.!?\n]{0,40}\b(ai[- ]generated|not real|fully ai|100% ai|synthetic)\b",
+    r"\b(this|the) ai[- ]generated (video|clip|footage|content|scene)\b",
+]
+
+
+def check_speech_declaration(transcript=""):
+    """Pure (unit-tested): does the spoken/on-screen transcript contain a
+    self-declaration that THIS content is AI-made? Returns the matching
+    snippet or None. Mentions of AI in general ("AI is changing jobs")
+    do not match — the sentence must point at this content."""
+    t = (transcript or "").lower()
+    for pat in SPEECH_PATTERNS:
+        m = re.search(pat, t)
+        if m:
+            return t[max(0, m.start() - 20):m.end() + 20].strip()
+    return None
+
+
+# PLATFORM LABELS: TikTok ("AI-generated" — aigc_info.aigc_label_type 1 =
+# creator-labeled, 2 = platform-detected), YouTube ("altered or synthetic
+# content" disclosure), Instagram/Facebook ("Made with AI" / AI info).
+# They arrive in the page/API data the downloader and the rescue service
+# already return; reading them is free and a platform label is a DECLARED
+# origin, outranking the forensic detector.
+_PLATFORM_KEY_RE = re.compile(
+    r"^(aigc_label_type|aigc_label|is_aigc|is_ai_generated|ai_generated|"
+    r"made_with_ai|ai_info|ai_label|synthetic_content|is_synthetic|"
+    r"altered_or_synthetic|has_ai_label)$", re.I)
+_PLATFORM_TEXT_RE = re.compile(
+    r"(altered or synthetic content|made with ai|ai[- ]generated content|"
+    r"ai info|creator labeled as ai[- ]generated|this content may be ai[- ]generated)", re.I)
+
+
+def platform_ai_label(obj, _depth=0):
+    """Pure (unit-tested): deep-walk a platform/API response for an AI
+    label. Returns a short source string ("tiktok:aigc_label_type=1",
+    "text:made with ai") or None. Only truthy values count; 0/false/""
+    never do."""
+    if _depth > 8 or obj is None:
+        return None
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            ks = str(k)
+            if _PLATFORM_KEY_RE.match(ks):
+                if isinstance(v, bool):
+                    if v:
+                        return f"{ks}=true"
+                elif isinstance(v, (int, float)):
+                    if v:
+                        return f"{ks}={int(v)}"
+                elif isinstance(v, str):
+                    if v.strip().lower() not in ("", "0", "false", "none", "null", "no"):
+                        return f"{ks}={v.strip()[:30]}"
+                elif isinstance(v, dict) and v:
+                    inner = platform_ai_label(v, _depth + 1)
+                    if inner:
+                        return inner
+            elif isinstance(v, (dict, list)):
+                inner = platform_ai_label(v, _depth + 1)
+                if inner:
+                    return inner
+            elif isinstance(v, str) and ks.lower() in ("description", "caption", "title", "label", "disclosure", "text") and len(v) < 2000:
+                m = _PLATFORM_TEXT_RE.search(v)
+                if m:
+                    return f"text:{m.group(1).lower()}"
+        return None
+    if isinstance(obj, list):
+        for it in obj[:50]:
+            inner = platform_ai_label(it, _depth + 1)
+            if inner:
+                return inner
+    return None
+
+
+def check_labels(caption="", ocr_text="", transcript="", platform_label=None):
+    """Declared/weak evidence: creator or platform said it's AI."""
+    found = []
+    if platform_label:
+        found.append(_evidence(
+            "labels", "platform_label",
+            f"The platform labels this as AI-generated ({platform_label})."))
+    snippet = check_speech_declaration(transcript)
+    if snippet:
+        found.append(_evidence(
+            "labels", "spoken_declaration",
+            f'The creator states in the video that it is AI-generated ("{snippet[:120]}").'))
+    cap = (caption or "").lower()
+    for pat in CAPTION_PATTERNS:
+        if re.search(pat, cap):
+            found.append(_evidence(
+                "labels", "caption_label",
+                f"Caption/title contains an AI label (pattern: {pat})."))
+            break
+    ocr = (ocr_text or "").lower()
+    for pat in OCR_PATTERNS:
+        if re.search(pat, ocr):
+            found.append(_evidence(
+                "labels", "visible_watermark_text",
+                f"On-screen text contains AI watermark wording "
+                f"(pattern: {pat})."))
+            break
+    return found
+
+
+def check_metadata(image_bytes):
+    """Weak: generator names embedded in EXIF/XMP head bytes."""
+    head = (image_bytes or b"")[:_META_SCAN_BYTES]
+    for name in METADATA_GENERATORS:
+        if name in head:
+            return _evidence(
+                "metadata", "generator_tag",
+                f"Image metadata names a generator ({name.decode()}). "
+                "Metadata is easily altered; treated as declared, "
+                "not verified.")
+    return None
+
+
+# ------------------------------------------------------------ assemble
+def assess_stage1(caption="", ocr_text="", image_b64=None, transcript="", platform_label=None):
+    """Run every free Day-1 check; resolve by hierarchy, never weights."""
+    evidence = []
+    origins = []
+    status = STATUS_COMPLETED
+
+    img = None
+    if image_b64:
+        try:
+            img = base64.b64decode(image_b64)
+        except Exception:
+            status = STATUS_PARTIAL
+
+    if img:
+        c_origin, c_ev, c_ok = check_c2pa(img)
+        if not c_ok:
+            status = STATUS_PARTIAL
+        if c_ev:
+            evidence.append(c_ev)
+        if c_origin:
+            origins.append(c_origin)
+        m_ev = check_metadata(img)
+        if m_ev:
+            evidence.append(m_ev)
+            origins.append(ORIGIN_DECLARED)
+
+    label_ev = check_labels(caption, ocr_text, transcript, platform_label)
+    if label_ev:
+        evidence.extend(label_ev)
+        origins.append(ORIGIN_DECLARED)
+
+    origin = ORIGIN_NO_SIGNAL
+    for o in _ORIGIN_RANK:
+        if o in origins:
+            origin = o
+            break
+
+    return {
+        "assessment_status": status,
+        "origin_result": origin,
+        "manipulation_scope": "whole_media" if origin in
+        (ORIGIN_VERIFIED, ORIGIN_DECLARED) else "unknown",
+        "display": DISPLAY[origin],
+        "show_ai_badge": origin == ORIGIN_VERIFIED,  # verified ONLY
+        "evidence": evidence,
+        "stage": 1,
+    }
+
+
+# ------------------------------------------------------------ stage 2 merge
+def merge_stage2(stage1, stage2, gate_reason=None):
+    """Fold a Stage-2 forensic result into a Stage-1 assessment.
+
+    Hierarchy, never weights: the combined origin is the highest-ranked
+    of the two. Forensic evidence is appended to the panel. The badge
+    rule is untouched (verified provenance only). A not_assessed/failed
+    Stage 2 changes nothing except a typed note.
+    """
+    out = dict(stage1 or {})
+    out.setdefault("evidence", [])
+    out.setdefault("origin_result", ORIGIN_NO_SIGNAL)
+    s2 = stage2 or {}
+    out["stage2_status"] = s2.get("assessment_status", STATUS_NOT_ASSESSED)
+    # v0.66.42: WHY it failed. The detector returns a reason ("detector
+    # call failed: HTTP 401 …") and the merge used to drop it, so the
+    # card said "could not complete" with nothing to act on and the
+    # cause had to be guessed (Inderpreet, Oct 28).
+    if s2.get("reason"):
+        out["stage2_reason"] = str(s2["reason"])[:300]
+    if gate_reason:
+        out["stage2_gate_reason"] = gate_reason
+    if s2.get("assessment_status") != STATUS_COMPLETED:
+        return out
+    out["evidence"] = list(out["evidence"]) + list(s2.get("evidence") or [])
+    s2_origin = s2.get("origin") or ORIGIN_NO_SIGNAL
+    cur = out.get("origin_result") or ORIGIN_NO_SIGNAL
+    for o in _ORIGIN_RANK:
+        if o in (cur, s2_origin):
+            out["origin_result"] = o
+            break
+    if s2.get("manipulation_scope"):
+        out["manipulation_scope"] = s2["manipulation_scope"]
+    if s2.get("frames_analyzed"):
+        out["frames_analyzed"] = s2["frames_analyzed"]
+    out["display"] = DISPLAY.get(out["origin_result"], out.get("display"))
+    out["show_ai_badge"] = out.get("origin_result") == ORIGIN_VERIFIED
+    out["stage"] = 2
+    return out

@@ -1,0 +1,616 @@
+"""
+Media Authenticity Engine — Stage 2 (Day 2 of the v2 build plan).
+
+Forensic pixel/audio detection via Hive. This lane answers the question
+Stage 1 cannot: media that carries NO label, NO provenance, NO metadata —
+does the content itself show signs of synthetic generation?
+
+Design rules (locked, from the reviewed plan):
+- DISTINCT ADAPTERS, one per medium: image, video-frames, deepfake
+  (per-face), audio. Each is its own function with its own key, so a
+  vendor change in one never breaks another.
+- DORMANT WITHOUT A KEY: no HIVE_API_KEY -> available() is False, every
+  adapter returns a typed "not_assessed" result. The lane never invents
+  a finding and never breaks a check.
+- CATEGORIES, NEVER PERCENTAGES: vendor scores are mapped to the Stage-1
+  vocabulary (likely_synthetic / inconclusive / no signal) with
+  deliberately conservative thresholds. Raw scores are kept ONLY inside
+  the evidence entries for the evidence panel — the headline display
+  never shows a number until calibration earns one.
+- FORENSIC RANKS BELOW DECLARED: a detector's opinion never outranks a
+  creator's own statement or validated provenance (hierarchy in
+  authenticity._ORIGIN_RANK already encodes this).
+- GATED: the detector costs money per call. should_run_stage2() decides
+  when the question is worth asking; everything else stays free Stage-1.
+- Intimate/abusive imagery is refused upstream; minors are never
+  processed (enforced before this module is reached).
+"""
+
+import base64
+import json
+import os
+import re
+import threading
+import time
+import urllib.error
+import urllib.request
+
+from app.agents.authenticity import (
+    ORIGIN_LIKELY, ORIGIN_INCONCLUSIVE, ORIGIN_NO_SIGNAL,
+    STATUS_NOT_ASSESSED, STATUS_COMPLETED, STATUS_FAILED, STATUS_PARTIAL,
+)
+
+HIVE_V3_BASE = "https://api.thehive.ai/api/v3"
+HIVE_MODEL = os.environ.get(
+    "HIVE_MODEL_SLUG", "hive/ai-generated-and-deepfake-content-detection")
+HIVE_TIMEOUT_S = 45
+
+# Thresholds (v0.66.49 — lowered on Inderpreet's call, Oct 29 2026):
+#   >= 0.70  -> likely_synthetic ("leans AI-generated", never "is AI")
+#   0.35-0.70 -> inconclusive     (could go either way; say so, never guess)
+#   < 0.35   -> no finding from this detector (absence proves nothing)
+#
+# WHY THEY MOVED. At 0.90 the lane effectively never spoke, and silence
+# reads to a human as "it's real" — the one thing Glowby must never imply.
+# At 0.70 it speaks more often, which also means it will be wrong more
+# often in the other direction. That trade is only safe because of the
+# CORROBORATION RULE in detection.py: a frame-based "likely" must survive
+# a second pass on DIFFERENT frames or it drops to inconclusive. One odd
+# frame is not an accusation. Tune without a deploy via the env vars.
+#
+# The honest caveat, from DF26 (arXiv:2609.07369, Sept 2026): detectors
+# score near chance on the newest generators. Moving a line on a weak
+# signal does not create accuracy — it only changes which way we are
+# wrong. The reader-feedback split (ai_missed vs false_alarm) in admin is
+# how we find out whether this was the right direction.
+THRESH_LIKELY = float(os.environ.get("GLOWBY_AI_THRESH_LIKELY", "0.70"))
+THRESH_INCONCLUSIVE = float(os.environ.get("GLOWBY_AI_THRESH_UNCLEAR", "0.35"))
+THRESH_WEAK = float(os.environ.get("GLOWBY_AI_THRESH_WEAK", "0.10"))
+
+
+def thresholds() -> dict:
+    """The bands in force, recorded on every result so an old card can be
+    read with the numbers that actually produced it."""
+    return {"likely": THRESH_LIKELY, "unclear": THRESH_INCONCLUSIVE,
+            "weak": THRESH_WEAK}
+
+# class names that count as "synthetic" in Hive AI-content responses
+_SYNTHETIC_CLASSES = {"ai_generated", "deepfake", "yes_deepfake",
+                      "yes_ai_generated", "synthetic",
+                      "ai_generated_audio"}
+# class names that are generator attributions (kept as evidence detail)
+_GENERATOR_HINTS = {"sora", "veo", "pika", "kling", "midjourney",
+                    "dalle", "dall_e", "stablediffusion",
+                    "stable_diffusion", "firefly", "flux", "imagen",
+                    "runway", "hedra", "luma"}
+
+
+# ------------------------------------------------------------ face hint
+_FACE_WORDS = re.compile(
+    r"\b(face|faces|man|woman|person|people|speaker|speaking|talking|"
+    r"interview|says|said|president|mayor|senator|governor|celebrity|"
+    r"official|spokesperson|anchor|host|influencer|selfie|portrait|"
+    r"he |she |his |her )\b", re.I)
+
+
+def likely_has_person(text=""):
+    """Pure function (unit-tested): cheap text check — does the video's
+    visual description / transcript suggest a person is on screen? The
+    per-face detector only costs money when this says yes (or the user
+    asked). Errs toward True on ambiguity: missing a deepfake is worse
+    than one spare call."""
+    return bool(_FACE_WORDS.search(text or ""))
+
+
+# v0.66.41: the key is read by name, so a variable spelled differently in
+# Railway left the detector silently dormant with no way to tell. These
+# aliases are accepted for the main key, and the admin page reports which
+# name was found (never the value).
+_KEY_ALIASES = {
+    "HIVE_API_KEY": ("HIVE_API_KEY", "HIVE_KEY", "HIVE_TOKEN", "HIVE_API", "HIVE_APIKEY",
+                     "GLOWBY_HIVE_KEY", "GLOWBY_HIVE_API_KEY", "HIVE_VISUAL_KEY"),
+    "HIVE_AUDIO_KEY": ("HIVE_AUDIO_KEY", "HIVE_AUDIO", "GLOWBY_HIVE_AUDIO_KEY"),
+    "HIVE_DEEPFAKE_KEY": ("HIVE_DEEPFAKE_KEY", "HIVE_DEEPFAKE", "GLOWBY_HIVE_DEEPFAKE_KEY"),
+}
+
+
+def key_source(name="HIVE_API_KEY"):
+    """Pure-ish: which environment variable actually holds this key, or
+    None. The NAME only — the value is never returned or logged."""
+    for alias in _KEY_ALIASES.get(name, (name,)):
+        if (os.environ.get(alias) or "").strip():
+            return alias
+    return None
+
+
+def _key(name="HIVE_API_KEY"):
+    src = key_source(name)
+    return (os.environ.get(src) or "").strip() if src else ""
+
+
+def available():
+    """True only when the image/video detection key exists."""
+    return bool(_key())
+
+
+def deepfake_available():
+    """Per-face deepfake model lives in its OWN Hive project/key."""
+    return bool(_key("HIVE_DEEPFAKE_KEY"))
+
+
+def audio_available():
+    """AI-voice detection: the combined V3 model answers for audio too
+    (class ai_generated_audio); HIVE_AUDIO_KEY overrides the key if a
+    separate project is used."""
+    return bool(_key("HIVE_AUDIO_KEY") or _key("HIVE_API_KEY"))
+
+
+def _not_assessed(reason):
+    return {"assessment_status": STATUS_NOT_ASSESSED, "origin": None,
+            "evidence": [], "reason": reason}
+
+
+def _failed(reason):
+    return {"assessment_status": STATUS_FAILED, "origin": None,
+            "evidence": [], "reason": reason}
+
+
+# ------------------------------------------------------------ parsing
+def classes_to_finding(classes):
+    """Pure function (unit-tested): map Hive class scores to a category.
+
+    `classes` is a list of {"class": name, "score": float}. Returns
+    (origin_or_None, top_synthetic_score, generator_hint_or_None).
+    """
+    top = 0.0
+    gen = None
+    gen_score = 0.0
+    for c in classes or []:
+        try:
+            name = str(c.get("class", "")).lower()
+            score = float(c.get("value", c.get("score", 0.0)))
+        except Exception:
+            continue
+        if name in _SYNTHETIC_CLASSES and score > top:
+            top = score
+        if name in _GENERATOR_HINTS and score > max(gen_score, 0.40):
+            gen, gen_score = name, score
+    if top >= THRESH_LIKELY:
+        return ORIGIN_LIKELY, top, gen
+    if top >= THRESH_INCONCLUSIVE:
+        return ORIGIN_INCONCLUSIVE, top, gen
+    return None, top, None
+
+
+def _extract_class_lists(payload):
+    """Walk a Hive sync response and yield every classes list found.
+    Response shapes differ per model; this is deliberately tolerant."""
+    out = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            cl = node.get("classes")
+            if isinstance(cl, list) and cl and isinstance(cl[0], dict):
+                out.append(cl)
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    def walk_maps(node):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k in ("scores", "class_scores") and isinstance(v, dict):
+                    cl = [{"class": ck, "score": cv}
+                          for ck, cv in v.items()
+                          if isinstance(cv, (int, float)) and 0 <= cv <= 1]
+                    if cl:
+                        out.append(cl)
+                else:
+                    walk_maps(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk_maps(v)
+
+    walk(payload)
+    walk_maps(payload)
+    return out
+
+
+def _post_v3(key, image_b64=None, media_url=None):
+    """One call to the Hive v3 API (Bearer auth, JSON body). The combined
+    AI-generated & deepfake model answers both questions in one call."""
+    url = f"{HIVE_V3_BASE}/{HIVE_MODEL}"
+    item = ({"media_url": media_url} if media_url
+            else {"media_base64": image_b64})
+    body = json.dumps({"media_metadata": True, "input": [item]}).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "accept": "application/json",
+        })
+    try:
+        with urllib.request.urlopen(req, timeout=HIVE_TIMEOUT_S) as r:
+            out = json.loads(r.read().decode("utf-8", "replace"))
+        _health(True)
+        return out
+    except urllib.error.HTTPError as e:
+        # keep the vendor's own words — the only reliable way to learn
+        # why a call is refused (surfaced to the admin diagnostic only)
+        try:
+            detail = e.read().decode("utf-8", "replace")[:400]
+        except Exception:
+            detail = ""
+        _health(False, f"HTTP {e.code}: {detail[:120]}")
+        if e.code == 429:
+            raise RateLimited(f"HTTP 429: {detail}") from None
+        raise RuntimeError(f"HTTP {e.code}: {detail}") from None
+    except Exception as e:
+        _health(False, str(e)[:160])
+        raise
+
+
+# ------------------------------------------------- pacing (v0.66.44)
+# Every Hive call was fired back-to-back: one video meant six requests
+# in about a second. Hive answered HTTP 429 "Too Many Requests" to all
+# of them (0 ok / 15 failed, Oct 28), so the whole video's budget was
+# spent on refusals. Three rules now:
+#   1. never two calls closer together than MIN_GAP_S
+#   2. a 429 is retried after a pause, not abandoned
+#   3. after REPEATS_BEFORE_COOLDOWN refusals in a row, stop calling
+#      Hive for COOLDOWN_S — hammering a closed door only deepens it
+# All three are off the critical path: a rate-limited detector returns
+# a typed failure, and the check completes without it as it always has.
+MIN_GAP_S = float(os.environ.get("HIVE_MIN_GAP_S", "1.5"))
+RETRIES_429 = int(os.environ.get("HIVE_RETRIES_429", "2"))
+BACKOFF_S = (3.0, 9.0)
+COOLDOWN_S = float(os.environ.get("HIVE_COOLDOWN_S", "900"))
+# three in a row is one video's worth of asking and being refused — enough
+REPEATS_BEFORE_COOLDOWN = int(os.environ.get("HIVE_REPEATS_BEFORE_COOLDOWN", "3"))
+
+_PACE = {"last": 0.0, "until": 0.0, "row": 0}
+_PACE_LOCK = threading.Lock()
+
+
+class RateLimited(RuntimeError):
+    """Hive refused because of its own rate limit, not because of us."""
+
+
+def cooldown_left() -> int:
+    """Seconds Hive is being left alone for; 0 when calls are flowing."""
+    return max(0, int(_PACE["until"] - time.time()))
+
+
+def pace_state() -> dict:
+    return {"cooldown_s": cooldown_left(), "refusals_in_a_row": _PACE["row"],
+            "min_gap_s": MIN_GAP_S}
+
+
+def _wait_turn() -> None:
+    with _PACE_LOCK:
+        gap = MIN_GAP_S - (time.time() - _PACE["last"])
+        if gap > 0:
+            time.sleep(min(gap, MIN_GAP_S))
+        _PACE["last"] = time.time()
+
+
+def _call(key, image_b64=None, media_url=None, pace=True, retries=None):
+    """_post_v3 with spacing, retries on 429, and a cooldown."""
+    retries = RETRIES_429 if retries is None else int(retries)
+    if pace:
+        left = cooldown_left()
+        if left:
+            raise RateLimited(
+                f"HTTP 429: Hive refused {_PACE['row']} calls in a row; "
+                f"pausing for another {left}s before asking again")
+    last = None
+    for attempt in range(retries + 1):
+        if pace:
+            _wait_turn()
+        try:
+            out = _post_v3(key, image_b64=image_b64, media_url=media_url)
+            _PACE["row"] = 0
+            _PACE["until"] = 0.0
+            return out
+        except RateLimited as e:
+            last = e
+            _PACE["row"] += 1
+            if pace and _PACE["row"] >= REPEATS_BEFORE_COOLDOWN:
+                _PACE["until"] = time.time() + COOLDOWN_S
+                break
+            if attempt < retries:
+                time.sleep(BACKOFF_S[min(attempt, len(BACKOFF_S) - 1)])
+    raise last if last else RuntimeError("no response")
+
+
+def _health(ok, err=""):
+    try:
+        from app.apihealth import note
+        note("hive", ok, err)
+    except Exception:
+        pass
+
+
+def _finding_to_result(origin, top, gen, provider_label, classes_seen=None):
+    ev = []
+    if origin:
+        detail = (f" Likely generator: {gen}." if gen else "")
+        ev.append({
+            "provider": "hive", "signal_type": provider_label,
+            "raw_score": round(top, 3),  # evidence panel only
+            "band": ("strong" if origin == ORIGIN_LIKELY else "uncertain"),
+            "explanation": (
+                "Forensic detector reports "
+                + ("strong synthetic-media signals."
+                   if origin == ORIGIN_LIKELY else
+                   "an uncertain result — treated as inconclusive, "
+                   "never as a verdict.") + detail),
+            "source_link": None,
+        })
+    elif top >= THRESH_WEAK:
+        ev.append({
+            "provider": "hive", "signal_type": provider_label,
+            "raw_score": round(top, 3), "band": "weak",
+            "explanation": (f"Forensic detector reports weak synthetic "
+                            f"signals ({top:.2f}) — below its decision "
+                            "threshold. Not evidence of AI, not evidence "
+                            "of real; this never renders as 'genuine'."),
+            "source_link": None,
+        })
+    else:
+        ev.append({
+            "provider": "hive", "signal_type": provider_label,
+            "raw_score": round(top, 3), "band": "none",
+            "explanation": ("Forensic detector found no synthetic "
+                            "signal. Absence proves nothing; this never "
+                            "renders as 'genuine'."),
+            "source_link": None,
+        })
+    if classes_seen is not None:
+        ev[0]["classes_seen"] = classes_seen
+        if not classes_seen:
+            # nothing parsed is NOT a clean bill of health — say so
+            ev[0]["explanation"] = (
+                "The detector replied but no class scores could be read "
+                "from its answer; this is a parsing gap, not a finding.")
+            return {"assessment_status": STATUS_PARTIAL,
+                    "origin": None, "evidence": ev,
+                    "reason": "no class scores parsed"}
+    return {"assessment_status": STATUS_COMPLETED,
+            "origin": origin or ORIGIN_NO_SIGNAL,
+            "top_score": round(top, 3),
+            "evidence": ev, "reason": None}
+
+
+# ------------------------------------------------------------ adapters
+def detect_image(image_b64):
+    """Adapter 1: single image, AI-generated-content model."""
+    if not available():
+        return _not_assessed("no HIVE_API_KEY configured")
+    try:
+        img = base64.b64decode(image_b64)
+    except Exception:
+        return _failed("image bytes unreadable")
+    try:
+        payload = _call(_key(), image_b64=image_b64)
+        best = (None, 0.0, None)
+        df_top = 0.0
+        for classes in _extract_class_lists(payload):
+            f = classes_to_finding(classes)
+            if f[1] >= best[1]:
+                best = f
+            for c in classes:
+                if str(c.get("class", "")).lower() in ("deepfake",
+                                                       "yes_deepfake"):
+                    try:
+                        df_top = max(df_top, float(c.get("score", 0)))
+                    except Exception:
+                        pass
+        res = _finding_to_result(*best, "forensic_image",
+                                 classes_seen=sum(len(c) for c in
+                                                  _extract_class_lists(payload)))
+        if df_top >= THRESH_LIKELY:
+            res["manipulation_scope"] = "face"
+        return res
+    except RateLimited as e:
+        return _failed(f"detector is rate-limited: {e}")
+    except Exception as e:  # network/HTTP/parse: typed failure, no guess
+        return _failed(f"detector call failed: {e}")
+
+
+def detect_video_frames(frames_b64):
+    """Adapter 2: sampled video frames through the image model.
+    Aggregation: the STRONGEST frame finding stands (a deepfake is a
+    deepfake even if most frames are innocent), but a single
+    inconclusive frame among clean ones stays inconclusive."""
+    if not available():
+        return _not_assessed("no HIVE_API_KEY configured")
+    if not frames_b64:
+        return _not_assessed("no frames supplied")
+    best = (None, 0.0, None)
+    ran = 0
+    seen = 0
+    limited = ""
+    for fb in frames_b64[:6]:  # cost cap: at most 6 frames per video
+        try:
+            base64.b64decode(fb)  # validate only
+            payload = _call(_key(), image_b64=fb)
+            ran += 1
+            for classes in _extract_class_lists(payload):
+                seen += len(classes)
+                f = classes_to_finding(classes)
+                if f[1] >= best[1]:
+                    best = f
+        except RateLimited as e:
+            # v0.66.44: stop the video here. Five more frames into a
+            # rate limit is five more refusals and a longer cooldown.
+            limited = str(e)
+            break
+        except Exception:
+            continue
+    if ran == 0:
+        if limited:
+            return _failed(f"detector is rate-limited: {limited}")
+        return _failed("no frame could be analyzed")
+    res = _finding_to_result(*best, "forensic_video_frames",
+                             classes_seen=seen)
+    res["frames_analyzed"] = ran
+    return res
+
+
+def detect_deepfake_faces(image_b64):
+    """Adapter 3: per-face deepfake model (own key/project). Catches
+    deepfakes of NON-famous people — signals concentrated on a face
+    are reported as face-scoped manipulation."""
+    if not deepfake_available():
+        return _not_assessed("no HIVE_DEEPFAKE_KEY configured")
+    try:
+        base64.b64decode(image_b64)  # validate only
+        payload = _call(_key("HIVE_DEEPFAKE_KEY"), image_b64=image_b64)
+        best = (None, 0.0, None)
+        for classes in _extract_class_lists(payload):
+            f = classes_to_finding(classes)
+            if f[1] >= best[1]:
+                best = f
+        res = _finding_to_result(*best, "forensic_deepfake_faces")
+        if res.get("origin") == ORIGIN_LIKELY:
+            res["manipulation_scope"] = "face"
+        return res
+    except RateLimited as e:
+        return _failed(f"detector is rate-limited: {e}")
+    except Exception as e:
+        return _failed(f"deepfake call failed: {e}")
+
+
+def detect_deepfake_frames(frames_b64):
+    """Adapter 3b: per-face deepfake across sampled video frames.
+    Strongest face finding stands; cost-capped at 3 frames."""
+    if not deepfake_available():
+        return _not_assessed("no HIVE_DEEPFAKE_KEY configured")
+    if not frames_b64:
+        return _not_assessed("no frames supplied")
+    best = None
+    ran = 0
+    for fb in frames_b64[:3]:
+        r = detect_deepfake_faces(fb)
+        if r.get("assessment_status") != STATUS_COMPLETED:
+            continue
+        ran += 1
+        if best is None or (r.get("origin") == ORIGIN_LIKELY
+                            and best.get("origin") != ORIGIN_LIKELY):
+            best = r
+    if best is None:
+        return _failed("no frame could be analyzed") if ran == 0 else             _not_assessed("no completed frame analysis")
+    best["frames_analyzed"] = ran
+    return best
+
+
+def detect_audio(audio_b64):
+    """Adapter 4: AI-voice detection on a short audio clip (base64 mp3/wav).
+    Voice cloning is the commonest deepfake in political and scam videos;
+    pictures alone never see it. Strongest audio class stands."""
+    if not audio_available():
+        return _not_assessed("no HIVE key configured")
+    if not audio_b64:
+        return _not_assessed("no audio supplied")
+    try:
+        base64.b64decode(audio_b64)  # validate only
+        payload = _post_v3(_key("HIVE_AUDIO_KEY") or _key("HIVE_API_KEY"),
+                           image_b64=audio_b64)
+        best = (None, 0.0, None)
+        seen = 0
+        for classes in _extract_class_lists(payload):
+            seen += len(classes)
+            f = classes_to_finding(classes)
+            if f[1] >= best[1]:
+                best = f
+        res = _finding_to_result(*best, "forensic_audio_voice", classes_seen=seen)
+        if res.get("origin") == ORIGIN_LIKELY:
+            res["manipulation_scope"] = "voice"
+        return res
+    except Exception as e:
+        return _failed(f"audio call failed: {e}")
+
+
+# ------------------------------------------------------------ the gate
+_AI_TOPIC_RE = re.compile(
+    r"\b(ai|a\.i\.|deepfake|deep fake|sora|veo|midjourney|"
+    r"ai[- ]generated|artificial intelligence|synthetic)\b", re.I)
+_HIGH_RISK_BUCKETS = {"politics", "news", "health", "law", "science"}
+
+
+def should_run_stage2(title="", user_question="", claims=None,
+                      stage1_origin=None, on_demand=False):
+    """Decide whether the paid detector runs. Returns (bool, reason).
+
+    Fires when the question is worth the money:
+    - the USER asked (on-demand link) — always honored
+    - the video/claims are ABOUT AI or deepfakes
+    - a claim is high-risk / public-safety / high-risk bucket
+      (person-presented-as-real, event-as-evidence, attributed voice
+      all route through claim risk flags today)
+    Never fires when Stage 1 already settled it (verified/declared —
+    the creator told us; paying to double-check adds nothing).
+    """
+    if stage1_origin in ("verified_ai_provenance", "declared_ai"):
+        return False, "already settled by provenance/label"
+    if on_demand:
+        return True, "user requested authenticity check"
+    text = f"{title or ''} {user_question or ''}"
+    if _AI_TOPIC_RE.search(text):
+        return True, "content is about AI/synthetic media"
+    for c in claims or []:
+        if not isinstance(c, dict):
+            continue
+        if c.get("public_safety_risk"):
+            return True, "public-safety claim present"
+        if str(c.get("risk_level", "")).lower() == "high":
+            return True, "high-risk claim present"
+        if str(c.get("bucket", "")).lower() in _HIGH_RISK_BUCKETS \
+                and c.get("central"):
+            return True, "central claim in a high-stakes category"
+    return False, "no gate condition met"
+
+
+def selftest(image_b64=None):
+    """Admin diagnostic: make ONE real call and report exactly what
+    happened, including the vendor's error text. Never used in the
+    pipeline; costs one request."""
+    if not available():
+        return {"ok": False, "stage": "config",
+                "detail": "HIVE_API_KEY missing in environment"}
+    if not image_b64:
+        # 1x1 white JPEG, enough to prove the transport works
+        image_b64 = (
+            "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsL"
+            "DBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/"
+            "wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAA"
+            "AAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==")
+    try:
+        # pace=False: the button must always reach Hive, even mid-cooldown.
+        # One call cannot breach a sane rate limit, so a 429 HERE means the
+        # project itself is refusing us, not that we asked too fast.
+        # a short leash: the button must answer while someone is
+        # watching it, not sit on the pipeline's 45s patience (v0.66.55)
+        _was = globals()["HIVE_TIMEOUT_S"]
+        globals()["HIVE_TIMEOUT_S"] = min(_was, 20)
+        try:
+            payload = _call(_key(), image_b64=image_b64, pace=False, retries=0)
+        finally:
+            globals()["HIVE_TIMEOUT_S"] = _was
+    except RateLimited as e:
+        return {"ok": False, "stage": "call", "rate_limited": True,
+                "single_call": True, "detail": str(e)[:500],
+                "pace": pace_state()}
+    except Exception as e:
+        return {"ok": False, "stage": "call", "detail": str(e)[:500],
+                "pace": pace_state()}
+    lists = _extract_class_lists(payload)
+    return {"ok": True, "stage": "parsed",
+            "class_lists_found": len(lists),
+            "first_classes": (lists[0][:6] if lists else []),
+            "raw_keys": list(payload.keys())[:10],
+            "raw_head": json.dumps(payload)[:600]}

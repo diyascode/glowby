@@ -1,0 +1,4 @@
+Poppins (Poppins-Bold.ttf, Poppins-Medium.ttf)
+Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins)
+Licensed under the SIL Open Font License, Version 1.1 — https://openfontlicense.org
+Used by app/ads.py for the daily marketing clip's on-screen type.

@@ -1,0 +1,4 @@
+# Railway build config — adds ffmpeg so yt-dlp can convert any site's
+# audio (HLS/.ts streams etc.) to MP3 before Whisper transcription.
+[phases.setup]
+nixPkgs = ["...", "ffmpeg"]

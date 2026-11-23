@@ -1,0 +1,1966 @@
+{
+ "about": "Seed calibration corpus for the Glowby scam-risk engine. Written from the FTC, FBI IC3 and WSJ descriptions of common scam shapes (Sept 2026) plus ordinary legitimate messages. Synthetic — no real victim's text. Every case carries an answer key (expected verdict bands, required red-flag codes) and a split; this file is the DEV split only — validation and hidden cases live in the database, never in the repo.",
+ "items": [
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Chase Fraud Dept: We blocked a $980 charge. To cancel, reply with the 6-digit security code we just texted you or your account will be locked.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "credential_request"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Wells Fargo: unusual sign-in detected. Confirm it's you by replying with the verification code sent to this phone within 10 minutes.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Your Apple ID has been locked due to suspicious activity. Verify your identity at appleid-secure-login.com/verify to restore access.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "PayPal: your account is limited. Log in at paypal-resolution-center.net/unlock and confirm your password and card details to remove the limitation.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Coinbase Security: withdraw request pending. If this wasn't you, enter your 2FA code at coinbase-support-verify.io within 15 minutes to cancel.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Microsoft 365: your password expires today. Keep your current password by signing in here: office365-renewal.top/login",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Bank of America alert: your debit card has been temporarily suspended. Call 1-844-555-0170 now to reactivate.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Netflix: your payment failed and your membership will be cancelled. Update your payment method at netflix-billing-update.co",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "phishing_otp",
+   "text": "Venmo: a login from a new device was detected. If this was not you, tap here to secure your account: venmo-secure.me/login",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "This is Officer Daniels from the IRS. You owe $4,300 in back taxes. A warrant for your arrest has been issued. Pay today with Apple gift cards and read me the codes. Do not hang up.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [
+    "official_untraceable_payment",
+    "threat"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "Social Security Administration: your social security number has been suspended due to suspicious activity linked to a crime. Call 1-800-555-0123 immediately.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [
+    "ssn_linked_to_crime"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "This is Medicare. We are issuing new cards. To keep your benefits we need your Medicare number and date of birth today or your coverage will be cancelled.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "Deputy Wilson, County Sheriff's Office. You failed to appear for jury duty and there is a warrant. Pay the $2,500 fine today with Vanilla gift cards and read me the numbers. There is a gag order, tell no one.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "U.S. Customs and Border Protection: a package addressed to you was seized containing illegal items. To avoid arrest pay the $1,900 clearance fee via Zelle within 2 hours.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "DMV notice: your license will be suspended for unpaid tolls. Pay $11.69 now at dmv-tolls-pay.com to avoid a $250 penalty.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "Your electricity will be disconnected in 30 minutes for non-payment. Call 1-888-555-0142 and pay the balance with a prepaid card to keep your power on.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "gov_impersonation",
+   "text": "Federal grant department: you have been approved for a $9,000 government grant. Pay the $250 processing fee via Cash App to release the funds.",
+   "expected": [
+    "critical_scam_risk",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "Join Quantum Edge AI. Guaranteed 15% returns per week, risk free. My students made $40,000 last month. DM me on Telegram to start with $500 USDT.",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "I turned $2,000 into $38,000 in 3 weeks with this trading bot. Fully automated, zero risk. Link in bio to get started, only 20 spots left.",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "Elon Musk here. To celebrate, I'm giving away 5,000 BTC. Send 0.1 BTC to the address below and receive 0.2 BTC back. Only 500 spots!",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "advance_fee"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "Your account balance of $500,000 has been flagged by compliance as money laundering. To lift the flag and process your withdrawal pay a 20% AML verification fee first.",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "Hi, this is Amity from the investment pool my uncle runs. We're seeing 8% daily on the platform. Start small, I'll guide you. Deposit via USDT to the wallet I send you.",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "Forex signals mentor: 100% guaranteed profit, double your money every month. WhatsApp +1 415 555 0199 to join the VIP group.",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "investment_crypto",
+   "text": "Pre-sale ends tonight! MoonPup token 1000x guaranteed. Send ETH to the contract address now, tokens airdropped instantly.",
+   "expected": [
+    "suspicious",
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "advance_fee",
+   "text": "Congratulations! You have been selected as the winner of the Publishers Clearing House $2,500,000 prize. To release your winnings pay a $499 processing fee via Zelle first.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "advance_fee"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "advance_fee",
+   "text": "You are the beneficiary of a $4.7M inheritance from a late client who shares your surname. A $1,200 legal fee is required to release the funds.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "advance_fee"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "advance_fee",
+   "text": "Your loan of $15,000 has been pre-approved with no credit check. Pay the $300 insurance deposit by gift card to receive the funds today.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "advance_fee"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "advance_fee",
+   "text": "Your refund of $1,240 is ready. To receive it, pay the $45 transfer fee at irs-refund-portal.com/claim within 48 hours.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "advance_fee"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "advance_fee",
+   "text": "Your package is held at customs. Pay the $2.99 redelivery fee at usps-redelivery.top/track to release it.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "advance_fee"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "fake_job",
+   "text": "We are hiring remote data entry, earn $400 per day, no experience. Pay the $50 training fee via Cash App to receive your starter kit.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "fake_job",
+   "text": "Congratulations, you're hired! Before onboarding, purchase your equipment through our vendor; we'll send a $3,200 check to cover it, deposit it and forward the difference.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "fake_job",
+   "text": "Task job: earn $150 a day rating apps. Register with my link, deposit $100 USDT to unlock the higher-paying tasks and withdraw anytime.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "fake_job",
+   "text": "Amazon Product Reviewer position, $35/hour from home. Interview via Telegram today. Pay the $20 background check fee to start.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "tech_support",
+   "text": "Microsoft Security Alert: your computer is infected. Call 1-800-555-0199 and install AnyDesk so our technician can secure your bank account.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "remote_access"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "tech_support",
+   "text": "Norton: your subscription was renewed for $399.99. To cancel and refund call 1-877-555-0166 and allow remote access to process the refund.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "tech_support",
+   "text": "Apple Support: your iCloud has been hacked. Download the screen-share tool at the link and let our agent remove the virus. Do not turn off your computer.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "tech_support",
+   "text": "Geek Squad invoice: $349.00 charged for annual protection. If you did not authorize this, call 1-866-555-0133 within 24 hours for a refund.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "marketplace_overpayment",
+   "text": "I'll buy the couch sight unseen. I'll send a cashier's check for $1,500 more than the price, please refund the difference to my mover via Zelle.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "overpayment"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "marketplace_overpayment",
+   "text": "Interested in your listing. I'll pay via PayPal but you need to upgrade to a business account first, pay the $200 upgrade fee and I'll reimburse you.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "overpayment"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "marketplace_overpayment",
+   "text": "I'm out of town, my shipper will pick it up. I've sent $2,400, please send $900 to the shipper's Cash App to schedule the pickup.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "overpayment"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "prize_delivery",
+   "text": "USPS: your package could not be delivered due to an incomplete address. Update your details within 24 hours at usps-redelivery.top/track",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "phishing_link"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "prize_delivery",
+   "text": "FedEx: delivery attempt failed. Reschedule and pay the $1.99 fee at fedex-reschedule.co within 12 hours or the parcel will be returned.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "prize_delivery",
+   "text": "You've won a $1,000 Walmart gift card! Claim it here in the next 10 minutes: walmart-rewards-claim.xyz",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "prize_delivery",
+   "text": "Amazon: you have been selected for a free iPhone 16. Pay shipping of $7.95 to claim your prize: amazon-winner.top",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "romance",
+   "text": "My love, your daughters don't want you to be happy, they are jealous of us. Keep this between us. I need $2,000 for the customs fee so I can fly to you; wire it to my agent, the account name will be different from mine.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "third_party_recipient",
+    "wedge"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "romance",
+   "text": "Babe I miss you. The oil rig contract ends next month and then I fly to you. Can you send $900 for my flight deposit? I'll pay you back the day I land.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "romance",
+   "text": "I love you so much. I can't do a video call, the camera on the base is broken. Let's move to WhatsApp, and please send the gift card codes for my phone credit.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "romance",
+   "text": "Sweetheart, I've been in a car accident in Turkey and the hospital won't treat me until I pay $3,500. Please send it by Western Union, you're the only one I trust.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "romance",
+   "text": "I want to spend my life with you. My package with our savings is held at the airport; the diplomat needs $1,800 in bitcoin to release it.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "charity",
+   "text": "Hurricane relief fund: thousands of families need help tonight. Donate now by Zelle to the number below, every dollar goes straight to victims. Please don't delay.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "charity",
+   "text": "Wounded veterans need you. Send gift cards to our coordinator, we'll distribute them to the families this week. God bless.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "recovery",
+   "text": "Lost money to a crypto scam? Our recovery experts get your stolen funds back within 48 hours. Pay the $500 case fee to begin.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "recovery",
+   "text": "I saw your post about being scammed. I'm an ethical hacker and I recovered my own $20,000, I can recover yours for a 10% upfront fee.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "extortion",
+   "text": "I have your nudes. Pay me $500 in bitcoin within 24 hours or I will send them to all your friends and family.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "extortion"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "extortion",
+   "text": "I hacked your webcam and recorded you. Send 0.05 BTC to this wallet or the video goes to your contacts. You have 48 hours.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "extortion"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "extortion",
+   "text": "Send $300 in gift cards tonight or I post the photos you sent me to your school's page.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "extortion"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "subscription_invoice",
+   "text": "PayPal receipt: you paid $479.00 to McAfee Antivirus for a 2-year plan. If you did not authorize this transaction call 1-888-555-0177 to cancel.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "callback_number"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "subscription_invoice",
+   "text": "Your Amazon Prime membership was charged $139 to a card ending 8821. To dispute call 1-855-555-0190 within 24 hours.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "callback_number"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "family_emergency",
+   "text": "Grandma it's me, I've been in an accident and I'm at the police station. Please don't tell mom. My lawyer says bail is $8,000, he'll call you with where to send it. Please hurry.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "family_emergency"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "family_emergency",
+   "text": "Mom, I lost my phone, this is my new number. I'm stuck at the airport and my card was declined, can you Zelle me $600 right now? I'll explain later.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "family_emergency",
+   "text": "This is attorney Michael Cole. Your grandson has been arrested after an accident and needs $5,000 bail today. He asked that you not tell his parents. Cash only, a courier will collect it.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "safe_account",
+   "text": "This is David White from the PayPal legal department. A criminal ring has your Social Security number. To protect your funds transfer your money into a federally protected account we will set up. Do not discuss this with your bank.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "safe_account"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "safe_account",
+   "text": "Bank fraud investigation: your account has been compromised by an employee. Move your balance to the secure holding account we provide; do not tell the branch staff, they may be involved.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "safe_account",
+   "text": "Withdraw the cash from your CDs and put it in boxes. Our courier will come to your apartment to collect it and it will be placed in the secure account.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "cash_courier"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "callback",
+   "text": "Chase Alert: a $1,250 charge at Best Buy was placed on your card ending 4471. If this was not you, call 1-866-555-0147 immediately to cancel the charge.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "callback_number"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "callback",
+   "text": "Did you authorize a $900 purchase on your PayPal debit card? If not, call 1-800-555-0113 right away to dispute it.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "callback_number"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "breach",
+   "text": "Data Breach Notification: your Social Security number was found on the dark web following the recent breach. Enroll in free protection within 24 hours by calling 1-877-555-0188 and see the attached form.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "breach",
+   "text": "Experian Alert: your credentials were exposed in the AT&T breach. Confirm your SSN and password at experian-protect.co to activate monitoring.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "no_questions",
+   "text": "I need you to not ask questions, but can you transfer me $5,000 on PayPal right now? EMERGENCY.",
+   "expected": [
+    "high_scam_risk",
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "no_questions_transfer"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "scam",
+   "shape": "crypto_atm",
+   "text": "Go to the convenience store, scan the QR code on the bitcoin machine and deposit $4,000 for the bail. There is a gag order, do not tell anyone.",
+   "expected": [
+    "critical_scam_risk"
+   ],
+   "required_codes": [
+    "official_untraceable_payment"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Chase: did you attempt a $1,250 purchase at Best Buy? Reply YES or NO. If NO, call the number on the back of your card.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Your Chase statement is ready to view. Sign in at chase.com to see it. Reply STOP to opt out.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Wells Fargo: your one-time code is 482913. Never share this code with anyone. We will never call to ask for it.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Capital One: a $42.10 purchase at Etsy was approved on your card ending 3391.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Bank of America: we noticed a login from a new device. If this was you, no action is needed. If not, call the number on the back of your card.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Your Apple ID code is 305118. Don't share it with anyone.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "bank_alert",
+   "text": "Google: your verification code is 771204. Do not share this code.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "delivery",
+   "text": "Your Amazon package will be delivered by courier tomorrow between 2 and 4 pm. No signature needed.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "delivery",
+   "text": "USPS: your package 9400 1000 0000 0000 0000 00 has arrived at the local facility and will be delivered today.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "delivery",
+   "text": "FedEx: your shipment from Nike was delivered at 3:12 PM and left at the front door.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "receipt",
+   "text": "Thanks for your PayPal payment of $42.10 to Etsy. View your receipt in the PayPal app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "receipt",
+   "text": "Your Netflix membership renews on Oct 3 for $15.49. Manage your plan in Account settings.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "receipt",
+   "text": "Spotify: your Premium payment of $11.99 went through. Enjoy the music.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "receipt",
+   "text": "Uber: your trip receipt for $23.40 is ready. Rate your driver in the app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "family",
+   "text": "Hey grandma, it's Sam! Mom said you were in the hospital, I hope you're feeling better. Call me when you can, love you.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "family",
+   "text": "Good morning my love, can't wait to see you Saturday. Your daughter texted me about the birthday plan, I'll bring the cake and pick up grandma on the way.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "family",
+   "text": "Dad, can you Venmo me $40 for the concert ticket? I'll pay you back Friday when I get paid. Thanks!!",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "family",
+   "text": "Running late, the train is stuck. Order without me and I'll pay you back for my share.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "family",
+   "text": "Hey, can you take out cash for the farmers market tomorrow? They don't take cards.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "work",
+   "text": "Reminder: the Q3 planning meeting is moved to 3pm Thursday, same room. Bring the updated forecast.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "work",
+   "text": "Hi Priya, attached is the signed contract. Let me know if legal needs anything else before Friday.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "work",
+   "text": "Your interview with Acme is confirmed for Tuesday at 10am. Please bring a photo ID for building access.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "work",
+   "text": "Payroll: your direct deposit for the period ending 9/15 has been sent. View your pay stub in Workday.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "creator",
+   "text": "New video every Tuesday. Comment what you want to see next and I'll DM the winner a free preset pack.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "creator",
+   "text": "Only 20 spots left in my editing course! Link in bio to sign up. Early-bird price ends Friday.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "creator",
+   "text": "Big giveaway with @nike: like, follow and tag a friend to enter. Winner announced Sunday, no purchase necessary.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "creator",
+   "text": "My honest review of the new iPhone after 3 weeks — battery, camera, and whether it's worth the upgrade.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "news_psa",
+   "text": "The FTC says Americans lost $15.9 billion to scams in 2025. Scammers impersonating the IRS ask victims to pay in gift cards — never do it.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "news_psa",
+   "text": "PSA from the FTC: scammers pretending to be your bank text that your account is locked and send a fake link. Real banks never do this.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "news_psa",
+   "text": "Police warn of a jury-duty scam in Pasco County: callers claim you missed jury duty and demand payment in bitcoin. The sheriff's office never calls to collect fines.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "news_psa",
+   "text": "Tesla said Cybercab production will begin in April 2026. The company's profits fell 20% last quarter.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "news_psa",
+   "text": "Oil rebounded to $100 a barrel as sanctions hit Russian exports.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "legit_notice",
+   "text": "Experian: as a result of the security incident at Acme Corp, you are eligible for 12 months of free credit monitoring. Visit experian.com/acme and enter activation code ABC123. Questions? Call the number on our website.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "legit_notice",
+   "text": "Reminder from Dr. Patel's office: your appointment is Thursday at 2:30pm. Reply C to confirm or call the office to reschedule.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "legit_notice",
+   "text": "Your Amazon order #114-2938 has shipped. Track it in the Amazon app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "legit_notice",
+   "text": "IRS: your 2025 return has been accepted. Refunds are issued within 21 days; check status at irs.gov/refunds.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "legit_notice",
+   "text": "Coinbase: your withdrawal of 0.2 BTC has completed. If you don't recognize this, secure your account in the app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "promo",
+   "text": "DoorDash: 40% off your next order this weekend with code WEEKEND40. Ends Sunday.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "promo",
+   "text": "Target Circle: your $10 reward is ready. Redeem in the Target app before it expires Sept 30.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "promo",
+   "text": "Fidelity: markets fell 2% today. Long-term investors should expect volatility; review your plan, not your positions.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "promo",
+   "text": "Vanguard: your quarterly statement is available. Log in at vanguard.com to view it.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "personal",
+   "text": "Are we still on for dinner Friday at 7? Let me know if you want me to book the table.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "personal",
+   "text": "Happy birthday!! Hope you have the best day, let's celebrate this weekend.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "personal",
+   "text": "Can you send me the recipe for that lentil soup? Mom loved it.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "personal",
+   "text": "The landlord said the plumber is coming Tuesday between 9 and 12, can you be home?",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_bank",
+   "text": "Chase: a sign-in to your account from a new iPhone was detected on Sep 12 at 4:10 PM. If this wasn't you, call the number on the back of your card or visit chase.com/security.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_bank",
+   "text": "Fraud alert from Capital One: did you make a $312.44 purchase at Home Depot? Reply 1 for YES or 2 for NO. Msg&data rates may apply.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_reset",
+   "text": "We received a request to reset your Google password. If this was you, use the code in the Google app. If not, you can safely ignore this email — your password won't change.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_reset",
+   "text": "Your Instagram password was changed. If you didn't do this, secure your account from Settings > Security in the app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_employer",
+   "text": "Hi Maya, welcome to the team! Before your start date, please upload your I-9 documents and direct deposit form in Workday (workday.acme.com). HR is happy to help with any questions.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_employer",
+   "text": "Reminder: open enrollment for benefits closes Friday. Log in to the ADP portal from the company intranet to make your elections.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_invest",
+   "text": "Fidelity: introducing our new index fund. Past performance does not guarantee future results; investing involves risk, including loss of principal. Read the prospectus at fidelity.com.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_invest",
+   "text": "Vanguard reminder: your IRA contribution deadline for tax year 2025 is April 15. Log in at vanguard.com to contribute.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_invoice",
+   "text": "Invoice #4471 from Ridge Plumbing for $340.00 is due Oct 1. Pay online at ridgeplumbing.com/pay or mail a check to the address on the invoice.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_invoice",
+   "text": "Your Adobe Creative Cloud subscription renews on Sept 20 for $59.99. To change or cancel, visit adobe.com/account.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_delivery",
+   "text": "UPS: your package from Apple is out for delivery today. Track at ups.com with tracking number 1Z999AA10123456784.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_delivery",
+   "text": "USPS Informed Delivery: 2 mailpieces and 1 package arriving today. View at informeddelivery.usps.com.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_gov",
+   "text": "IRS: this is a reminder that estimated tax payments for Q3 are due Sept 15. Pay at irs.gov/payments. The IRS will never ask for gift cards.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_gov",
+   "text": "Jury Summons: you are summoned for jury service on Oct 6 at the County Courthouse. Report to Room 210 by 8:30 AM. Questions: call the Clerk's office at the number on your summons.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_gov",
+   "text": "Social Security: your annual statement is available. Sign in at ssa.gov/myaccount to review your earnings record.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_charity",
+   "text": "American Red Cross: help families affected by Hurricane Ida. Donate securely at redcross.org or text REDCROSS to 90999 to give $10.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_crypto",
+   "text": "Coinbase: your purchase of 0.01 BTC for $650.00 is complete. Funds are available in your wallet. If you didn't make this purchase, secure your account in the app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_medical",
+   "text": "Kaiser Permanente: your lab results are ready. Sign in at kp.org to view them, or call your doctor's office with questions.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_family",
+   "text": "Grandpa, it's Ava. I got into UCLA!!! Can you come to dinner Sunday? Mom is cooking.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_collections",
+   "text": "This is a communication from a debt collector regarding your Comcast balance of $86.20. To dispute, write to the address on your statement within 30 days.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_school",
+   "text": "Lincoln High: report cards are posted in PowerSchool. Parent-teacher conferences are Oct 14; sign up through the school website.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_urgent",
+   "text": "URGENT: the office is closed tomorrow due to the storm. Work from home and check email for updates. Stay safe.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_urgent",
+   "text": "Last chance! Your library books are due today. Renew online at library.org or return them by 6pm to avoid a $0.25/day fee.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_promo",
+   "text": "Robinhood: you earned $2.14 in dividends from VTI this month. See your portfolio in the app.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ok",
+   "shape": "hard_neg_promo",
+   "text": "Zelle: you received $50.00 from Jordan Lee. The money is in your Bank of America account.",
+   "expected": [
+    "low_detected_risk",
+    "use_caution"
+   ],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Hey this is Mark from the dealership, your extended warranty is about to expire. Call us back today to renew before rates go up.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Your subscription to CloudDrive Pro has been renewed for $89.99. If you have questions about this charge, contact support through the app.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Hi! I'm recruiting for a remote customer-support role, $22/hr, flexible hours. Interested? Reply YES and I'll send the application link.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Limited offer: 0% APR balance transfer for 18 months. Apply today, approval in minutes. Terms apply.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Your Facebook Marketplace listing got a buyer! They asked if you can ship and whether you accept payment through their preferred app.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Reminder: your car's registration renewal is due. Renew online to avoid late fees. Link: state-dmv-renewals.com",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "This is a courtesy call about your student loans. New forgiveness programs may apply to you. Press 1 to speak with a counselor.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "We tried to deliver your parcel but no one was home. Reschedule your delivery within 3 days.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Congrats on your new home! As a welcome, we're offering a free home-security assessment this week. Book by Friday.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Your energy provider is offering a 15% rebate for switching plans. Confirm your account number to apply the discount.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Hi, it's Jen from the clinic. We have a billing question about your last visit, can you call us back at the office number?",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "I'm selling my PS5 for $250, pickup only, cash or Zelle. First come first served, message me.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Earn $1,200/month renting out your parking spot. Sign up in 2 minutes, we handle payments. Limited spots in your area.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Your crypto tax report is ready. Download it from your account dashboard before the April deadline.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Attention: your vehicle's warranty expires soon. This is the final notice before we close your file.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Unpaid toll notice: you have an outstanding balance of $4.15. Pay online to avoid additional charges.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Hello, I saw your profile and I think we have a lot in common. I'm a widower living abroad for work; would love to get to know you.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Your package is being held at the depot. Please confirm your delivery address so we can send it out.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Get paid to review products from home! Flexible, no experience needed. Apply now.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "ambiguous",
+   "shape": "ambiguous",
+   "text": "Account notice: your online banking password will expire in 7 days. Please update it at your convenience through the app.",
+   "expected": [
+    "use_caution",
+    "suspicious",
+    "high_scam_risk"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "hello",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "is this real?",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "?? what",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "https://bit.ly/3xyz",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "hey",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "call me back",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "see attached",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "URGENT",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "ok thanks",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "new number, save it",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "check this out",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "did you send this",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "it says I won",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "some guy called about my account",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "they want money",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "was this you",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "pls confirm",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "lol what is this",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "hmm",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  },
+  {
+   "label": "insufficient",
+   "shape": "insufficient",
+   "text": "my aunt got this text",
+   "expected": [
+    "not_enough_information"
+   ],
+   "required_codes": [],
+   "split": "dev"
+  }
+ ]
+}

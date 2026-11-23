@@ -1,0 +1,2184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Glowby — paste a link, get a fact-check</title>
+<!-- v0.66.7 link preview: small square image = compact card in iMessage/WhatsApp -->
+<!--OG--><meta property="og:type" content="website">
+<meta property="og:site_name" content="Glowby">
+<meta property="og:title" content="Glowby">
+<meta property="og:description" content="Is that video true? Paste the link and get the answer in one line, with sources. Free.">
+<meta property="og:url" content="https://glowby.io/">
+<meta property="og:image" content="https://glowby.io/og-icon.png">
+<meta property="og:image:width" content="300"><meta property="og:image:height" content="300">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Glowby">
+<meta name="twitter:description" content="Is that video true? Paste the link and get the answer in one line, with sources. Free.">
+<meta name="twitter:image" content="https://glowby.io/og-icon.png"><!--/OG-->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#08070F">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Glowby">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{color-scheme:dark;
+    --page:#0d0d0d;--surface:#171b26;--surface2:#0f1117;--ink:#e8eaf0;--ink2:#c9cdd8;
+    --muted:#9aa0b0;--track:#2c2c2a;--border:#2a2f3d;
+    --good:#4ade80;--warn:#fab219;--bad:#f87171;--brand:#7c6cf6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface2);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    display:flex;justify-content:center;min-height:100vh}
+  .wrap{width:100%;max-width:680px;padding:40px 18px 60px;text-align:center}
+  h1{font-size:2.4rem;margin:0 0 4px}
+  .tag{color:var(--muted);margin:0 0 6px}
+  .alive{display:inline-block;padding:.35rem .9rem;border-radius:999px;background:#16351f;color:var(--good);font-weight:600;font-size:.85rem}
+  form{margin-top:1.6rem;display:flex;gap:.5rem}
+  input[type=text]{flex:1;padding:.8rem 1rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:1rem}
+  button{padding:.8rem 1.3rem;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:1rem;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.5;cursor:wait}
+  /* progress stepper */
+  #steps{display:none;margin-top:1.4rem;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .step{display:flex;gap:9px;align-items:center;color:var(--muted);font-size:.9rem;padding:4px 0}
+  .step .dot{width:10px;height:10px;border-radius:50%;background:var(--track);flex:0 0 auto}
+  .step.on{color:var(--ink)} .step.on .dot{background:var(--brand);animation:pulse 1s infinite alternate}
+  .step.done{color:var(--ink2)} .step.done .dot{background:var(--good)}
+  @keyframes pulse{from{opacity:.5}to{opacity:1}}
+  /* result */
+  #out{margin-top:1.4rem;text-align:left;display:none}
+  .meta{color:var(--muted);font-size:.85rem;margin-bottom:.6rem}
+  .err{color:var(--bad)}
+  .toggle{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;font-size:.78rem;font-weight:700;margin:0 auto 12px;width:fit-content;cursor:pointer;user-select:none}
+  .toggle span{padding:6px 16px;color:var(--muted)}
+  .toggle span.on{background:var(--brand);color:#fff}
+  .headline{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 16px 18px;margin-bottom:12px;text-align:center}
+  .hero-ring{display:flex;justify-content:center;margin-bottom:8px}
+  .hl-label{font-size:1.05rem;font-weight:700;color:var(--ink);line-height:1.4;margin-top:2px}
+  .ring{position:relative;flex:0 0 auto}
+  .ring svg{transform:rotate(-90deg);display:block}
+  .ring .v{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .num{font-weight:800;line-height:1}
+  .hl-sub{color:var(--muted);font-size:.8rem;margin-top:6px}
+  .safety{background:#3a1414;border:1px solid var(--bad);color:#ffb4b4;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:.9rem;font-weight:600}
+  .claim{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px}
+  .score{flex:0 0 auto;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;border:3px solid var(--muted)}
+  .ctext{font-size:.9rem;line-height:1.45;color:var(--ink2)}
+  .ctext b{color:var(--ink);display:block;margin-bottom:2px}
+  .verdict{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:800;padding:3px 10px;border-radius:999px;margin-top:7px;border:1px solid}
+  .v-g{color:var(--good);border-color:var(--good)} .v-a{color:var(--warn);border-color:var(--warn)}
+  .v-r{color:var(--bad);border-color:var(--bad)} .v-n{color:var(--muted);border-color:var(--muted)}
+  .vsum{margin-top:6px;font-size:.84rem;color:var(--ink2)}
+  .cat{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted);margin-top:5px;text-transform:uppercase}
+  .src{margin-top:7px;font-size:.8rem;color:var(--muted);line-height:1.5}
+  .src a{display:inline-block;color:var(--brand);text-decoration:none;font-weight:700;
+    border:1px solid var(--brand);border-radius:999px;padding:1px 10px;margin:2px 2px 2px 0;
+    background:rgba(124,108,246,.08)}
+  .src a:hover{background:rgba(124,108,246,.22)}
+  .src a::after{content:" ↗";font-size:.7em}
+  details{margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:.9rem;color:var(--ink2)}
+  summary{cursor:pointer;color:var(--muted);font-weight:600}
+  details.more{margin-top:8px;background:none;border:none;padding:0;font-size:.85rem}
+  details.more summary{color:var(--brand);font-weight:700;font-size:.78rem;list-style:none}
+  details.more summary::before{content:"ⓘ More information ▾"}
+  details.more[open] summary::before{content:"ⓘ Less ▴"}
+  details.more summary span{display:none}
+  details.more .inner{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+  .tr{white-space:pre-wrap;margin-top:8px;max-height:40vh;overflow-y:auto;line-height:1.5;font-size:.85rem}
+  .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .dial-row{display:flex;justify-content:center;align-items:flex-start;gap:44px;flex-wrap:wrap;margin-bottom:4px}
+  .dial-col{text-align:center}
+  .dial-lbl{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.2em;color:var(--muted);margin-top:7px}
+  .aicard{margin:8px 0 12px;border:1px solid var(--line);border-left:3px solid #38bdf8;border-radius:12px;padding:10px 14px;background:rgba(255,255,255,.02)}
+.aicard-warn{border-left-color:#fab219}
+.aicard-t{font-weight:600;font-size:13.5px;margin-bottom:3px}
+.audet{margin:6px 0 10px;border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.audet summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.audet-body{margin-top:8px}
+.audet-row{padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.audet-full{margin:2px 0 0;padding:0;border:0;background:none}.audet-full>summary{display:inline-block;cursor:pointer;font-size:12px;color:var(--brand);padding:0;border:0;background:none;list-style:none;text-decoration:underline dotted}.audet-full>summary::-webkit-details-marker{display:none}.audet-full>summary::marker{content:""}.audet-full>div{margin-top:4px}
+.audet-num{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 7px;margin-left:4px}
+.dial-state{font-size:12px;font-weight:600;margin-top:3px;max-width:160px;margin-left:auto;margin-right:auto}
+  .aidisc{margin-top:12px;font-size:11.5px;line-height:1.5;color:var(--muted);text-align:center}
+  .aidisc a{color:var(--muted)}
+  .aihint{margin-top:9px;font-size:10.5px;letter-spacing:.04em;color:var(--muted);opacity:.8;text-align:center}
+  .actions a,.actions button{flex:1;min-width:130px;text-align:center;padding:.6rem .8rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink2);font-size:.85rem;font-weight:600;text-decoration:none;cursor:pointer}
+  /* reel view */
+  .reel{position:relative;border-radius:18px;overflow:hidden;min-height:440px;background:linear-gradient(160deg,#2b3350 0%,#171b26 55%,#10131c 100%);border:1px solid var(--border)}
+  .corner{position:absolute;top:14px;right:14px}
+  .chips{position:absolute;left:10px;right:10px;bottom:12px;display:flex;flex-direction:column;gap:7px}
+  .cchip{display:flex;align-items:center;gap:8px;background:rgba(13,13,13,.85);border:1px solid var(--border);border-radius:11px;padding:8px 10px;font-size:.78rem;color:var(--ink2);text-align:left}
+  .reeltitle{position:absolute;top:14px;left:14px;right:90px;color:#fff;font-weight:700;font-size:.85rem;text-align:left;text-shadow:0 1px 4px #000}
+  footer{margin-top:2rem;color:var(--muted);font-size:.8rem}
+  /* sidebar */
+  #sbBtn{position:fixed;top:14px;left:14px;z-index:60;width:40px;height:40px;border-radius:10px;background:var(--surface);border:1px solid var(--border);color:var(--ink2);font-size:1.1rem;display:grid;place-items:center;cursor:pointer;padding:0}
+  #sbBtn:hover{border-color:var(--brand);color:var(--ink)}
+  #sb{position:fixed;top:0;left:0;bottom:0;width:280px;max-width:85vw;background:#12141d;border-right:1px solid var(--border);transform:translateX(-102%);transition:transform .25s ease;z-index:55;padding:60px 14px 20px;overflow-y:auto;text-align:left}
+  #sb.open{transform:none;box-shadow:24px 0 60px -30px rgba(0,0,0,.8)}
+  /* tap the uncovered half of the screen to close the drawer */
+  #sbBackdrop{position:fixed;inset:0;z-index:54;background:rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:opacity .25s ease}
+  #sb.open ~ #sbBackdrop, body.sb-open #sbBackdrop{opacity:1;pointer-events:auto}
+  .sb-h{font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+  .sb-item{display:flex;gap:9px;align-items:flex-start;padding:8px 9px;border-radius:9px;text-decoration:none;color:var(--ink2);font-size:.82rem;line-height:1.35}
+  .sb-item:hover{background:var(--surface)}
+  .sb-dot{flex:0 0 auto;min-width:34px;text-align:center;font-weight:800;font-size:.78rem;border:2px solid;border-radius:999px;padding:1px 5px;margin-top:1px}
+  .sb-empty{color:var(--muted);font-size:.8rem;padding:6px 9px}
+  .sb-links{border-top:1px solid var(--border);margin-top:18px;padding-top:12px}
+  .sb-links a{display:block;color:var(--muted);text-decoration:none;font-size:.82rem;padding:6px 9px;border-radius:8px}
+  .sb-links a:hover{color:var(--ink);background:var(--surface)}
+</style>
+
+<style>
+/* ==== LIGHT MODE — black & white skin; verdict colors stay semantic ==== */
+html.light{color-scheme:light}
+html.light body{background:#fff}
+html.light{
+  --surface2:#ffffff;--surface:rgba(0,0,0,.04);--border:rgba(0,0,0,.16);
+  --ink:#111114;--ink2:#2c2c31;--muted:#63636e;--track:rgba(0,0,0,.1);
+  --good:#0f8a52;--warn:#9a6b00;--bad:#c22b3f;--brand:#111114;
+  --page:#ffffff}
+html.light .ambient{background:radial-gradient(140% 120% at 50% -10%, #ffffff 0%, #f5f5f8 55%, #ebebf0 100%)}
+html.light .aura{display:none}
+html.light #constellation{opacity:1}
+html.light .topbar{background:rgba(255,255,255,.75);border-bottom:1px solid rgba(0,0,0,.12)}
+html.light .tb-brand{color:#111114}
+html.light .tb-brand svg{filter:none}
+html.light #tbTrend{background:none;-webkit-background-clip:initial;background-clip:initial;color:#111114;animation:none;font-weight:700}
+html.light .greet .hl{background:none;-webkit-background-clip:initial;background-clip:initial;color:#111114;font-style:italic}
+html.light #f{background:#ffffff;border:1.5px solid rgba(0,0,0,.35);box-shadow:0 10px 30px -18px rgba(0,0,0,.25)}
+html.light #url{color:#111114}
+html.light #url::placeholder{color:#8a8a94}
+html.light #go{background:#111114;box-shadow:none}
+html.light #cam,html.light #mic,html.light .fu-mic{border-color:rgba(0,0,0,.3);color:#63636e}
+html.light #cam:hover,html.light #mic:hover,html.light .fu-mic:hover{color:#111114;border-color:#111114}
+html.light #mic.rec,html.light .fu-mic.rec{background:#111114;color:#fff}
+html.light .fu-form button[type=submit]{background:#111114}
+html.light .fu-q{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.2);color:#111114}
+html.light .fu-a{background:#fff;border-color:rgba(0,0,0,.16);color:#2c2c31}
+html.light .alive{background:rgba(15,138,82,.1)}
+html.light #sb{background:rgba(255,255,255,.97);border-right:1px solid rgba(0,0,0,.14)}
+html.light #sbBtn{background:#fff;border-color:rgba(0,0,0,.2);color:#2c2c31}
+html.light .beta2{color:#9a6b00;border-color:rgba(154,107,0,.5)}
+html.light .headline,html.light .claim,html.light details{background:#fff;border-color:rgba(0,0,0,.14)}
+html.light .toggle span.on{background:#111114}
+html.light .src a{color:#111114;border-color:#111114;background:rgba(0,0,0,.04)}
+html.light .src a:hover{background:rgba(0,0,0,.1)}
+html.light .actions a,html.light .actions button{background:#fff;border-color:rgba(0,0,0,.2);color:#2c2c31}
+html.light footer{color:#63636e}
+</style>
+
+<style>
+/* ================= APP MODE (native-feel shell for the iOS app) ======= */
+/* Activated by ?app=1 (the WKWebView loads glowby.io/?app=1). Everything
+   here is additive and gated on html.appmode, so the website is untouched
+   in a normal browser — and the app still auto-updates with each deploy. */
+html.appmode .topbar{display:none}   /* the hero ring IS the logo — no duplicate header */
+/* App Review 2.2: no beta labeling inside the app, and no voice button —
+   the in-app web view has no speech recognition, so the button would be
+   dead there (the website keeps both). */
+html.appmode .beta2,html.appmode .ah-beta{display:none !important}
+html.appmode #mic,html.appmode .fu-mic{display:none !important}
+html.appmode #sbBtn{display:none}    /* nav lives in the bottom bar */
+/* vertically center the home content on screen */
+html.appmode .wrap:not(.active){justify-content:center !important;
+  min-height:100vh;min-height:100dvh;
+  padding-top:calc(env(safe-area-inset-top) + 12px) !important;
+  padding-bottom:calc(env(safe-area-inset-bottom) + 12px) !important}
+/* once a result shows, dock to the top so it scrolls naturally */
+html.appmode .wrap.active{justify-content:flex-start;
+  padding-top:calc(env(safe-area-inset-top) + 20px);
+  padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+html.appmode.has-tabbar body{padding-bottom:0}
+/* slimmer input — shorter height, thumb-friendly */
+html.appmode #f{padding:6px 6px 6px 18px;border-radius:20px}
+html.appmode #url{font-size:16px;padding:3px 0}
+html.appmode #go,html.appmode #mic,html.appmode #cam{width:42px;height:42px}
+/* one-tap Paste button — removed from app for a cleaner home (kept for
+   easy revert: change the next line's display back to inline-flex) */
+#pasteBtn{display:none}
+html.appmode #pasteBtn{display:none;align-items:center;justify-content:center;gap:10px;
+  margin:16px auto 0;width:fit-content;cursor:pointer;
+  color:#fff;font-weight:700;font-size:.92rem;letter-spacing:.01em;
+  background:rgba(255,255,255,.10);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.22);border-radius:999px;
+  padding:9px 20px 9px 9px;box-shadow:0 10px 28px -12px rgba(0,0,0,.7);
+  transition:transform .15s cubic-bezier(.22,.61,.36,1),background .2s,border-color .2s}
+html.appmode #pasteBtn svg{background:linear-gradient(135deg,#6A5AF0,#C46BF2);border-radius:9px;
+  padding:6px;width:30px;height:30px;box-sizing:border-box;stroke:#fff}
+html.appmode #pasteBtn:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.32)}
+html.appmode #pasteBtn:active{transform:scale(.95)}
+html.light.appmode #pasteBtn{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.16);color:#111114;
+  box-shadow:0 8px 22px -14px rgba(0,0,0,.4)}
+html.light.appmode #pasteBtn svg{stroke:#fff}
+/* bottom tab bar */
+#tabbar{display:none}
+html.appmode #tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:70;
+  background:rgba(10,9,18,.92);backdrop-filter:saturate(160%) blur(18px);
+  border-top:1px solid var(--border);
+  padding:8px 6px calc(6px + env(safe-area-inset-bottom));justify-content:space-around}
+html.light.appmode #tabbar{background:rgba(255,255,255,.92)}
+#tabbar button{flex:1;background:none;border:none;color:var(--muted);
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:10.5px;font-weight:600;cursor:pointer;padding:4px 0;font-family:inherit}
+#tabbar button.on{color:var(--brand)}
+html.light.appmode #tabbar button.on{color:#111114}
+#tabbar button svg{width:22px;height:22px}
+
+/* --- combined Spotlight ring + Action Cards home (app only) --- */
+#appHero,#appCards{display:none}
+html.appmode .greet{display:none}          /* ring+title replace the greeting */
+html.appmode .sugg2,html.appmode .mini{display:none}
+/* App Store badge — website only; hidden inside the iOS app and once results show */
+.storewrap{display:flex;justify-content:center;margin-top:16px}
+.storebadge{display:inline-flex;width:auto;align-self:center;align-items:center;gap:8px;padding:7px 14px 7px 11px;border-radius:11px;background:#000;color:#fff;border:1px solid rgba(255,255,255,.28);text-decoration:none;line-height:1.05;transition:transform .15s,border-color .2s}
+.storebadge:hover{border-color:rgba(255,255,255,.6);transform:translateY(-1px)}
+.storebadge svg{width:22px;height:22px;flex:none}
+.storebadge span{display:flex;flex-direction:column;align-items:flex-start;text-align:left}
+.storebadge small{font-size:9.5px;letter-spacing:.02em;opacity:.9}
+.storebadge b{font-size:16px;font-weight:600;letter-spacing:-.01em}
+html.light .storebadge{border-color:#000}
+.wrap.active .storewrap{display:none}
+html.appmode .storewrap{display:none !important}
+
+html.appmode .wrap{justify-content:flex-start;padding-top:24px}
+html.appmode #appHero{display:block;text-align:center;margin:14px 0 6px}
+.ah-logo{display:block;margin:0 auto 14px;filter:drop-shadow(0 0 10px rgba(138,124,255,.55));
+  animation:ahfloat 4s ease-in-out infinite alternate}
+@keyframes ahfloat{from{transform:translateY(0)}to{transform:translateY(-5px)}}
+.ah-title{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:29px;letter-spacing:-.01em;color:var(--ink)}
+.ah-title .hl{background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 55%,#57D9E0 110%);-webkit-background-clip:text;background-clip:text;color:transparent;font-style:italic}
+.ah-beta{display:inline-block;margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.14em;color:var(--warn);border:1px solid rgba(244,183,64,.45);
+  border-radius:999px;padding:3px 10px}
+html.light.appmode .ah-title{color:#111114}
+html.light.appmode .ah-title .hl{color:#111114;-webkit-text-fill-color:#111114}
+html.appmode #appCards{display:none}   /* cards removed — clean home */
+.acard{text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:10px 11px;display:flex;flex-direction:column;cursor:pointer;font-family:inherit;
+  transition:transform .12s,border-color .15s}
+.acard:active{transform:scale(.97)}
+.acard.prime{background:linear-gradient(155deg,rgba(138,124,255,.24),rgba(196,107,242,.12));border-color:rgba(138,124,255,.45)}
+.ac-ic{font-size:17px}
+.ac-lb{font-weight:700;font-size:13px;color:var(--ink);margin-top:5px}
+html.light.appmode .ac-lb{color:#111114}
+.ac-ds{color:var(--muted);font-size:10.5px;margin-top:1px;line-height:1.3}
+html.appmode footer{display:none}      /* version + links live in the About tab */
+/* persistent top-right Score chip (app only) */
+#appScore{display:none}
+html.appmode #appScore{display:inline-flex;align-items:center;gap:6px;position:fixed;z-index:75;
+  top:calc(env(safe-area-inset-top) + 12px);right:14px;
+  background:rgba(255,255,255,.09);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;
+  padding:7px 13px 7px 11px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+html.appmode #appScore svg{color:var(--brand)}
+html.appmode #appScore:active{transform:scale(.95)}
+html.light.appmode #appScore{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.16);color:#111114}
+/* persistent top-left theme toggle (app only) */
+#appTheme{display:none}
+html.appmode #appTheme{display:inline-flex;align-items:center;justify-content:center;position:fixed;z-index:75;
+  top:calc(env(safe-area-inset-top) + 12px);left:14px;width:38px;height:38px;
+  background:rgba(255,255,255,.09);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:50%;
+  font-size:15px;cursor:pointer;font-family:inherit;padding:0;line-height:1}
+html.appmode #appTheme:active{transform:scale(.95)}
+html.light.appmode #appTheme{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.16);color:#111114}
+</style>
+
+<style>
+/* ==== glow theme override — same engine, new skin ==== */
+:root{--surface2:#08070F;--surface:rgba(255,255,255,.05);--border:rgba(255,255,255,.12);
+  --ink:#ECECF6;--ink2:#C9CDE0;--muted:#8B8BA8;--track:rgba(255,255,255,.1);
+  --good:#27D49B;--warn:#F4B740;--bad:#FF5E72;--brand:#8A7CFF}
+body{background:transparent;font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif}
+.ambient{position:fixed;inset:0;z-index:-1;overflow:hidden;background:radial-gradient(140% 120% at 50% -10%, #14112A 0%, #0A0913 46%, #08070F 100%)}
+.aura{position:absolute;border-radius:50%;filter:blur(100px)}
+.ga1{width:58vw;height:58vw;left:-14vw;top:-20vw;background:radial-gradient(circle,#6B43F2,transparent 62%);opacity:.3;animation:gd1 30s ease-in-out infinite}
+.ga2{width:50vw;height:50vw;right:-16vw;bottom:-16vw;background:radial-gradient(circle,#2E6BFF,transparent 62%);opacity:.22;animation:gd2 36s ease-in-out infinite}
+@keyframes gd1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(7vw,6vh) scale(1.12)}}
+@keyframes gd2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-6vw,-6vh) scale(1.1)}}
+#constellation{position:absolute;inset:0;width:100%;height:100%;display:block}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:11px 20px 11px 64px;backdrop-filter:saturate(160%) blur(14px);background:rgba(8,7,15,.55);border-bottom:1px solid var(--border)}
+.tb-brand{display:flex;gap:9px;align-items:center;color:var(--ink);text-decoration:none;font-family:"Newsreader",Georgia,serif;font-size:19px;letter-spacing:-.02em}
+.tb-brand svg{filter:drop-shadow(0 0 7px rgba(138,124,255,.75))}
+.beta2{font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.12em;color:var(--warn);border:1px solid rgba(244,183,64,.45);border-radius:999px;padding:2px 8px;margin-left:6px}
+.tb-links{display:flex;gap:18px;align-items:center}
+.tb-links a,.tb-links button{font-size:13.5px;color:var(--muted);text-decoration:none;background:none;border:none;cursor:pointer;font-family:inherit;padding:0;font-weight:500}
+#tbTrend{background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 55%,#57D9E0 110%);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:600;background-size:220% auto;animation:sheenT 7s linear infinite}
+#tbTrend:hover{filter:brightness(1.25)}
+@keyframes sheenT{to{background-position:220% center}}
+.tb-links a:hover,.tb-links button:hover{color:var(--ink)}
+.wrap{max-width:720px;min-height:100svh;display:flex;flex-direction:column;justify-content:center;padding-top:80px;padding-bottom:36px}
+.wrap.active{justify-content:flex-start;padding-top:100px}
+.wrap>*{width:100%}
+.greet{font-family:"Newsreader",Georgia,serif;font-weight:500;font-size:clamp(27px,4.4vw,40px);letter-spacing:-.02em;margin:14px 0 24px;color:var(--ink)}
+.greet .hl{background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 55%,#57D9E0 110%);-webkit-background-clip:text;background-clip:text;color:transparent;font-style:italic}
+#f{background:rgba(22,20,38,.72);border:1px solid rgba(255,255,255,.18);border-radius:24px;padding:8px 8px 8px 18px;backdrop-filter:blur(14px);box-shadow:0 24px 70px -30px rgba(0,0,0,.95),0 0 50px -22px rgba(138,124,255,.5),inset 0 1px 0 rgba(255,255,255,.06);transition:border-color .2s,box-shadow .25s}
+#f:focus-within{border-color:rgba(138,124,255,.65);box-shadow:0 0 0 4px rgba(138,124,255,.14),0 24px 70px -26px rgba(124,108,246,.7)}
+#url{border:none;background:transparent;font-size:16px}
+#url:focus{outline:none}
+#go{width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center;flex:none;background:linear-gradient(135deg,#6A5AF0,#8A7CFF);box-shadow:0 8px 24px -8px rgba(124,108,246,.85);transition:transform .18s cubic-bezier(.22,.61,.36,1)}
+#cam,#mic,.fu-mic{width:46px;height:46px;border-radius:50%;padding:0;display:grid;place-items:center;flex:none;background:transparent;border:1px solid rgba(255,255,255,.18);color:var(--muted);cursor:pointer;transition:color .2s,border-color .2s}
+#cam:hover,#mic:hover,.fu-mic:hover{color:var(--ink);border-color:rgba(138,124,255,.6)}
+#mic.rec,.fu-mic.rec{color:#fff;background:linear-gradient(135deg,#FF6378,#C46BF2);border-color:transparent;animation:micPulse 1.1s infinite alternate}
+.fu-mic{width:38px;height:38px}
+@keyframes micPulse{from{box-shadow:0 0 0 0 rgba(255,99,120,.5)}to{box-shadow:0 0 0 9px rgba(255,99,120,0)}}
+#go:hover{transform:translateY(-1px) scale(1.05)}
+.sugg{display:flex;gap:9px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.sugg span{font-size:13px;color:var(--ink2);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:8px 14px;cursor:pointer;transition:all .2s;user-select:none}
+.sugg span:hover{border-color:rgba(138,124,255,.5);transform:translateY(-1px);box-shadow:0 0 24px -12px rgba(138,124,255,.8)}
+.mini{margin-top:16px;font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.06em;color:var(--muted);display:flex;gap:12px;justify-content:center;align-items:center;flex-wrap:wrap}
+.alive{background:rgba(39,212,155,.1);color:var(--good);padding:.25rem .75rem;font-size:11px;font-family:"IBM Plex Mono",monospace}
+#steps,.headline,.claim,details{background:rgba(255,255,255,.045);border-color:var(--border);backdrop-filter:blur(10px)}
+.headline{border-radius:18px;box-shadow:0 40px 90px -50px rgba(0,0,0,.9),0 0 60px -36px rgba(138,124,255,.4),inset 0 1px 0 rgba(255,255,255,.06)}
+.toggle span.on{background:linear-gradient(135deg,#6A5AF0,#8A7CFF)}
+.actions a,.actions button{backdrop-filter:blur(8px)}
+#sb{background:rgba(14,13,26,.94);backdrop-filter:blur(16px)}
+#sbBtn{background:rgba(255,255,255,.06);backdrop-filter:blur(10px)}
+footer{font-size:.74rem}
+/* V1 editorial text layer */
+.claim-h{font-family:"Newsreader",Georgia,serif;font-size:1.13rem;font-weight:500;letter-spacing:-.01em;line-height:1.35;color:var(--ink);display:block;margin-bottom:2px}
+.vline{margin-top:7px;font-size:.87rem;line-height:1.6;color:var(--ink2)}
+.vw{font-weight:700}
+.srcchips{margin-top:10px;display:flex;gap:7px;flex-wrap:wrap}
+.schip{font-size:.73rem;color:var(--ink2);text-decoration:none;border:1px solid var(--border);border-radius:999px;padding:3px 11px;background:rgba(255,255,255,.03)}
+.schip b{color:var(--brand);font-weight:600}
+.schip:hover{border-color:var(--brand)}
+.sugg2{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-top:15px}
+.sugg2 span{font-size:.72rem;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:default;user-select:none}
+/* "+ask" — optional question that rides along with a check */
+#trOverlay{position:fixed;inset:0;z-index:8000;background:rgba(8,8,16,.88);display:flex;align-items:center;justify-content:center;padding:18px}
+#trOverlay[hidden]{display:none}
+.tr-card{width:min(680px,100%);max-height:82vh;display:flex;flex-direction:column;background:#14141f;border:1px solid #2a2a3c;border-radius:18px;overflow:hidden}
+.tr-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #2a2a3c}
+.tr-head button{background:none;border:1px solid #2a2a3c;color:inherit;border-radius:50%;width:30px;height:30px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:14px;line-height:1;padding:0}
+.tr-body{padding:14px 16px;overflow:auto;white-space:pre-wrap;line-height:1.55;font-size:13.5px;color:var(--ink);text-align:left}
+html.light .tr-card{background:#fff;border-color:rgba(0,0,0,.14)}
+#consent{position:fixed;inset:0;z-index:9000;background:rgba(8,8,16,.92);display:flex;align-items:center;justify-content:center;padding:20px}
+#consent[hidden]{display:none}
+.consent-card{text-align:left;max-width:520px;background:#14141f;border:1px solid #2a2a3c;border-radius:18px;padding:22px 22px 18px;color:var(--ink);font-size:14.5px;line-height:1.5}
+.consent-t{font-weight:700;font-size:18px;margin-bottom:10px}
+.consent-card ul{margin:8px 0 10px 18px;padding:0}
+.consent-card li{margin:4px 0}
+.consent-card a{color:#8a7cff}
+#consentOk{width:100%;margin-top:6px;padding:12px;border:none;border-radius:12px;background:linear-gradient(100deg,#8A7CFF,#C46BF2);color:#fff;font-weight:700;font-size:15px;cursor:pointer}
+.consent-sub{font-size:12px;color:var(--muted);margin-top:8px;text-align:center}
+#go.pulse{animation:goPulse 1.2s ease-in-out 3}
+@keyframes goPulse{0%,100%{box-shadow:0 0 0 0 rgba(138,124,255,.55)}50%{box-shadow:0 0 0 10px rgba(138,124,255,0)}}
+.modewrap{display:flex;flex-direction:column;align-items:center;gap:7px;width:100%}
+/* four small pills in ONE line: Claims · Claims + AI detect · AI detect only · Ask a question */
+.modeseg{display:flex;gap:5px;justify-content:center;flex-wrap:nowrap;max-width:100%;padding:2px 2px 6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.modeseg::-webkit-scrollbar{display:none}
+.modeseg button{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);color:var(--muted);cursor:pointer;padding:5px 10px;border-radius:999px;font-size:11.5px;font-weight:600;font-family:inherit;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);transition:color .2s,background .2s,border-color .2s,box-shadow .2s,transform .15s;line-height:1}
+.modeseg button[hidden]{display:none}
+.modeseg button:hover{color:var(--ink);border-color:rgba(255,255,255,.28)}
+.modeseg button:active{transform:scale(.97)}
+.modeseg button svg{width:11px;height:11px;flex:none;opacity:.85}
+.modeseg button .ms{display:none}
+.modeseg button.on{color:#fff;border-color:transparent;background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 100%);box-shadow:0 6px 18px -8px rgba(138,124,255,.95)}
+.modeseg button.on svg{opacity:1}
+.modeseg button[data-mode="on"].on{background:linear-gradient(100deg,#5B8CFF 0%,#38bdf8 100%);box-shadow:0 6px 18px -8px rgba(56,189,248,.95)}
+.modeseg button[data-mode="scam"].on{background:linear-gradient(100deg,#f87171 0%,#fab219 100%);color:#1a1a24;box-shadow:0 6px 18px -8px rgba(248,113,113,.9)}
+.modeseg button[data-mode="only"].on{background:linear-gradient(100deg,#a78bfa 0%,#f472b6 100%);box-shadow:0 6px 18px -8px rgba(244,114,182,.9)}
+.modeseg button#qChip.on{background:rgba(138,124,255,.16);border-color:rgba(138,124,255,.7);color:#d6d0ff;box-shadow:none}
+.modehint{font-size:11px;color:var(--muted);text-align:center;max-width:520px;min-height:1.3em}
+html.light .modeseg button{background:#fff;border-color:rgba(0,0,0,.14);color:#63636e}
+html.light .modeseg button:hover{color:#111114;border-color:rgba(0,0,0,.3)}
+html.light .modeseg button.on{color:#fff;border-color:transparent}
+html.light .modeseg button#qChip.on{background:rgba(138,124,255,.12);border-color:rgba(138,124,255,.7);color:#5b4fd6}
+@media (max-width:480px){.modeseg{gap:4px}.modeseg button{padding:5px 8px;font-size:11px;gap:4px}.modeseg button .ml{display:none}.modeseg button .ms{display:inline}}
+#qWrap{max-width:560px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center}
+#qOpen{display:flex;align-items:center;gap:9px;width:100%;margin-top:10px;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);
+  border-radius:999px;padding:4px 6px 4px 16px;backdrop-filter:blur(12px)}
+#qOpen[hidden]{display:none}
+#qOpen .qmark{background:linear-gradient(100deg,#8A7CFF,#C46BF2);-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;font-size:14px}
+#qOpen input{flex:1;border:none;background:transparent;color:var(--ink);font-size:13.5px;
+  outline:none;font-family:inherit;padding:7px 0}
+#qOpen input::placeholder{color:var(--muted)}
+#qOpen .qx{width:26px;height:26px;border-radius:50%;border:none;background:rgba(255,255,255,.08);
+  color:var(--muted);font-size:12px;cursor:pointer;display:grid;place-items:center;flex:none;padding:0}
+#qOpen .qx:hover{color:var(--ink)}
+html.light #qOpen{background:#fff;border-color:rgba(0,0,0,.2)}
+html.light #qOpen .qx{background:rgba(0,0,0,.06)}
+/* FEEDBACK: Fair / Harsh / Wrong under the score — a signal, never a vote */
+.fb-row{display:flex;align-items:center;justify-content:center;gap:6px;margin:10px 0 12px;flex-wrap:wrap}
+.fb-row .fb-q{font-size:12px;color:var(--muted);flex-basis:100%;text-align:center;margin-bottom:-2px}
+.fb-chip{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:#c9c6dc;border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;transition:all .18s}
+.fb-chip.fair{border-color:rgba(74,222,128,.4)} .fb-chip.harsh{border-color:rgba(250,178,25,.4)} .fb-chip.wrong{border-color:rgba(248,113,113,.4)}
+.fb-chip.fair.on{background:rgba(74,222,128,.18);color:#4ade80} .fb-chip.harsh.on{background:rgba(250,178,25,.18);color:#fab219} .fb-chip.wrong.on{background:rgba(248,113,113,.18);color:#f87171}
+.fb-row.done .fb-chip:not(.on){opacity:.35}
+.fb-thanks{font-size:12.5px;color:#4ade80;margin-top:8px} .fb-thanks span{color:var(--muted)}
+.fb-note{display:flex;gap:6px;max-width:480px;margin:8px auto 0}
+.fb-thanks.fb-err{color:var(--bad)}
+.srcline{margin:4px 0 10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.openreel{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;background:rgba(124,108,246,.16);border:1px solid rgba(124,108,246,.55);color:#c4bbff;font-weight:800;font-size:.9rem;text-decoration:none}
+.openreel:hover{background:rgba(124,108,246,.28)}
+html.light .openreel{background:rgba(124,108,246,.1);color:#4c3fd6}
+.linkbtn{background:none;border:none;padding:0;margin:0;color:var(--brand);font:inherit;font-size:inherit;text-decoration:underline;cursor:pointer}
+.fb-note input{flex:1;min-width:0;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:8px 14px;color:var(--ink);font-size:13px;font-family:inherit;outline:none}
+.fb-note button{background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.hl-meta{font-size:12px;color:var(--muted);margin-top:6px}
+/* THE ONE LINE (Sept 15): the plain-English answer above the score, in a
+   highlighted strip — what the reader most wants to know, before the number */
+.oneline{margin:-6px -4px 14px;padding:11px 14px;border-radius:12px;background:linear-gradient(135deg,rgba(124,108,246,.18),rgba(56,189,248,.10));border:1px solid rgba(124,108,246,.35);font-size:1rem;font-weight:700;line-height:1.35;color:var(--ink);text-align:left}
+.oneline b{color:#c4bbff;font-weight:800}
+html.light .oneline{background:linear-gradient(135deg,rgba(124,108,246,.12),rgba(56,189,248,.08));color:#1a1a24}
+/* VERDICT WORD (founder design A, Sep 14): the band name in the ring's colour,
+   directly under the number — the colour finally says its name */
+.vw{display:inline-block;margin-top:10px;padding:5px 14px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;border:1px solid}
+/* NOTHING-TO-CHECK card (founder design B, Sep 2026): a verdict chip in the
+   dial's place, one headline, one line. No empty ring, no paragraph. */
+.ncchip{display:inline-block;padding:9px 20px;border-radius:999px;font-size:1.2rem;font-weight:800;background:rgba(124,108,246,.15);border:1px solid rgba(124,108,246,.5);color:#c4bbff;letter-spacing:-.01em}
+.ncchip.sm{font-size:.72rem;padding:5px 11px;background:rgba(13,13,13,.85)}
+.nc-big{font-size:1.4rem;font-weight:800;line-height:1.2;margin-top:14px;color:var(--ink)}
+.nc-sub{color:var(--muted);font-size:.85rem;margin-top:6px;line-height:1.4}
+.airow{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:12.5px;background:rgba(56,189,248,.07);border:1px solid rgba(56,189,248,.28);border-radius:999px;padding:7px 14px;max-width:100%}
+.airow b{color:#38bdf8;font-weight:700} .airow .st{color:#38bdf8;opacity:.85} .airow.bad{background:rgba(248,113,113,.08);border-color:rgba(248,113,113,.35)} .airow.bad b,.airow.bad .st{color:#f87171}
+.airow a{color:var(--brand);text-decoration:none;margin-left:2px;cursor:pointer}
+.cflag{margin-left:8px;font-size:11px;color:var(--muted);border:1px dashed rgba(255,255,255,.22);border-radius:999px;padding:1px 8px;cursor:pointer;white-space:nowrap;font-family:inherit;background:none}
+.cflag.on{border-style:solid;color:#fab219;border-color:rgba(250,178,25,.6)}
+.cflag-row{display:inline-flex;gap:5px;margin-left:6px;vertical-align:middle}
+.cflag-row button{font-size:11px;border-radius:999px;padding:1px 8px;background:none;border:1px solid rgba(255,255,255,.2);color:var(--ink);cursor:pointer;font-family:inherit}
+html.light .fb-chip{background:#fff;border-color:rgba(0,0,0,.14);color:#63636e}
+html.light .fb-note input{background:#fff;border-color:rgba(0,0,0,.2)}
+.rep-row{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:6px 0 2px;width:100%}
+.rep-row button{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);color:var(--ink);border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.rep-row button[data-k="inappropriate"]{border-color:rgba(248,113,113,.45)}
+/* private AI check + refusals (content gate) */
+/* SCAM LENS — its own card, its own colour, never the score's */
+.scamcard{border:1px solid rgba(250,178,25,.45);border-left:4px solid #fab219;border-radius:14px;padding:12px 14px;margin:10px 0 12px;background:rgba(250,178,25,.06);text-align:left}
+.scamcard.high{border-color:rgba(248,113,113,.5);border-left-color:#f87171;background:rgba(248,113,113,.07)}
+.scamcard.quiet{border-color:rgba(255,255,255,.14);border-left-color:#8a86a3;background:rgba(255,255,255,.02)}
+.scamcard .sc-h{font-weight:800;font-size:15px;color:#fab219;display:flex;align-items:center;gap:6px}
+.scamcard.high .sc-h{color:#f87171}
+.scamcard .sc-p{margin-top:6px;font-size:13.5px;line-height:1.4}
+.scamcard .sc-p b{color:var(--ink)}
+.sc-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.sc-chips span{font-size:11.5px;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 9px;color:var(--muted);background:rgba(255,255,255,.03)}
+.scamcard.high .sc-chips span{border-color:rgba(248,113,113,.3)}
+.sc-do{margin-top:9px;font-size:13px;font-weight:600;line-height:1.4}
+.scamcard details{margin-top:8px}.scamcard summary{cursor:pointer;font-size:12.5px;color:var(--brand)}
+.scamcard .sc-help summary{font-weight:700;font-size:13.5px;color:var(--ink)}
+.sc-k{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:10px 0 3px}
+.sc-conf{font-size:12px;font-weight:500;color:var(--muted)}
+.sc-ver{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.5}.sc-ver a{color:var(--brand)}.sc-sep{opacity:.5}
+.sc-state{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 6px}
+.sc-state button{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.16);color:var(--ink);border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+.sc-state button.on{border-color:var(--brand);background:rgba(138,124,255,.15)}
+.sc-rf{font-size:12.5px;margin-top:6px;line-height:1.4}.sc-rf .sev{font-size:10px;letter-spacing:.06em;text-transform:uppercase;border-radius:6px;padding:1px 6px;margin-right:4px;background:rgba(255,255,255,.08);color:var(--muted)}
+.sc-rf .sev.critical{background:rgba(248,113,113,.2);color:#f87171}.sc-rf .sev.high{background:rgba(250,178,25,.2);color:#fab219}
+.sc-step{font-size:13px;line-height:1.45;padding:3px 0 3px 10px;border-left:2px solid rgba(255,255,255,.12);margin:2px 0}
+.sc-step a{color:var(--brand)}.sc-step a.tel{font-weight:700;color:var(--ink);text-decoration:none;background:rgba(255,255,255,.07);border-radius:8px;padding:1px 7px;margin-right:4px}
+.scamcard .res{margin-top:6px}.scamcard .res a{color:var(--brand)}
+.scamcard .warn a{color:#f87171}
+.scamcard .fb-row{margin:8px 0 0;justify-content:flex-start}
+.scamline{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;background:rgba(250,178,25,.07);border:1px solid rgba(250,178,25,.3);border-radius:999px;padding:6px 13px;color:#fab219;max-width:100%}
+.scamline a{color:var(--brand);cursor:pointer;margin-left:2px}
+.rep-row button[data-k="scam"]{border-color:rgba(250,178,25,.5)}
+.privcard{background:linear-gradient(155deg,rgba(138,124,255,.12),rgba(56,189,248,.06));border:1px solid rgba(138,124,255,.35);border-radius:16px;padding:16px;margin:12px 0;text-align:left}
+.privcard b.t{display:block;font-size:15px;margin-bottom:6px}
+.privcard .meta{margin-top:6px}
+.privcard .res{margin-top:10px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+.privcard .res a{color:var(--brand)}
+.privcard button.go{margin-top:10px;width:100%;padding:12px;border:none;border-radius:12px;background:linear-gradient(100deg,#a78bfa,#f472b6);color:#fff;font-weight:700;font-size:15px;cursor:pointer;font-family:inherit}
+.privnote{font-size:12px;color:var(--muted);text-align:center;margin:6px 0 10px}
+/* the answer-first card on results */
+.uq-card{background:linear-gradient(155deg,rgba(138,124,255,.14),rgba(196,107,242,.07));
+  border:1px solid rgba(138,124,255,.35);border-radius:16px;padding:14px 16px;margin-bottom:12px;text-align:left}
+.uq-q{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.12em;color:var(--brand);margin-bottom:6px;text-transform:uppercase}
+.uq-a{font-size:.95rem;line-height:1.55;color:var(--ink)}
+html.light .uq-card{background:rgba(0,0,0,.04);border-color:rgba(0,0,0,.2)}
+html.light .uq-q{color:#111114}
+/* follow-up thread */
+#fuWrap{margin-top:14px;text-align:left}
+.fu-q{background:rgba(138,124,255,.13);border:1px solid rgba(138,124,255,.35);color:var(--ink);border-radius:14px 14px 4px 14px;padding:9px 13px;font-size:.88rem;margin:10px 0 6px;margin-left:18%;line-height:1.45}
+.fu-a{background:var(--surface);border:1px solid var(--border);color:var(--ink2);border-radius:14px 14px 14px 4px;padding:9px 13px;font-size:.88rem;margin:0 18% 6px 0;line-height:1.5;white-space:pre-wrap}
+.fu-wait{color:var(--muted);font-style:italic}
+.fu-err{color:var(--bad)}
+.fu-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.fu-tab{display:flex;align-items:center;gap:10px;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 12px;color:var(--ink);cursor:pointer;transition:border-color .2s,transform .15s}
+.fu-tab:hover{border-color:rgba(138,124,255,.6)}
+.fu-tab.on{border-color:rgba(138,124,255,.8);box-shadow:0 0 0 1px rgba(138,124,255,.5) inset}
+.fu-tab .ico{font-size:18px}
+.fu-tab b{display:block;font-size:13px}
+.fu-tab small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+.fu-tab.done{opacity:.7;cursor:default}
+.fu-tab:disabled{cursor:default}
+@media (max-width:420px){.fu-tabs{grid-template-columns:1fr}}
+.fu-form{display:flex;gap:7px;margin-top:10px}
+.fu-form[hidden]{display:none}
+.fu-form input{flex:1;padding:.65rem 1rem;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:.9rem}
+.fu-form input:focus{outline:none;border-color:rgba(138,124,255,.6)}
+.fu-form button{flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:none;background:linear-gradient(100deg,#8A7CFF 0%,#C46BF2 100%);color:#fff;font-size:1rem;font-weight:700;cursor:pointer;padding:0}
+.fu-form button:disabled{opacity:.5;cursor:wait}
+/* structured answer (typed questions) */
+.ans-k{font-family:"IBM Plex Mono",monospace;font-size:.66rem;letter-spacing:.16em;color:var(--brand);margin-bottom:8px}
+.ans-main{font-family:"Newsreader",Georgia,serif;font-size:1.35rem;line-height:1.4;color:var(--ink);letter-spacing:-.01em}
+.ans-more{margin-top:10px;font-size:.9rem;line-height:1.65;color:var(--ink2);text-align:left}
+</style>
+</head>
+<body>
+<div class="ambient" aria-hidden="true">
+  <div class="aura ga1"></div><div class="aura ga2"></div>
+  <canvas id="constellation"></canvas>
+</div>
+<button id="appTheme" type="button" aria-label="Switch light or dark mode">☾</button>
+<button id="appScore" type="button" aria-label="How the score works">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> Score</button>
+<header class="topbar">
+  <a class="tb-brand" href="/">
+    <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <circle cx="16" cy="16" r="15" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
+      <path d="M8 16 A8 8 0 0 1 16 8" stroke="#5B8CFF" stroke-width="3" stroke-linecap="round"/>
+      <path d="M16 8 A8 8 0 0 1 24 16" stroke="#FF6378" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.4" fill="#8A7CFF"/>
+    </svg>
+    Glowby <span class="beta2">BETA</span>
+  </a>
+  <nav class="tb-links">
+    <button id="tbTrend" type="button">Trending</button>
+    <button id="tbShare" type="button" title="Copy glowby.io to share">🔗 Copy link</button>
+    <a href="/about#methodology">How it works</a>
+    <a href="/about#ratings">The score</a>
+    <button id="tbTheme" type="button" aria-label="Switch light/dark mode" title="Switch light/dark mode">☾</button>
+  </nav>
+</header>
+<button id="sbBtn" aria-label="Open menu" title="Menu">☰</button>
+<div id="sbBackdrop" aria-hidden="true"></div>
+<nav id="sb" aria-label="Sidebar">
+  <div class="sb-h" id="sbTrendHdr">Trending checks</div>
+  <div id="sbTrend"><div class="sb-empty">Loading…</div></div>
+  <div class="sb-h" id="sbMineHdr">🕐 Your checks</div>
+  <div id="sbMine"><div class="sb-empty">Nothing yet — run a check.</div></div>
+  <div class="sb-links">
+    <a href="/">Glowby home</a>
+    <a href="/about-us">About us</a>
+    <a href="/about#methodology">How it works</a>
+    <a href="/about#ratings">The score</a>
+    <a href="/about#corrections">Corrections</a>
+  </div>
+</nav>
+<div class="wrap">
+  <div id="appHero" aria-hidden="true">
+    <svg class="ah-logo" width="42" height="42" viewBox="0 0 32 32" fill="none">
+      <circle cx="16" cy="16" r="15" stroke="rgba(255,255,255,.55)" stroke-width="1.5"/>
+      <path d="M8 16 A8 8 0 0 1 16 8" stroke="#5B8CFF" stroke-width="3" stroke-linecap="round"/>
+      <path d="M16 8 A8 8 0 0 1 24 16" stroke="#FF6378" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="16" cy="16" r="3.4" fill="#8A7CFF"/>
+    </svg>
+    <div class="ah-title">What should <span class="hl">Glowby</span> check?</div>
+    <div class="ah-beta">BETA</div>
+  </div>
+  <h1 class="greet">What should <span class="hl">Glowby</span> check?</h1>
+
+  <form id="f">
+    <input type="text" id="url" placeholder="Paste a video link — or type any claim to fact-check..." required>
+    <button id="cam" type="button" aria-label="Check a screenshot or photo" title="Check a screenshot or photo"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></button><input type="file" id="camIn" accept="image/*" hidden><input type="file" id="recIn" accept="audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac" hidden><button id="mic" type="button" aria-label="Speak instead of typing" title="Speak instead of typing"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button>
+    <button id="go" type="submit" aria-label="Check it"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
+  </form>
+  <div id="ts" style="margin-top:10px;display:flex;justify-content:center"></div>
+
+  <!-- APP REVIEW 5.1.1/5.1.2: explicit permission BEFORE the first send.
+       Shown once per device; nothing is sent until "Agree" is tapped. -->
+  <div id="consent" hidden>
+    <div class="consent-card">
+      <div class="consent-t">Before Glowby checks anything</div>
+      <p>To fact-check, Glowby sends <b>what you submit</b> — the link you paste, the text you type, or the photo you choose — to AI services that analyze it:</p>
+      <ul>
+        <li><b>Anthropic</b> — reads the transcript, video frames and evidence to judge claims</li>
+        <li><b>OpenAI</b> — turns speech in videos into text</li>
+        <li><b>Hive</b> — checks whether photos or video frames are AI-generated (only when that check runs)</li>
+        <li><b>Google</b> — captions, the fact-check database, and reverse image search</li>
+      </ul>
+      <p>Nothing else is sent: no account, no contacts, no location, no tracking profile. Photos are analyzed and discarded, never stored. Each service protects the data under its own policy, linked in our <a href="/about#privacy" target="_blank">privacy policy</a>.</p>
+      <button type="button" id="consentOk">I agree — continue</button>
+      <div class="consent-sub">You can review this any time on the <a href="/about#datasent" target="_blank">privacy page</a>.</div>
+    </div>
+  </div>
+  <div id="trOverlay" hidden>
+    <div class="tr-card">
+      <div class="tr-head"><b>Transcript</b><button type="button" id="trClose" aria-label="Close">&#x2715;</button></div>
+      <div class="tr-body" id="trBody"></div>
+    </div>
+  </div>
+  <div id="qWrap">
+    <div class="modewrap">
+      <div id="modeSeg" class="modeseg" role="group" aria-label="What to check">
+        <button type="button" data-mode="off" class="on" role="radio" aria-checked="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg><span class="ml">Claims</span><span class="ms">Claims</span></button>
+        <button type="button" data-mode="on" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg><span class="ml">Claims + AI detect</span><span class="ms">Claims + AI</span></button>
+        <button type="button" data-mode="only" role="radio" aria-checked="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M12 8l1.2 2.8L16 12l-2.8 1.2L12 16l-1.2-2.8L8 12l2.8-1.2z"/></svg><span class="ml">AI detect only</span><span class="ms">AI only</span></button>
+        <button type="button" data-mode="scam" role="radio" aria-checked="false" __SCAM_BUTTON__><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg><span class="ml">Scam check</span><span class="ms">Scam</span></button>
+        <button type="button" id="qChip" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9.5 9.8a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.4M12 16.5h.01"/></svg><span class="ml">Ask a question</span><span class="ms">Ask</span></button>
+      </div>
+      <div id="modeHint" class="modehint">Checks the claims · AI check runs on high-stakes videos</div>
+    </div>
+    <div id="qOpen" hidden>
+      <span class="qmark">?</span>
+      <input type="text" id="qIn" maxlength="400" placeholder="Your question…" autocomplete="off">
+      <button type="button" class="qx" id="qClose" aria-label="Remove question">✕</button>
+    </div>
+  </div>
+
+  <button id="pasteBtn" type="button"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg> Paste &amp; check</button>
+
+  <div id="appCards" aria-hidden="true">
+    <button class="acard prime" data-act="paste" type="button">
+      <span class="ac-ic">📋</span><span class="ac-lb">Paste &amp; check</span><span class="ac-ds">Use your clipboard link</span></button>
+    <button class="acard" data-act="video" type="button">
+      <span class="ac-ic">🎬</span><span class="ac-lb">Shorts &amp; TikToks</span><span class="ac-ds">Verify a video</span></button>
+    <button class="acard" data-act="article" type="button">
+      <span class="ac-ic">📰</span><span class="ac-lb">News article</span><span class="ac-ds">Check its claims</span></button>
+    <button class="acard" data-act="ask" type="button">
+      <span class="ac-ic">❓</span><span class="ac-lb">Ask a question</span><span class="ac-ds">Get a sourced answer</span></button>
+  </div>
+
+  <div class="sugg2" aria-hidden="true">
+    <span>🎬 Shorts</span><span>🎵 TikToks</span><span>📰 Articles</span><span>💬 Claims</span><span>❓ Questions</span><span>📷 Screenshots</span>
+  </div>
+  <!-- Sept 15 (Diya): "Glowby is alive" out; one line of small print; the
+       scam invitation hidden while the scam lens stays in shadow mode
+       (the recording door is still wired — flip GLOWBY_SCAM_MODE=on and
+       un-hide #recRow to bring it back). -->
+  <div class="aihint" style="margin-top:14px">AI-powered · results can be wrong · always check the sources · <a href="/about#datasent" target="_blank" style="color:inherit">what&rsquo;s sent</a></div>
+  <div class="aihint" id="recRow" hidden style="margin-top:4px">Got a scam text, email or voicemail? Paste the text, screenshot it with the camera button, or <a href="#" id="recBtn" style="color:var(--brand)">🎙 check a voicemail or call recording</a></div>
+  <div class="storewrap"><a class="storebadge" href="https://apps.apple.com/us/app/glowby/id6798336220" target="_blank" rel="noopener" aria-label="Download Glowby on the App Store"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.4 12.6c0-2.5 2-3.7 2.1-3.8-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.2 1-4.1 2.5-1.8 3-.5 7.6 1.3 10.1.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.3.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.9-1.1-2.9-4zM14 5.2c.7-.8 1.2-2 1-3.2-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1.1 3.1 1.1.1 2.3-.6 3-1.4z"/></svg><span><small>Download on the</small><b>App Store</b></span></a></div>
+
+  <div id="steps">
+    <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
+    <div class="step" id="st1"><div class="dot"></div><span>Sorting claims into categories (the gate &amp; router)</span></div>
+    <div class="step" id="st2"><div class="dot"></div><span>Hunting evidence &amp; judging under category rulebooks</span></div>
+    <div class="step" id="st3"><div class="dot"></div><span>Assembling your report</span></div>
+  </div>
+
+  <div id="out"></div>
+  <footer>v__VERSION__ &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)<br>
+  <span style="display:inline-block;margin-top:6px"><a href="/about-us" style="color:var(--muted)">About us</a> &middot; <a href="/about#methodology" style="color:var(--muted)">How it works</a> &middot; <a href="/about#ratings" style="color:var(--muted)">The score</a> &middot; <a href="/about#corrections" style="color:var(--muted)">Corrections</a> &middot; <a href="/about#terms" style="color:var(--muted)">Terms</a> &middot; <a href="/about#privacy" style="color:var(--muted)">Privacy</a></span></footer>
+</div>
+
+<script>
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const STAGE_MAP={fetching:0,routing:1,judging:2,assembling:3};
+const vLabel={supported:'✓ Supported',partly_supported:'⚠ Partly supported',provisional:'⏳ Provisional',insufficient:'⚠ Insufficient evidence',contradicted:'✗ Contradicted',unverifiable:'? Unverifiable',not_scoreable:'∅ Not scoreable'};
+const vClass={supported:'v-g',partly_supported:'v-a',provisional:'v-a',insufficient:'v-a',contradicted:'v-r',unverifiable:'v-n',not_scoreable:'v-n'};
+const stanceIcon={supports:'✓',refutes:'✗',mixed:'⚠',context:'ℹ'};
+const riskColor={critical:'#f87171',high:'#ec835a'};
+const whyLabel={no_sources_found:'no reliable sources could be found',sources_dont_address_claim:'the sources found don\u2019t speak to this exact claim',conflicting_sources:'credible sources conflict without resolution',too_new_to_verify:'this is developing \u2014 reliable sources haven\u2019t caught up yet',speculation_no_data:'it\u2019s speculation with no data to check against',depends_on_definition:'it depends on whose definition you use',guilt_gate:'it\u2019s an allegation awaiting official findings \u2014 Glowby doesn\u2019t judge guilt',search_error:'the evidence search hit a technical problem \u2014 use Re-check to try again'};
+const ringColor=(s)=>s===null||s===undefined?'#9aa0b0':(s>=7.5?'#4ade80':(s>=4.0?'#fab219':'#f87171'));
+let currentResult=null, currentView='list';
+// ---- bot protection (Cloudflare Turnstile); dormant without a site key ----
+const TS_KEY='__TURNSTILE_SITE_KEY__';
+const tsOn=TS_KEY && !TS_KEY.startsWith('__');
+if(tsOn){
+  const s=document.createElement('script');
+  s.src='https://challenges.cloudflare.com/turnstile/v0/api.js?onload=tsReady';
+  s.async=true;document.head.appendChild(s);
+  window.tsReady=()=>{turnstile.render('#ts',{sitekey:TS_KEY,theme:'dark','refresh-expired':'auto'});};
+}
+const tsToken=()=>tsOn&&window.turnstile?(turnstile.getResponse()||''):'';
+const tsReset=()=>{if(tsOn&&window.turnstile)try{turnstile.reset();}catch(e){}};
+async function tsGet(){
+  if(!tsOn||!window.turnstile)return '';
+  for(let i=0;i<32;i++){const t=turnstile.getResponse?turnstile.getResponse():'';if(t)return t;await new Promise(r=>setTimeout(r,250));}
+  return '';
+}
+// "+ask" chip wiring
+(function(){
+  const chip=document.getElementById('qChip'),open=document.getElementById('qOpen'),
+        qin=document.getElementById('qIn'),qx=document.getElementById('qClose');
+  if(!chip)return;
+  const setAsk=(on)=>{open.hidden=!on;chip.classList.toggle('on',on);chip.setAttribute('aria-pressed',on?'true':'false');if(on)qin.focus();else qin.value='';};
+  window.setAsk=setAsk;
+  chip.onclick=()=>setAsk(open.hidden);
+  qx.onclick=()=>setAsk(false);
+  qin.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();
+    document.getElementById('f').requestSubmit?document.getElementById('f').requestSubmit():document.getElementById('go').click();}});
+})();
+function userQuestion(){const q=document.getElementById('qIn');return q?q.value.trim():'';}
+// "+detect AI" toggle: user explicitly requests the media-authenticity check
+// MODE SELECTOR: Claims (gate decides) · Claims + AI · AI only.
+// A visible choice, not a chip that cycles. Resets after every check.
+const MODE_HINTS={
+  off:'Checks the claims \u00b7 AI check runs on high-stakes videos',
+  on:'Checks the claims + runs the AI media check',
+  only:'Only asks whether the footage is AI-made',
+  scam:'Is this a scam? Paste the text or link, screenshot it, or \ud83c\udf99 send a voicemail'};
+const PLACEHOLDERS={scam:'Paste the text, email or link\u2026'};
+const DEFAULT_PLACEHOLDER='Paste a video link \u2014 or type any claim to fact-check...';
+(function(){const seg=document.getElementById('modeSeg');if(!seg)return;
+  seg.dataset.sel='off';
+  seg.querySelectorAll('button[data-mode]').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));})();
+function setMode(m){const seg=document.getElementById('modeSeg');if(!seg)return;
+  seg.dataset.sel=m;
+  seg.querySelectorAll('button[data-mode]').forEach(b=>{const on=b.dataset.mode===m;b.classList.toggle('on',on);b.setAttribute('aria-checked',on?'true':'false');});
+  const hint=document.getElementById('modeHint');if(hint)hint.textContent=MODE_HINTS[m]||'';
+  const u=document.getElementById('url');if(u)u.placeholder=PLACEHOLDERS[m]||DEFAULT_PLACEHOLDER;
+  const rr=document.getElementById('recRow');if(rr)rr.hidden=(m!=='scam');}
+function aiChipState(){const seg=document.getElementById('modeSeg');return seg?(seg.dataset.sel||'off'):'off';}
+function resetAiChip(){setMode('off');}
+function detectAiOn(){const m=aiChipState();return m==='on'||m==='only';}
+function scamModeOn(){return aiChipState()==='scam';}
+// CONSENT GATE — Apple 5.1.1(i)/5.1.2(i): permission before the first
+// send, on every path (link, photo, shared link, follow-up AI check).
+function hasConsent(){try{return localStorage.getItem('gbConsent')==='1';}catch(e){return false;}}
+function askConsent(){
+  return new Promise((resolve)=>{
+    if(hasConsent())return resolve(true);
+    const box=$('consent');if(!box)return resolve(true);
+    box.hidden=false;
+    $('consentOk').onclick=()=>{try{localStorage.setItem('gbConsent','1');}catch(e){}
+      box.hidden=true;resolve(true);};
+  });
+}
+async function checkFetch(body){
+  (function(){const s=document.getElementById('sharedHint');if(s)s.remove();const g=$('go');if(g)g.classList.remove('pulse');})();
+  await askConsent();
+  const uq=userQuestion(); if(uq)body.question=uq;
+  if(detectAiOn())body.detect_ai=true;
+  if(aiChipState()==='only')body.ai_only=true;
+  if(scamModeOn())body.scam_check=true;
+  body.captcha_token=await tsGet();
+  let r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.status===403&&tsOn){tsReset();body.captcha_token=await tsGet();
+    r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
+  return r;
+}
+
+// NOTHING TO FACT-CHECK: every unit parked at the gate (or none found).
+// One word says why; the card must never look like Glowby skipped the job.
+const NC_KINDS={
+  'opinion':['\ud83d\udcac','Opinion','No claim that can be true or false.'],
+  'satire':['\ud83c\udfad','Satire','Comedy, not a claim.'],
+  'fiction-joke':['\ud83d\ude04','Joke','A joke, not a claim.'],
+  'personal-experience':['\ud83e\uddcd','Personal story','One person\u2019s experience \u2014 not a checkable claim.'],
+  'question':['\u2753','Question','It asks \u2014 it doesn\u2019t claim.'],
+  'advertisement':['\ud83d\udce3','Ad','A pitch, not a fact.'],
+  'no-claim':['\u2014','No claims','Nothing said that can be true or false.']};
+function noCheck(d){
+  const rep=d.report||{};
+  if(d.answer_mode||rep.safety_notice||d.media_only||d.private||d.refused||d.scam_only)return null;
+  if(rep.headline_score!==null&&rep.headline_score!==undefined)return null;
+  if(rep.headline_state&&rep.headline_state!=='unverified')return null;
+  let kind=rep.nothing_to_check;
+  if(kind===null)return null;             // a custom message wants the old layout
+  const claims=d.claims||[];
+  if(kind===undefined){                   // older saved results: work it out here
+    if(claims.some(c=>c.verdict||c.gate_label==='factual'||c.gate_label==='prediction'))return null;
+    if(!/nothing to (fact-check|verify)/i.test(rep.headline_label||''))return null;
+    const t={};for(const c of claims){const g=c.gate_label||'no-claim';if(NC_KINDS[g])t[g]=(t[g]||0)+1;}
+    kind='no-claim';let n=0;for(const g in t){if(t[g]>n){kind=g;n=t[g];}}
+  }
+  const k=NC_KINDS[kind]||NC_KINDS['no-claim'];
+  return {kind:kind,icon:k[0],word:k[1],line:k[2]};
+}
+// band word for the headline — derived from the SCORE so it can never
+// disagree with the ring's colour (the sentence below it comes from the server)
+function oneLine(rep){
+  const t=(rep&&rep.one_line)||'';
+  if(!t)return '';
+  // bold the lead word (Yes / No / Partly / Mostly yes / Unclear) — the answer at a glance
+  const m=t.match(/^(Mostly accurate|Accurate|Mixed|Inaccurate|Unverified|Mostly yes|Mostly no|Yes|No|Partly|Unclear|Nothing here)\b/i);
+  return '<div class="oneline">'+(m?'<b>'+esc(m[0])+'</b>'+esc(t.slice(m[0].length)):esc(t))+'</div>';
+}
+// THE BIG "AI" MARK ONLY WHEN AI IS CONFIRMED OR LABELED (locked badge
+// rule; Sep 25 review): "authenticity unclear" shows a question mark, "no
+// signal" shows a dash — neither can be screenshotted as "this is AI".
+function auMark(au){
+  const o=au&&au.origin_result;
+  if(o==='verified_ai_provenance'||o==='declared_ai'||o==='likely_synthetic')return 'AI';
+  if(o==='inconclusive')return '?';
+  return '\u2014';
+}
+function verdictWord(rep){
+  if(rep.safety_notice)return null;
+  const s=rep.headline_score;
+  if(s===null||s===undefined)return ['Unverified','#9aa0b0'];
+  if(s>=8.0)return ['Accurate','#4ade80'];
+  if(s>=7.5)return ['Mostly accurate','#4ade80'];
+  if(s>=4.0)return ['Mixed','#fab219'];
+  return ['Inaccurate','#f87171'];  // v0.66.17: was "Misleading" — intent language, banned by the wording rulebook
+}
+function verdictPill(rep){const v=verdictWord(rep);return v?'<div><span class="vw" style="color:'+v[1]+';border-color:'+v[1]+';background:'+v[1]+'22">'+v[0]+'</span></div>':'';}
+function ncChip(nc,small){return '<span class="ncchip'+(small?' sm':'')+'">'+nc.icon+' '+esc(nc.word)+'</span>';}
+function ringSVG(score,size,width,forceCol){
+  // v0.66.58: whole numbers only. One decimal claimed a precision this
+  // cannot defend — there is no honest answer to "why 7.8 and not 8.1".
+  // The verdict WORD is the answer; the ring is a rough gauge beside it.
+  // The exact score is still in the data, and on hover.
+  const r=(size/2)-width-1, c=2*Math.PI*r;
+  const frac=(score===null||score===undefined)?0:Math.max(.03,score/9.9);
+  const col=forceCol||ringColor(score===undefined?null:score);
+  const exact=(score===null||score===undefined)?'not scored':('exact score '+score.toFixed(1)+' of 10');
+  return '<div class="ring" title="'+esc(exact)+'"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+
+    '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="var(--track)" stroke-width="'+width+'"/>'+
+    '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+width+'" stroke-linecap="round" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+(c*(1-frac)).toFixed(1)+'"/></svg>'+
+    '<div class="v"><div class="num" style="font-size:'+(size*.28)+'px;color:'+col+'">'+(score===null||score===undefined?'&mdash;':esc(String(Math.round(score))))+'</div>'+
+    (size>60?'<div style="color:var(--muted);font-size:.62rem;font-weight:700">/ 10</div>':'')+'</div></div>';
+}
+function chips(c){
+  let h='<span class="cat">'+esc(c.bucket)+'</span>';
+  if(c.secondary_bucket)h+=' <span class="cat">+ '+esc(c.secondary_bucket)+'</span>';
+  if(c.rerouted_from)h+=' <span class="cat" title="the first judge said this was not its category">re-routed from '+esc(c.rerouted_from)+'</span>';
+  if(riskColor[c.risk_level])h+=' <span class="cat" style="color:'+riskColor[c.risk_level]+';border-color:'+riskColor[c.risk_level]+'">'+esc(c.risk_level)+' risk</span>';
+  if(c.developing_story)h+=' <span class="cat">⏳ developing</span>';
+  if(c.central===false)h+=' <span class="cat">side detail</span>';
+  if(c.gate_label==='prediction')h+=' <span class="cat">prediction</span>';
+  if(c.public_safety_risk)h+=' <span class="cat" style="color:var(--bad);border-color:var(--bad)">⚠ public safety</span>';
+  return h;
+}
+const vColor={supported:'var(--good)',partly_supported:'var(--warn)',provisional:'var(--warn)',insufficient:'var(--warn)',contradicted:'var(--bad)',unverifiable:'var(--muted)',not_scoreable:'var(--muted)'};
+function domainOf(u){try{return new URL(u).hostname.replace(/^www\./,'');}catch(e){return String(u).slice(0,30);}}
+function claimCard(c,idx){
+  // GLANCE LAYER: ring + serif claim + verdict as flowing prose + source chips
+  let badge='';
+  if(c.verdict){
+    const col=vColor[c.verdict.verdict_state]||'var(--muted)';
+    const flag=(idx===undefined||idx===null)?'':'<button type="button" class="cflag" data-i="'+idx+'" title="Flag this claim\u2019s score">\u2691 flag</button>';
+    badge='<div class="vline"><span class="vw" style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'.</span> '+esc(c.verdict.verdict||'')+flag+'</div>';
+    if(c.verdict.why_unverifiable)badge+='<div class="vsum" style="color:var(--muted)">Why: '+(whyLabel[c.verdict.why_unverifiable]||esc(c.verdict.why_unverifiable))+'.</div>';
+    const fcs0=(c.evidence&&c.evidence.fact_checks)||[], webs0=(c.evidence&&c.evidence.web_sources)||[];
+    let chips='';
+    for(const fc of fcs0.slice(0,2))chips+='<a class="schip" href="'+esc(fc.url)+'" target="_blank" rel="noopener"><b>'+esc(fc.publisher)+'</b> · fact-check ↗</a>';
+    for(const w of webs0.slice(0,4-Math.min(2,fcs0.length)))chips+='<a class="schip" href="'+esc(w.url)+'" target="_blank" rel="noopener"><b>'+esc(domainOf(w.url))+'</b> ↗</a>';
+    if(chips)badge+='<div class="srcchips">'+chips+'</div>';
+  }else if(c.verifying){
+    badge='<br><span class="verdict v-n" style="animation:pulse 1s infinite alternate">🔎 Checking sources…</span>';
+  }else{
+    badge='<br><span class="meta">Not verified in this pass.</span>';
+  }
+  // DETAIL LAYER: quote, chips, reasoning, verdict sentence, sources
+  let ev='';
+  const fcs=(c.evidence&&c.evidence.fact_checks)||[], webs=(c.evidence&&c.evidence.web_sources)||[];
+  for(const fc of fcs)ev+='<div class="src">📝 <a href="'+esc(fc.url)+'" target="_blank" rel="noopener">'+esc(fc.publisher)+'</a>: rated “'+esc(fc.rating)+'”</div>';
+  for(const w of webs)ev+='<div class="src">'+(stanceIcon[w.stance]||'ℹ')+' <a href="'+esc(w.url)+'" target="_blank" rel="noopener">'+esc(w.source)+'</a> ('+esc(w.stance)+'): “'+esc(w.quote)+'”</div>';
+  if(c.verdict&&!ev)ev='<div class="src meta">No sources found.</div>';
+  let detail='<details class="more"><summary><span></span></summary><div class="inner">';
+  detail+='<div class="meta">“'+esc(c.quote)+'”</div>';
+  detail+=chips(c)+' <span class="meta">'+esc(c.reason||'')+'</span>';
+  if(c.verdict)detail+='<div class="vsum meta">Evidence strength: '+esc(c.verdict.evidence_strength)+'</div>';
+  detail+=ev+'</div></details>';
+  const circle=c.verdict
+    ?'<div style="flex:0 0 auto">'+ringSVG(c.verdict.truth_score===null?null:c.verdict.truth_score,46,4,vColor[c.verdict.verdict_state])+'</div>'
+    :'<div class="score"'+(c.verifying?' style="animation:pulse 1s infinite alternate"':'')+'>···</div>';
+  return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b class="claim-h">'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
+}
+function resourcesHtml(list,intro){
+  if(!list||!list.length)return '';
+  let h='<div class="res"><b>'+esc(intro)+'</b>';
+  for(const r of list){h+='<div class="meta">'+(r.url?('<a href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(r.name)+' \u2197</a>'):('<b>'+esc(r.name)+'</b>'))+' \u2014 '+esc(r.what)+'</div>';}
+  return h+'</div>';
+}
+// SCAM LENS CARD — a scam is a pattern, not a claim; the truth score
+// cannot catch it. Medium/high risk gets this card ABOVE the score; low
+// risk gets one quiet line; none gets nothing. Wording rule: "matches
+// scam patterns", never "X is a scam" about a named person or business.
+function fbRowScam(d){
+  let prev='';try{prev=localStorage.getItem(fbKey(d)+':scam')||'';}catch(e){}
+  const dis=prev?' disabled':'';
+  return '<div class="fb-row'+(prev?' done':'')+'" id="fbRowScam" data-scope="scam">'
+    +'<span class="fb-q" style="text-align:left">Is this warning right?</span>'
+    +'<button type="button" class="fb-chip fair'+(prev==='fair'?' on':'')+'" data-k="fair"'+dis+'>Right</button>'
+    +'<button type="button" class="fb-chip harsh'+(prev==='scam_false_alarm'?' on':'')+'" data-k="scam_false_alarm"'+dis+'>Not a scam</button></div>';
+}
+function scamCard(d){
+  const sc=d.scam; if(!sc||!(sc.risk==='high'||sc.risk==='medium')||d.private)return '';
+  const high=sc.risk==='high';
+  const pats=sc.patterns||[];
+  const sext=pats.includes('sextortion')||pats.includes('extortion_blackmail');
+  const verdict=sc.verdict||(high?'High scam risk':'Suspicious');
+  const conf=sc.confidence_label?(' <span class="sc-conf">· '+esc(sc.confidence_label)+' confidence</span>'):'';
+  let h='<div class="scamcard'+(high?' high':'')+'">'
+    +'<div class="sc-h">⚠️ '+esc(sext?'Sextortion pattern':verdict)+conf+'</div>';
+  let p='';
+  if(sc.promise)p+=esc(sc.promise);
+  if(sc.ask)p+=(p?'<br>':'')+'<b>Asked of you:</b> '+esc(sc.ask);
+  if(sc.impersonates)p+=(p?'<br>':'')+'<b>Uses the name of:</b> '+esc(sc.impersonates);
+  if(p)h+='<div class="sc-p">'+p+'</div>';
+  if((sc.pattern_names||[]).length)h+='<div class="sc-chips">'+sc.pattern_names.slice(0,4).map(n=>'<span>'+esc(n)+'</span>').join('')+'</div>';
+  // WHAT WAS VERIFIED — independent lookups, never the message's own links
+  const vf=sc.verification||{};
+  let vl=[];
+  if(vf.domain_matches_official_domain===false)vl.push('✗ domain does not match '+esc(sc.impersonates||'the organisation')+(vf.official_domain?' ('+esc(vf.official_domain)+')':''));
+  else if(vf.domain_matches_official_domain===true)vl.push('✓ domain matches the official one');
+  else if(vf.organization_exists===true)vl.push('organisation exists · this message not tied to it');
+  if(vf.external_warning_found)vl.push('✓ warning on record');
+  if(vf.investment_registered===false)vl.push('✗ not registered with SEC/FINRA');
+  if(vf.url_reputation_checked)vl.push('link reputation checked');
+  if((sc.warnings||[]).length)vl.push('📋 '+sc.warnings.map(w=>'<a href="'+esc(w.url)+'" target="_blank" rel="noopener">'+esc(w.what)+' ↗</a>').join(' · '));
+  if(vl.length)h+='<div class="sc-ver">'+vl.join(' <span class="sc-sep">·</span> ')+'</div>';
+  h+='<div class="sc-do">'+esc(sext?SCAM_ADVICE.sextortion:(SCAM_ADVICE[sc.risk]||''))+'</div>';
+  // GET HELP — what to do now, then what to do for what has already happened
+  const hp=sc.help||{};
+  let g='';
+  if((hp.escalate||[]).length)g+=hp.escalate.map(x=>'<div class="sc-step" style="border-left-color:#f87171;font-weight:600">'+esc(x)+'</div>').join('');
+  if((hp.now||[]).length)g+='<div class="sc-k">Right now</div>'+hp.now.map(x=>'<div class="sc-step">'+esc(x)+'</div>').join('');
+  const st=hp.by_state||{};
+  if(Object.keys(st).length){
+    const opts=[['nothing','Nothing yet'],['clicked','I clicked'],['shared_password','Shared a password'],['shared_otp','Shared a code'],['shared_card','Shared card / ID'],['paid','Sent money'],['installed_remote','Installed something'],['shared_images','Sent images']];
+    const det=(sc.already_done||[])[0]||'';
+    g+='<div class="sc-k">What already happened?</div><div class="sc-state" id="scState">'+opts.filter(o=>st[o[0]]).map(o=>'<button type="button" data-s="'+o[0]+'"'+(o[0]===det?' class="on"':'')+'>'+esc(o[1])+'</button>').join('')+'</div>'
+      +'<div id="scStateOut">'+(det&&st[det]?st[det].map(x=>'<div class="sc-step">'+esc(x)+'</div>').join(''):'')+'</div>';
+  }else if((hp.already_sent||[]).length)g+='<div class="sc-k">If you already sent money or information</div>'+hp.already_sent.map(x=>'<div class="sc-step">'+esc(x)+'</div>').join('');
+  if((hp.talk||[]).length){g+='<div class="sc-k">Talk to a person</div>';for(const t of hp.talk)g+='<div class="sc-step">'+(t.phone?'<a class="tel" href="tel:'+esc(t.phone.replace(/[^\d+]/g,''))+'">📞 '+esc(t.phone)+'</a> ':'')+'<a href="'+esc(t.url)+'" target="_blank" rel="noopener">'+esc(t.name)+' ↗</a><span class="meta"> — '+esc(t.what)+'</span></div>';}
+  if((hp.report||[]).length)g+='<div class="sc-k">Report it</div>'+hp.report.map(r=>'<div class="sc-step"><a href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(r.name)+' ↗</a><span class="meta"> — '+esc(r.what)+'</span></div>').join('');
+  if(g)h+='<details class="sc-help"'+(high?' open':'')+'><summary>🆘 Get help — what to do now ↓</summary>'+g+'</details>';
+  // HELPING A PARENT OR FRIEND — the long-con shapes are usually pasted by a relative, not the victim
+  if((hp.helper||[]).length)h+='<details class="sc-help"><summary>💬 Checking this for a parent or friend? How to talk to them ↓</summary>'+hp.helper.map(x=>'<div class="sc-step">'+esc(x)+'</div>').join('')+'<div class="meta" style="margin-top:6px">What the behavioural scientists banks now hire say works. One conversation rarely breaks the spell; getting them to send less is still a win.</div></details>';
+  // WHY — the long part folds
+  let w='';
+  if(sc.reason)w+='<div class="meta" style="margin-top:6px">'+esc(sc.reason)+'</div>';
+  if(sc.media_note)w+='<div class="meta" style="margin-top:6px;color:#f87171">🎭 '+esc(sc.media_note)+'</div>';
+  const rf=(sc.report&&sc.report.risk_factors)||[];
+  for(const f of rf.slice(0,8))w+='<div class="sc-rf"><span class="sev '+esc(f.severity)+'">'+esc(f.severity)+'</span> '+esc(f.signal)+(f.evidence_span?'<div class="meta">“…'+esc(f.evidence_span)+'…”</div>':'')+'</div>';
+  for(const n of (vf.notes||[]))w+='<div class="meta" style="margin-top:6px">'+esc(n)+'</div>';
+  for(const x of (sc.warnings||[]))w+='<div class="meta" style="margin-top:6px"><a href="'+esc(x.url)+'" target="_blank" rel="noopener" style="color:#f87171">'+esc(x.name)+' ↗</a></div>';
+  if(!(sc.warnings||[]).length&&(sc.entities||[]).length&&!vf.external_warning_found)w+='<div class="meta" style="margin-top:6px">No regulator alert found for '+esc(sc.entities.slice(0,2).join(', '))+' — that clears nothing; most scams are never listed.</div>';
+  w+='<div class="meta" style="margin-top:8px;opacity:.75">Glowby describes patterns in the message; it never decides that a person or business is a scam. Risk (how dangerous it looks) and confidence (how much reliable information supports that) are reported separately. <a href="/about#scam" target="_blank">how this works ↗</a></div>';
+  h+='<details><summary>Why Glowby flagged it ↓</summary>'+w+'</details>';
+  h+=fbRowScam(d)+'</div>';
+  return h;
+}
+// PROFILE-PHOTO CHECK — "where else does this photo appear?"
+function photoCard(d){
+  const ph=d.scam&&d.scam.photo; if(!ph||d.private)return '';
+  const n=ph.count||0;
+  let h='<div class="scamcard'+(n>=2?'':' quiet')+'"><div class="sc-h" style="color:var(--ink)">🔎 Photo check'+(n?': appears on '+n+' other page'+(n===1?'':'s'):': no matches found')+'</div>';
+  h+='<div class="meta" style="margin-top:6px">'+esc(ph.note||'')+'</div>';
+  if((ph.pages||[]).length){h+='<div style="margin-top:6px">';for(const pg of ph.pages)h+='<div class="sc-step"><a href="'+esc(pg.url)+'" target="_blank" rel="noopener">'+esc(pg.domain||'')+' ↗</a><span class="meta"> — '+esc(pg.title||'')+'</span></div>';h+='</div>';}
+  h+='<div class="meta" style="margin-top:8px;opacity:.75">Reverse image search via Google Vision. Matches show where a photo has been published, not who owns it. The photo is not stored.</div></div>';
+  return h;
+}
+function scamLine(d){
+  const sc=d.scam; if(!sc||sc.risk!=='low'||d.private)return '';
+  const n=(sc.pattern_names||[]);
+  return '<div><div class="scamline">⚑ <b>1 scam warning sign</b> <span style="opacity:.85">· '+esc(n[0]||'worth a second look')+'</span></div></div>';
+}
+const SCAM_ADVICE={sextortion:'Do not pay. Do not delete anything. Tell someone you trust.',high:'Never send money, crypto or gift cards to receive money.',
+  medium:'Don\u2019t move money on this video. Check the seller first.'};
+const SCAM_RESOURCES=[
+  {name:'Report to the FTC',url:'https://reportfraud.ftc.gov/',what:'the U.S. consumer fraud report; shared with law enforcement'},
+  {name:'FBI IC3',url:'https://www.ic3.gov/',what:'internet crime, especially if money was already sent'},
+  {name:'Check a broker or adviser',url:'https://brokercheck.finra.org/',what:'anyone selling investments in the U.S. must be registered'},
+  {name:'Report on the platform',url:null,what:'every platform has a scam report option; it helps the next person'}];
+function renderList(d){
+  const rep=d.report||{};
+  let html='';
+  // CONTENT GATE outcomes: refused (possible minor) / adult content offer
+  if(d.refused==='minor'){
+    return '<div class="privcard"><b class="t">\u26d4 Not processed</b><div class="meta">'+esc(d.message||'')+'</div>'
+      +resourcesHtml(d.resources,'Help removing it:')+'</div>';
+  }
+  if(d.explicit_offer){
+    return '<div class="privcard"><b class="t">\ud83d\udd12 Adult content \u2014 not fact-checked</b><div class="meta">'+esc(d.message||'')+'</div>'
+      +'<button type="button" class="go" id="privGo">Run the private AI check \u00b7 \u2248 4\u00a2</button>'
+      +'<div class="privnote">Nothing about this video is stored, shared, or listed. Ever.</div></div>';
+  }
+  if(d.private){
+    html+='<div class="privnote">\ud83d\udd12 Private AI check \u00b7 not stored \u00b7 not shareable \u00b7 never in Trending</div>';
+  }
+  if(d.user_answer)html+='<div class="uq-card"><div class="uq-q">💬 You asked: '+esc(d.user_question||'')+'</div><div class="uq-a">'+esc(d.user_answer)+'</div></div>';
+  let savedChip='';
+  if(d.cached){const fc=d.first_checked_at?new Date(String(d.first_checked_at).slice(0,10)+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+    savedChip='<span class="meta" style="margin:0">\u26a1 Saved'+(fc?' '+esc(fc):'')+' \u00b7 <button type="button" id="recheck" class="linkbtn">Re-check</button></span>';}
+  // SOURCE LINE (Sept 15, Diya): one obvious button to open the reel, one
+  // short line of facts. The long caption moves behind "full caption".
+  const vurl=(d.url&&/^https?:\/\//.test(d.url))?d.url:null;
+  const fullTitle=String(d.title||'');
+  const PLAT={tiktok:'TikTok',youtube:'YouTube',instagram:'Instagram',facebook:'Facebook',x:'X',twitter:'X',article:'the article',typed:'',other:''};
+  const pname=PLAT[String(d.platform||'').toLowerCase()]||String(d.platform||'');
+  const isVideo=!/^(article|typed|other)$/i.test(String(d.platform||''));
+  const openBtn=vurl?('<a href="'+esc(vurl)+'" target="_blank" rel="noopener" class="openreel">\u25b6 '+(isVideo?'Watch the reel':'Open the article')+(pname?' on '+esc(pname):'')+' \u2197</a>'):'';
+  // no caption under the button (Diya, Sept 15) — creator + date are enough
+  // to confirm it's the right video; the caption lives in the transcript view
+  const when=d.posted_date?new Date(d.posted_date+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'';
+  const who=[esc(d.uploader||''),when?esc(when):''].filter(Boolean).join(' \u00b7 ');
+  // one line (Diya, Sept 15): button · creator · date · saved/re-check; wraps only on narrow phones
+  if(!d.private)html+='<div class="srcline">'+openBtn+(who?'<span class="meta" style="margin:0">'+who+'</span>':'')+savedChip+'</div>';
+  else if(savedChip)html+='<div class="srcline">'+savedChip+'</div>';
+  if(d.answer_mode){
+    html+=scamCard(d);
+    function splitLead(t){
+      const re=/[.!?]\s+/g; let m;
+      while((m=re.exec(t))){
+        const before=t.slice(0,m.index+1);
+        if(/\b(?:[A-Z]|Dr|Mr|Mrs|Ms|St|Jr|Sr|vs|No|approx|etc)\.$/.test(before))continue;
+        return [before,t.slice(re.lastIndex)];
+      }
+      return [t,''];
+    }
+    const sp=splitLead(d.answer||'');
+    const lead=sp[0]; const restA=sp[1];
+    html+='<div class="headline" style="text-align:left">'+
+      '<div class="ans-k">💡 ANSWER</div>'+
+      '<div class="ans-main">'+esc(lead)+'</div>'+
+      (restA?'<div class="ans-more">'+esc(restA)+'</div>':'')+
+      '<div class="hl-sub" style="text-align:left">Answer from sources — questions get answers, statements get ratings</div></div>';
+    let aev='';
+    const afcs=(d.evidence&&d.evidence.fact_checks)||[], awebs=(d.evidence&&d.evidence.web_sources)||[];
+    for(const fc of afcs)aev+='<div class="src">📝 <a href="'+esc(fc.url)+'" target="_blank" rel="noopener">'+esc(fc.publisher)+'</a>: rated “'+esc(fc.rating)+'”</div>';
+    for(const w of awebs)aev+='<div class="src">'+(stanceIcon[w.stance]||'ℹ')+' <a href="'+esc(w.url)+'" target="_blank" rel="noopener">'+esc(w.source)+'</a>: “'+esc(w.quote)+'”</div>';
+    if(aev)html+='<div class="claim"><div class="ctext" style="flex:1"><b>Sources</b>'+aev+'</div></div>';
+    else html+='<div class="meta">No sources could be gathered for this answer.</div>';
+    return html;
+  }
+  if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
+  html+=scamCard(d)+photoCard(d);
+  const au=d.authenticity;
+  if(d.scam_only){
+    // SCAM CHECK on a message: the scam card IS the result. No ring, no
+    // "unverified" — a low/none finding gets one honest line instead.
+    const sc=d.scam||{};
+    if(!(sc.risk==='high'||sc.risk==='medium')){
+      html+='<div class="headline">'+oneLine(rep)+'<div class="nc-big">'+(sc.risk==='low'?'A few warning signs':'No scam patterns found')+'</div>'
+        +'<div class="nc-sub">'+(sc.risk==='low'?'Nothing decisive \u2014 stay careful with codes, money and links.':'That never means safe \u2014 detection can miss things. Never share a code or send money on a stranger\u2019s say-so.')+'</div>'
+        +(sc.ran?'':'<div class="nc-sub">The scam check could not run \u2014 try again.</div>')+'</div>';
+    }
+    html+='<div class="meta" style="text-align:center">Scam check only \u2014 the claims were not fact-checked.</div>';
+  }else{
+  const cnt=rep.counts||{};
+  // TWIN DIALS: when the authenticity lane has a real FINDING, the
+  // headline shows two equal dials (CLAIMS + AI). "No signal" never gets
+  // a dial - absence is the honest blank (founder design, Sep 2026).
+  // v0.66.49: likelihood, not certainty. The top two are facts about the
+  // file and read flatly; the detector's own finding reads as a leaning.
+  const AU_STYLES={verified_ai_provenance:['#a78bfa','verified AI \u2014 signed provenance',1.0],
+                   declared_ai:['#38bdf8','creator-labeled AI',0.95],
+                   likely_synthetic:['#f87171','leans AI-generated',0.95],
+                   inconclusive:['#8a86a3','could go either way',0.45]};
+  const auStyle=au?AU_STYLES[au.origin_result]:null;
+  // EVIDENCE LEADS: when there is nothing to fact-check but the media
+  // lane HAS an answer, the media answer is the headline — no sad empty
+  // claim ring next to a finding that actually answered the question.
+  const noClaims=((cnt.judged||0)===0);
+  // the media lane also LEADS when it ran and found nothing: with no
+  // claims to judge, "no synthetic signal" is the answer the reader
+  // came for — the empty claim ring is not.
+  const auRan=!!(au&&(au.stage===2||au.stage2_status==='completed'));
+  // ...unless there was simply nothing to check and the media lane found
+  // nothing either: then the verdict chip leads and the AI check is a pill.
+  const nc=noCheck(d);
+  const mediaLeads=!!((auStyle||auRan)&&(noClaims||d.media_only)&&!(nc&&!auStyle));
+  if(nc&&!mediaLeads){
+    html+='<div class="headline">'+oneLine(rep)+ncChip(nc)
+      +'<div class="nc-big">Nothing to fact-check</div>'
+      +'<div class="nc-sub">'+esc(nc.line)+'</div>'
+      +aiRow(au,false)+fbRow(d,true)+'</div>';
+  }else if(mediaLeads){
+    const CIRC2=(2*Math.PI*60);
+    const col=auStyle?auStyle[0]:'#5f6070';
+    const frac=auStyle?auStyle[2]:1.0;
+    const word=auStyle?auStyle[1]:(auWeak(au)!==null?('weak synthetic signals only ('+auWeak(au)+')'):'no synthetic signal found');
+    const dash=auStyle?'':' stroke-dasharray="7 9"';
+    html+='<div class="headline">'+oneLine(rep)+'<div style="position:relative;width:170px;height:170px;display:inline-grid;place-items:center">'
+      +'<svg width="170" height="170" style="position:absolute;inset:0;transform:rotate(-90deg)">'
+      +'<circle cx="85" cy="85" r="60" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="12"/>'
+      +(auStyle?('<circle cx="85" cy="85" r="60" fill="none" stroke="'+col+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+CIRC2.toFixed(1)+'" stroke-dashoffset="'+(CIRC2*(1-frac)).toFixed(1)+'"/>')
+               :('<circle cx="85" cy="85" r="60" fill="none" stroke="'+col+'" stroke-width="12" stroke-linecap="round"'+dash+'/>'))
+      +'</svg>'
+      +'<div style="font-weight:700;font-size:38px;color:'+(auStyle?'inherit':'#8a86a3')+'">'+auMark(au)+'</div></div>'
+      +'<div class="hl-label" style="color:'+(auStyle?col:'var(--ink)')+'">'+esc(auStyle?word:(auWeak(au)!==null?'Weak synthetic signals only':'No synthetic signal found'))+'</div>'
+      +'<div class="hl-sub">'+(auStyle?(au.audio_only?'Voice authenticity check \u2014 the recording\u2019s voice shows the signs of AI cloning':'Media authenticity check'):(auWeak(au)!==null?'The forensic detector saw weak signals below its decision threshold. Not evidence of AI, not evidence of real \u2014 detection can miss things.':(au.audio_only?'The voice detector listened to the recording and found no evidence of AI cloning. Detection can miss things \u2014 this is not proof the caller was real.':'The forensic detector examined sampled frames and found no evidence of AI generation. Detection can miss things \u2014 this is not proof the video is real.')))+'</div>'
+      +'<div class="hl-sub" style="margin-top:6px;opacity:.7">'
+      +(d.media_only?'Media-only check \u2014 fact-checking was skipped at your request.':'No checkable factual claims in this video \u2014 nothing to fact-check.')
+      +' \u00b7 <a href="/about#aimedia" target="_blank">how this works \u2197</a></div>'
+      +(d.private?'':fbRowAi(d))+'</div>';
+  }else if(auStyle){
+    const CIRC=(2*Math.PI*60);
+    html+='<div class="headline">'+oneLine(rep)+'<div class="dial-row">'
+      +'<div class="dial-col"><div class="hero-ring" style="display:inline-block">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,140,10)+'</div>'
+      +'<div class="dial-lbl">CLAIMS</div></div>'
+      +'<div class="dial-col">'
+      +'<div style="position:relative;width:140px;height:140px;display:inline-grid;place-items:center">'
+      +'<svg width="140" height="140" style="position:absolute;inset:0;transform:rotate(-90deg)">'
+      +'<circle cx="70" cy="70" r="60" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="10"/>'
+      +'<circle cx="70" cy="70" r="60" fill="none" stroke="'+auStyle[0]+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+CIRC.toFixed(1)+'" stroke-dashoffset="'+(CIRC*(1-auStyle[2])).toFixed(1)+'"/></svg>'
+      +'<div style="font-weight:700;font-size:32px">'+auMark(au)+'</div></div>'
+      +'<div class="dial-lbl">MEDIA</div>'
+      +'<div class="dial-state" style="color:'+auStyle[0]+'">'+esc(auStyle[1])+'</div>'
+      +(au.manipulation_scope==='face'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">signals concentrated on a face \u2014 rest not verified</div>':'')
+      +(au.manipulation_scope==='voice'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">the voice itself shows signs of cloning</div>':'')
+      // v0.66.48: say the size of the doubt, not just that doubt exists.
+      // Independent testing in 2026 put detectors near chance on the newest
+      // generators, so "no signal" deserves a plain warning, not a link
+      // nobody clicks. The link stays for the reader who wants the detail.
+      +(au.origin_result==='no_synthetic_signal'?'<div class="dial-state" style="color:#8a86a3;font-weight:400">detectors miss much of today\u2019s AI video \u2014 this is not evidence it is real</div>':'')
+      +'<div class="dial-state" style="font-weight:400"><a href="/about#aimedia" target="_blank" style="color:#8a86a3">limits of AI detection \u2197</a></div>'
+      +'</div></div>'+verdictPill(rep)+fbRowAi(d)+
+    fbRow(d)+
+    '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · false claims weigh double')+'</div>'+
+    aiRow(au,mediaLeads)+'</div>';
+  }else{
+  html+='<div class="headline">'+oneLine(rep)+'<div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
+    verdictPill(rep)+fbRow(d)+
+    '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
+    '<div class="hl-meta">'+((cnt.claim_units||0)===0?'No checkable claims found':(cnt.scored===undefined?(cnt.judged||0):cnt.scored)+' of '+(cnt.claim_units||0)+' claims scored · false claims weigh double')+'</div>'+
+    aiRow(au,mediaLeads)+'</div>';
+  }
+  html+=scamLine(d);
+  }
+  if(d.private){
+    const strong=!!(au&&(au.origin_result==='likely_synthetic'||au.origin_result==='verified_ai_provenance'||au.origin_result==='declared_ai'));
+    html+='<div class="privcard">'+(strong
+      ?'<b class="t">If this is you, or someone you know</b><div class="meta">This result can support a takedown request, but it is not legal evidence on its own. These services help:</div>'
+      :'<b class="t">If this is you, or someone you know</b><div class="meta">Whatever the detector found, you can still ask for it to be removed:</div>')
+      +resourcesHtml(d.resources,'')+'</div>';
+  }
+  if(au&&au.stage2_status==='failed'){
+    html+='<div class="aicard aicard-warn"><div class="aicard-t">\u26a0\ufe0f The AI media check could not complete</div>'
+      +'<div class="meta">Nothing here says the video is real or fake \u2014 the check simply did not finish. Use Re-check to try again. <a href="/about#aimedia" target="_blank">How the AI check works \u2197</a></div>'
+      +(au.stage2_reason?'<div class="meta" style="opacity:.75">Reported: '+esc(au.stage2_reason)+'</div>'
+        // v0.66.46: a check saved before Glowby started recording detector
+        // errors has no reason to show. Saying so beats looking broken —
+        // the card used to read identically to a brand-new failure.
+        :'<div class="meta" style="opacity:.75">This check was saved before Glowby started recording why a detector failed, so there is nothing to show here. Re-check it and the reason will appear.</div>')+'</div>';
+  }
+  // FACTS FIRST (v0.66.49). The old panel led with the detector, so a
+  // reader met an opinion about pixels before meeting anything solid —
+  // and a quiet detector read as "it's real". This block leads with what
+  // is actually knowable about the file, says plainly that an absence is
+  // normal rather than suspicious, states what was looked at, and only
+  // then gives the detector's leaning. The research behind the demotion
+  // is on /about#aimedia.
+  html+=aiFacts(au);
+  // AI-CHECK DETAILS: the promised evidence panel. Categories lead the
+  // headline; the detector's own numbers live here, where a reader who
+  // wants to judge for themselves can see exactly what was found.
+  if(au&&(au.evidence||[]).length){
+    const st={not_assessed:'not run',completed:'completed',partial:'partly completed',failed:'could not complete'};
+    html+='<details class="audet"><summary>\ud83e\uddea AI check details ('+au.evidence.length+') \u2014 what the detectors actually reported</summary>';
+    html+='<div class="audet-body">';
+    // v0.66.18: one plain line per detector; the full report opens on tap
+    const NAME={hive:'Forensic detector',claude_vision:'Frame-by-frame review',reverse_search:'Reverse image search',c2pa:'Content credentials',caption:'Creator label',transcript:'Creator label (spoken)'};
+    const SIG={forensic_video_frames:'video frames',forensic_audio_voice:'voice',consistency_review:'',provenance:'',declaration:''};
+    const brief=(e)=>{
+      const x=String(e.explanation||'').trim();
+      const first=x.split(/(?<=[.;])\s/)[0]||x;
+      const f=first.replace(/[;:,]$/,'');
+      return f.length>110?f.slice(0,107).replace(/\s+\S*$/,'')+'\u2026':f;
+    };
+    for(const e of au.evidence){
+      const num=(e.raw_score===0||e.raw_score)?('<span class="audet-num">confidence '+e.raw_score+'</span>'):'';
+      const seen=(e.classes_seen===0||e.classes_seen)?('<span class="audet-num">'+e.classes_seen+' class scores read</span>'):'';
+      const label=(NAME[e.provider]||esc(e.provider||''))+(SIG[e.signal_type]!==undefined?(SIG[e.signal_type]?' \u00b7 '+SIG[e.signal_type]:''):(' \u00b7 '+esc(e.signal_type||'')));
+      const full=esc(e.explanation||'');
+      const short=esc(brief(e));
+      html+='<div class="audet-row"><b>'+label+'</b> '+num+seen
+        +'<div class="meta">'+short+'</div>'
+        +((full.length>short.length+12||e.source_link)?('<details class="audet-full"><summary>full report</summary><div class="meta">'+full+'</div>'
+          +(e.source_link?'<a href="'+esc(e.source_link)+'" target="_blank" rel="noopener" class="meta">source \u2197</a>':'')+'</details>'):'')
+        +'</div>';
+    }
+    html+='<div class="meta" style="margin-top:8px">Stage 1 '+esc(st[au.assessment_status]||au.assessment_status||'not run')
+      +(au.stage2_status?(' \u00b7 forensic detector '+esc(st[au.stage2_status]||au.stage2_status)):'')
+      +'. '+(au.thresholds?('Bands in force: leans AI at '+au.thresholds.likely+' and above, unclear from '+au.thresholds.unclear+', below that no signal. '):'Strong signals only above the detector\u2019s decision threshold; the middle band is \u201cunclear\u201d; anything lower is \u201cno signal\u201d. ')
+      +'\u201cNo signal\u201d never means proven real. '
+      +'<a href="/about#aimedia" target="_blank">how this works \u2197</a></div>';
+    html+='</div></details>';
+  }
+  if(au&&au.context_note){
+    html+='<div class="claim" style="border-left:3px solid #fab219"><div class="ctext">'
+      +'<b>\u23f1\ufe0f Older footage?</b> <span class="meta">'+esc(au.context_note)+'</span>'
+      +(au.earliest&&au.earliest.url?' <a href="'+esc(au.earliest.url)+'" target="_blank" rel="noopener" style="font-size:12px">earliest match \u2197</a>':'')
+      +'</div></div>';
+  }
+  const claims=d.claims||[];
+  const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
+  const checked=claims.filter(c=>c.verdict);
+  const waiting=claims.filter(c=>!c.verdict&&fwd(c));
+  const parked=claims.filter(c=>!c.verdict&&!fwd(c));
+  for(const c of checked)html+=claimCard(c,(d.claims||[]).indexOf(c));
+  if(waiting.length){
+    html+='<details><summary>🔍 Found, not judged ('+waiting.length+') — click to view</summary>';
+    for(const c of waiting)html+=claimCard(c);
+    html+='</details>';
+  }
+  if(parked.length){
+    html+='<details><summary>💬 Parked by the gate ('+parked.length+') — opinion, satire &amp; other non-factual content</summary>';
+    for(const c of parked)html+='<div class="claim"><div class="ctext"><b>'+esc(c.claim)+'</b><span class="cat">'+esc(c.gate_label)+'</span> <span class="meta">'+esc(c.reason||'')+'</span></div></div>';
+    html+='</details>';
+  }
+  if(d.transcript)html+='<div style="text-align:center;margin:6px 0 4px"><a href="#" id="trOpen" class="meta" style="color:var(--brand)">\ud83d\udcc4 Read the transcript \u2197</a></div>';
+  return html;
+}
+function renderReel(d){
+  const rep=d.report||{};
+  const claims=(d.claims||[]).filter(c=>c.verdict);
+  let chipsHtml='';
+  for(const c of claims.slice(0,4)){
+    const ts=c.verdict.truth_score;
+    const col=ringColor(ts===null?null:ts);
+    chipsHtml+='<div class="cchip"><span style="color:'+col+';font-weight:800">'+(ts===null?'?':esc(ts.toFixed(1)))+'</span> “'+esc(c.claim)+'” — <b style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||'').replace(/^\S+ /,'')+'</b></div>';
+  }
+  if(d.scam&&(d.scam.risk==='high'||d.scam.risk==='medium'))chipsHtml+='<div class="cchip" style="color:'+(d.scam.risk==='high'?'#f87171':'#fab219')+';font-weight:700">\u26a0 '+(d.scam.risk==='high'?'Matches scam patterns':'Scam warning signs')+' \u2014 '+esc((d.scam.pattern_names||[]).slice(0,2).join(' \u00b7 '))+'</div>';
+  chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted)">'+esc(rep.share_text||'')+'</div>';
+  chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted);font-size:.68rem">AI fact-check · can be wrong · sources on every claim · glowby.io</div>';
+  let html='';
+  if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
+  html+='<div class="reel"><div class="reeltitle">'+((d.url&&/^https?:\/\//.test(d.url))?('<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">'+esc(d.title)+' ↗</a>'):esc(d.title))+'</div><div class="corner">'+((function(){const nc=noCheck(d);return nc?ncChip(nc,true):ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6);})())+'</div><div class="chips">'+chipsHtml+'</div></div>'+
+    '<div class="meta" style="text-align:center;margin-top:10px">Screenshot this view to share · the link below travels with it</div>';
+  return html;
+}
+
+function resultText(d){
+  const rep=d.report||{};
+  const lines=[];
+  if(d.user_answer){lines.push('Q: '+(d.user_question||''));lines.push('A: '+d.user_answer);lines.push('');}
+  if(d.answer_mode){
+    lines.push('Glowby answered: "'+(d.question||d.title||'')+'"');
+    if(d.answer)lines.push(d.answer);
+  }else{
+    lines.push('Glowby fact-check: "'+(d.title||'')+'"');
+    if(d.scam&&(d.scam.risk==='high'||d.scam.risk==='medium'))lines.push('\u26a0 '+(d.scam.risk==='high'?'Matches scam patterns':'Scam warning signs')+': '+(d.scam.pattern_names||[]).slice(0,3).join('; '));
+    const ncT=noCheck(d);
+    if(ncT)lines.push('Nothing to fact-check \u2014 '+ncT.word.toLowerCase()+'. '+ncT.line);
+    else lines.push(String(rep.headline_state||'').replace(/_/g,' ')+(rep.headline_score===null||rep.headline_score===undefined?' (not scored)':' ('+Math.round(rep.headline_score)+'/10)'));
+    for(const c of (d.claims||[]).filter(c=>c.verdict)){
+      const ts=c.verdict.truth_score;
+      const lbl=(vLabel[c.verdict.verdict_state]||c.verdict.verdict_state||'').replace(/^\S+ /,'');
+      lines.push('\u2022 '+c.claim+' \u2014 '+(ts===null||ts===undefined?'no score':ts.toFixed(1))+' ('+lbl+')');
+    }
+  }
+  if(d.url_key)lines.push('Full result & sources: '+location.origin+'/r/'+encodeURIComponent(d.url_key));
+  lines.push('AI fact-check \u2014 can be wrong \u00b7 glowby.io');
+  return lines.join('\n');
+}
+
+// FEEDBACK ROW — Fair / Harsh / Wrong under the score. A signal to the
+// maintainers (every rule this month came from a reader spotting a bad
+// score), never a vote: nothing on the page changes. One tap per device
+// per result, remembered on the phone.
+function fbKey(d){return 'gbFb:'+(d.url_key||d.url||'');}
+function fbRow(d,two){
+  // two=true: no score on the card, so "Harsh" has nothing to be harsh
+  // about — Fair / Wrong only (founder call, Sep 14)
+  let prev='';try{prev=localStorage.getItem(fbKey(d))||'';}catch(e){}
+  const harsh=two?'':(prev?'<button class="fb-chip harsh'+(prev==='harsh'?' on':'')+'" disabled>Harsh</button>':'<button type="button" class="fb-chip harsh" data-k="harsh">Harsh</button>');
+  if(prev)return '<div class="fb-row done" id="fbRow"><button class="fb-chip fair'+(prev==='fair'?' on':'')+'" disabled>Fair</button>'+harsh+'<button class="fb-chip wrong'+(prev==='wrong'?' on':'')+'" disabled>Wrong</button></div>';
+  return '<div class="fb-row" id="fbRow"><button type="button" class="fb-chip fair" data-k="fair">Fair</button>'+harsh+'<button type="button" class="fb-chip wrong" data-k="wrong">Wrong</button></div>';
+}
+// AI-CHECK FEEDBACK — its own vocabulary: "Right" / "It's AI" (missed) /
+// "It's real" (false alarm). Every "It's AI" / "It's real" tap is also a
+// reader-labelled example for the calibration set.
+function fbRowAi(d){
+  // TWO BUTTONS (founder call, Sep 14): "Yes" / "No". The direction of a
+  // "No" comes from what the card said — a "no signal" result the reader
+  // rejects means "it's AI" (ai_missed); a "synthetic" result rejected
+  // means "it's real" (false_alarm). Only an unclear result needs to ask
+  // which way, and does so after the tap.
+  let prev='';try{prev=localStorage.getItem(fbKey(d)+':ai')||'';}catch(e){}
+  const dis=prev?' disabled':'';
+  const o=(d.authenticity||{}).origin_result||'';
+  const noKind=(o==='no_synthetic_signal')?'ai_missed':((o==='likely_synthetic'||o==='verified_ai_provenance'||o==='declared_ai')?'false_alarm':'ask');
+  const noOn=(prev==='ai_missed'||prev==='false_alarm')?' on':'';
+  return '<div class="fb-row'+(prev?' done':'')+'" id="fbRowAi" data-scope="ai" data-no="'+noKind+'">'
+    +'<span class="fb-q">Was the AI check right?</span>'
+    +'<button type="button" class="fb-chip fair'+(prev==='fair'?' on':'')+'" data-k="fair"'+dis+'>Yes</button>'
+    +'<button type="button" class="fb-chip wrong'+noOn+'" data-k="no"'+dis+'>No</button></div>';
+}
+async function sendFeedback(d,kind,claimIdx,note){
+  try{await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||d.url||'',kind:kind,claim_idx:claimIdx===undefined?null:claimIdx,note:note||''})});}catch(e){}
+}
+function wireFeedback(d,out){
+  const rowAi=out.querySelector('#fbRowAi');
+  if(rowAi&&!rowAi.classList.contains('done')){
+    rowAi.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
+      let k=b.dataset.k;
+      rowAi.classList.add('done');rowAi.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===b);});
+      if(k==='no'){
+        k=rowAi.dataset.no;
+        if(k==='ask'){
+          // an unclear result: "No" alone doesn't say which way — ask once
+          const ask=document.createElement('div');ask.className='fb-row';
+          ask.innerHTML='<span class="fb-q">It\u2019s actually\u2026</span><button type="button" class="fb-chip wrong" data-k="ai_missed">AI</button><button type="button" class="fb-chip harsh" data-k="false_alarm">Real</button>';
+          rowAi.insertAdjacentElement('afterend',ask);
+          ask.querySelectorAll('.fb-chip').forEach(c=>c.onclick=()=>{
+            const kk=c.dataset.k;ask.classList.add('done');ask.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===c);});
+            try{localStorage.setItem(fbKey(d)+':ai',kk);}catch(e){}
+            sendFeedback(d,kk,-1,'');
+            ask.insertAdjacentHTML('afterend','<div class="fb-thanks">\u2713 Logged \u2014 thanks.</div>');
+          });
+          return;
+        }
+      }
+      try{localStorage.setItem(fbKey(d)+':ai',k);}catch(e){}
+      sendFeedback(d,k,-1,'');
+      const th=document.createElement('div');th.className='fb-thanks';
+      th.innerHTML=k==='fair'?'\u2713 Thanks \u2014 logged.':'\u2713 Logged \u2014 thanks. <span>How do you know? (optional)</span>';
+      rowAi.insertAdjacentElement('afterend',th);
+      if(k!=='fair'){
+        const nb=document.createElement('div');nb.className='fb-note';
+        nb.innerHTML='<input type="text" maxlength="300" placeholder="e.g. it\u2019s my own video / the creator says so in comments"><button type="button">Send</button>';
+        th.insertAdjacentElement('afterend',nb);
+        const inp=nb.querySelector('input'),btn=nb.querySelector('button');
+        const go=()=>{const t=inp.value.trim();if(!t)return;sendFeedback(d,k,-1,t);nb.outerHTML='<div class="fb-thanks">\u2713 Sent. Thank you.</div>';};
+        btn.onclick=go;inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go();}});
+      }
+    });
+  }
+  const scSt=out.querySelector('#scState');
+  if(scSt){
+    const st=(d.scam&&d.scam.help&&d.scam.help.by_state)||{};
+    scSt.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      scSt.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+      const steps=st[b.dataset.s]||[];
+      out.querySelector('#scStateOut').innerHTML=steps.map(x=>'<div class="sc-step">'+esc(x)+'</div>').join('');
+    });
+  }
+  const rowSc=out.querySelector('#fbRowScam');
+  if(rowSc&&!rowSc.classList.contains('done')){
+    rowSc.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
+      const k=b.dataset.k;
+      rowSc.classList.add('done');rowSc.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===b);});
+      try{localStorage.setItem(fbKey(d)+':scam',k);}catch(e){}
+      sendFeedback(d,k,-2,'');
+      const th=document.createElement('div');th.className='fb-thanks';th.style.textAlign='left';
+      th.innerHTML=k==='fair'?'\u2713 Thanks \u2014 logged.':'\u2713 Logged \u2014 thanks. <span>How do you know? (optional)</span>';
+      rowSc.insertAdjacentElement('afterend',th);
+      if(k!=='fair'){
+        const nb=document.createElement('div');nb.className='fb-note';
+        nb.innerHTML='<input type="text" maxlength="300" placeholder="e.g. it\u2019s a registered company / it\u2019s my own brand"><button type="button">Send</button>';
+        th.insertAdjacentElement('afterend',nb);
+        const inp=nb.querySelector('input'),btn=nb.querySelector('button');
+        const go=()=>{const t=inp.value.trim();if(!t)return;sendFeedback(d,k,-2,t);nb.outerHTML='<div class="fb-thanks">\u2713 Sent. Thank you.</div>';};
+        btn.onclick=go;inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go();}});
+      }
+    });
+  }
+  const row=out.querySelector('#fbRow');
+  if(row&&!row.classList.contains('done')){
+    row.querySelectorAll('.fb-chip').forEach(b=>b.onclick=()=>{
+      const k=b.dataset.k;
+      row.classList.add('done');row.querySelectorAll('.fb-chip').forEach(x=>{x.disabled=true;x.classList.toggle('on',x===b);});
+      try{localStorage.setItem(fbKey(d),k);}catch(e){}
+      sendFeedback(d,k,null,'');
+      const th=document.createElement('div');th.className='fb-thanks';
+      th.innerHTML=k==='fair'?'\u2713 Thanks \u2014 logged.':'\u2713 Logged \u2014 thanks. <span>Which claim, and what\u2019s off?</span>';
+      row.insertAdjacentElement('afterend',th);
+      if(k!=='fair'){
+        const nb=document.createElement('div');nb.className='fb-note';
+        nb.innerHTML='<input type="text" maxlength="300" placeholder="Optional \u2014 one line is plenty"><button type="button">Send</button>';
+        th.insertAdjacentElement('afterend',nb);
+        const inp=nb.querySelector('input'),btn=nb.querySelector('button');
+        const go=()=>{const t=inp.value.trim();if(!t)return;sendFeedback(d,k,null,t);nb.outerHTML='<div class="fb-thanks">\u2713 Sent. Thank you.</div>';};
+        btn.onclick=go;inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();go();}});
+      }
+    });
+  }
+  // per-claim flags: which claim was harsh or wrong
+  out.querySelectorAll('.cflag').forEach(f=>f.onclick=()=>{
+    if(f.classList.contains('on'))return;
+    const idx=parseInt(f.dataset.i,10);
+    const r=document.createElement('span');r.className='cflag-row';
+    r.innerHTML='<button type="button" data-k="harsh">Harsh</button><button type="button" data-k="wrong">Wrong</button>';
+    f.insertAdjacentElement('afterend',r);f.style.display='none';
+    r.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      sendFeedback(d,b.dataset.k,idx,'');
+      r.outerHTML='<span class="cflag on">\u2691 '+(b.dataset.k==='harsh'?'too harsh':'wrong')+' \u2014 logged</span>';
+    });
+  });
+}
+// AI PILL — one line inside the score card instead of a two-line card.
+// Blue when the check ran clean, red when it found strong signals; the
+// details panel below carries the explanation.
+function auWeak(au){
+  // the detector's strongest frame sat in the weak band (0.10-0.50):
+  // say so instead of "no signal" — honest, still no verdict
+  const ev=(au&&au.evidence)||[];
+  const h=ev.find(e=>e&&e.provider==='hive'&&e.band==='weak');
+  return h?(h.raw_score):null;
+}
+// v0.66.49: how far the detector leans, in words. Never a percentage —
+// a number in the headline implies a precision this field has not earned
+// (DF26, Sept 2026). The raw score stays in the details panel below.
+function aiLean(au){
+  const o=au.origin_result||'';
+  if(o==='verified_ai_provenance')return 'This is not a leaning. The file carries a signed record saying it was AI-generated.';
+  if(o==='declared_ai')return 'This is not a leaning either. Whoever posted it said it was AI-made.';
+  if(o==='likely_synthetic')return au.corroboration==='confirmed'
+    ? 'Towards AI-generated — and a second look at different parts of the video found the same thing. That is the strongest the detector gets, and it is still a leaning, not proof.'
+    : 'Towards AI-generated. Treat it as a reason to look harder, not as a finding.';
+  if(o==='inconclusive')return 'Nowhere in particular. Part of what it saw looked unusual and part did not — which happens in ordinary video all the time.';
+  return 'Nothing in either direction. It found no sign of AI, and on the newest generators detectors miss a great deal, so this is not a reason to believe the video is real.';
+}
+function aiFacts(au){
+  if(!au||!(au.stage===2||au.stage2_status))return '';
+  const ev=au.evidence||[];
+  const has=p=>ev.some(e=>e.provider===p);
+  const row=(ok,label,yes,no)=>'<div class="audet-row"><b>'+(ok?'✓ ':'— ')+esc(label)+'</b>'
+    +'<div class="meta">'+(ok?yes:no)+'</div></div>';
+  let h='<div class="aicard"><div class="aicard-t">🧾 What we actually know about this file</div><div class="audet-body">';
+  h+=row(has('c2pa'),'Content credentials',
+    'The file carries a signed record of how it was made. This is the strongest evidence that exists, and it is why it outranks everything below.',
+    'None in this file. Most videos carry none yet, so this is normal — it is not a point against the video.');
+  h+=row(has('caption')||has('transcript'),'Creator or platform label',
+    'The poster, or the platform, says this is AI-made.',
+    'Nobody labeled it as AI. An unlabeled real video looks exactly the same, so this tells you very little on its own.');
+  h+=row(!!(au.earliest&&au.earliest.url),'Where it appeared before',
+    'Earlier copies were found on the web — the earliest match is linked below.',
+    'No earlier copy found. The search covers only part of the web, so this is not evidence the video is new.');
+  h+='</div>';
+  const n=au.frames_analyzed||0, bits=[];
+  if(n)bits.push(n+' still frame'+(n===1?'':'s')+' sampled from across the video');
+  if(ev.some(e=>e.signal_type==='forensic_audio_voice'))bits.push('the audio, for a cloned voice');
+  if(ev.some(e=>e.provider==='claude_vision'))bits.push('a frame-by-frame read for visual tells');
+  if(bits.length)h+='<div class="meta" style="margin-top:8px"><b>What was looked at:</b> '+esc(bits.join('; '))+'. Sampling means a short manipulated stretch inside a long video can be missed.</div>';
+  // v0.66.50: when provenance or the creator's label already settled it,
+  // say the detector was deliberately not run. Silence there used to look
+  // like a failure; it is the system declining to pay to double-check a
+  // signature it already trusts more than the detector.
+  if(au.stage2_gate_reason==='already settled by provenance/label')
+    h+='<div class="meta" style="margin-top:6px"><b>The forensic detector was not run.</b> It did not need to be — the evidence above outranks anything it could have said, so Glowby did not spend a paid check to second-guess it.</div>';
+  else h+='<div class="meta" style="margin-top:6px"><b>Which way the detector leans:</b> '+aiLean(au)+'</div>';
+  if(au.demoted_reason)h+='<div class="meta" style="margin-top:4px;opacity:.85">'+esc(au.demoted_reason)+'</div>';
+  h+='<div class="meta" style="margin-top:6px"><a href="/about#aimedia" target="_blank">why the detector is ranked last ↗</a></div>';
+  return h+'</div>';
+}
+function aiRow(au,mediaLeads){
+  if(!au||au.stage!==2||mediaLeads)return '';
+  // a failed stage 2 must never read as "no synthetic signal": the
+  // detector did not answer, so Glowby has nothing to report (v0.66.42)
+  if(au.stage2_status==='failed'){
+    return '<div class="airow">\ud83d\udd0d <b>AI check incomplete</b> <span class="st">\u00b7 the detector did not answer</span> <a id="aiDet">details \u2193</a></div>';
+  }
+  if(au.origin_result==='no_synthetic_signal'){
+    const w=auWeak(au);
+    const st=w!==null?('\u00b7 weak signals only ('+w+')'):'\u00b7 no synthetic signal';
+    return '<div class="airow">\ud83d\udd0d <b>AI check ran</b> <span class="st">'+st+'</span> <a id="aiDet">details \u2193</a></div>';
+  }
+  return '';
+}
+function render(){
+  const d=currentResult; if(!d)return;
+  addMyCheck(d);
+  document.querySelector('.wrap').classList.add('active');
+  const out=$('out'); out.style.display='block';
+  const gated=!!(d.private||d.refused||d.explicit_offer);
+  let html=gated?'':'<div class="toggle" id="vt"><span id="tl" class="'+(currentView==='list'?'on':'')+'">List</span><span id="tr" class="'+(currentView==='reel'?'on':'')+'">Reel view</span></div>';
+  html+=(currentView==='list'||gated)?renderList(d):renderReel(d);
+  const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
+  if(!gated){
+  html+='<div class="actions">';
+  html+='<button id="copyRes">🔗 Copy result link</button>';
+  html+='<button id="repBtn">🛠 Report a mistake</button>';
+  html+='</div>';
+  }
+  const srcUrl=(!gated&&d.url&&/^https?:\/\//.test(d.url))?d.url:null;
+  if(srcUrl)html+='<div style="text-align:center;margin:2px 0 10px"><a href="'+esc(srcUrl)+'" target="_blank" rel="noopener" class="meta" style="color:var(--brand)">\u25b6 Open the original video \u2197</a></div>';
+  html+='<div class="aidisc">Glowby is AI-powered. Scores and verdicts are automated assessments of the evidence found — they can be wrong. Always check the sources. Not medical, legal, or financial advice. <a href="/about#terms">Terms</a></div>';
+  if(d.url_key){
+    html+='<div id="fuWrap"><div id="fuThread"></div>';
+    const auDone=!!(d.authenticity&&(d.authenticity.stage===2||d.authenticity.stage2_status==='completed'));
+    const canAi=!!(d.url&&/^https?:\/\//.test(d.url));
+    html+='<div class="fu-tabs">'
+      +'<button type="button" id="fuTabAsk" class="fu-tab"><span class="ico">\ud83d\udcac</span><span><b>Ask a follow-up</b><small>about this check</small></span></button>'
+      +(canAi?('<button type="button" id="fuAi" class="fu-tab'+(auDone?' done':'')+'"'+(auDone?' disabled':'')+'><span class="ico">\ud83e\uddea</span><span><b>'+(auDone?'AI check included above':'Run AI detect on this video')+'</b><small>'+(auDone?'see the AI check details':'\u2248 4\u00a2 \u00b7 6 frames \u00b7 skips fact-checking')+'</small></span></button>'):'')
+      +'</div>';
+    html+='<form id="fuForm" class="fu-form" hidden><input type="text" id="fuIn" maxlength="400" placeholder="Ask a follow-up about this check…" autocomplete="off"><button type="button" id="fuMic" class="fu-mic" aria-label="Speak your follow-up" title="Speak your follow-up"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button><button type="submit" id="fuGo" aria-label="ask">→</button></form></div>';
+  }
+  out.innerHTML=html;
+  wireFeedback(d,out);
+  const ad=$('aiDet');
+  if(ad)ad.onclick=(e)=>{e.preventDefault();const det=out.querySelector('.audet');if(det){det.open=true;det.scrollIntoView({behavior:'smooth',block:'center'});}};
+  const tro=$('trOpen');
+  if(tro)tro.onclick=(e)=>{e.preventDefault();$('trBody').textContent=(d.title?'Caption: '+d.title+'\n\n':'')+(d.transcript||'');$('trOverlay').hidden=false;};
+  (function(){const ov=$('trOverlay'),cl=$('trClose');if(!ov)return;
+    if(cl)cl.onclick=()=>{ov.hidden=true;};
+    ov.onclick=(e)=>{if(e.target===ov)ov.hidden=true;};})();
+  const tm=out.querySelector('.ttlmore');
+  if(tm)tm.onclick=(e)=>{e.preventDefault();
+    tm.outerHTML='<span class="meta"> \u2014 '+esc(tm.dataset.full||'')+'</span>';};
+  wireMic($('fuMic'),$('fuIn'));
+  const fta=$('fuTabAsk');
+  if(fta)fta.onclick=()=>{const f=$('fuForm');if(!f)return;f.hidden=!f.hidden;fta.classList.toggle('on',!f.hidden);if(!f.hidden){const i=$('fuIn');if(i)i.focus();}};
+  const fai=$('fuAi');
+  if(fai&&!fai.disabled)fai.onclick=async()=>{
+    fai.disabled=true; fai.querySelector('b').textContent='Running the AI check\u2026';
+    const th=$('fuThread');
+    try{
+      const r=await checkFetch({url:d.url||'',ai_only:true,detect_ai:true,force:true});
+      const j=await r.json();
+      if(!j||!j.job_id)throw new Error('no job');
+      currentResult=await poll(j.job_id);
+      currentView='list';render();
+    }catch(err){
+      fai.disabled=false; fai.querySelector('b').textContent='Run AI detect on this video';
+      if(th)th.insertAdjacentHTML('beforeend','<div class="uq-card"><div class="uq-a">Could not start the AI check \u2014 try again in a moment.</div></div>');
+    }
+  };
+  const ff=$('fuForm');
+  if(ff)ff.onsubmit=async(e)=>{
+    e.preventDefault();
+    const q=$('fuIn').value.trim(); if(q.length<3)return;
+    const th=$('fuThread'), go=$('fuGo');
+    th.insertAdjacentHTML('beforeend','<div class="fu-q">'+esc(q)+'</div>');
+    $('fuIn').value=''; go.disabled=true;
+    const hold=document.createElement('div'); hold.className='fu-a fu-wait'; hold.textContent='thinking…';
+    th.appendChild(hold);
+    try{
+      await askConsent();
+      const r=await fetch('/api/followup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key,question:q})});
+      const j=await r.json();
+      hold.classList.remove('fu-wait');
+      hold.textContent=r.ok?j.answer:(j.detail||'Could not answer — try again.');
+      if(!r.ok)hold.classList.add('fu-err');
+    }catch(err){hold.classList.remove('fu-wait');hold.classList.add('fu-err');hold.textContent='Could not answer — try again.';}
+    go.disabled=false;
+    hold.insertAdjacentHTML('afterend','');
+  };
+  const rc=$('recheck');
+  if(rc)rc.onclick=async(e)=>{
+    if(e&&e.preventDefault)e.preventDefault();
+    // first tap arms it, second tap runs it (in-page, no confirm popup)
+    if(!rc.dataset.armed){rc.dataset.armed='1';const was=rc.textContent;rc.textContent='Tap again to re-run the full check (replaces the stored result)';
+      setTimeout(()=>{if(rc.dataset.armed){delete rc.dataset.armed;rc.textContent=was;}},8000);return;}
+    delete rc.dataset.armed;
+    $('out').style.display='none';setStage('fetching');
+    try{
+      const r=await checkFetch({url:currentResult.url||$('url').value,force:true});
+      const d=await r.json();
+      currentResult=d.job_id?await poll(d.job_id):d;
+      $('steps').style.display='none';currentView='list';render();
+      resetAiChip();
+    }catch(err){$('steps').style.display='none';$('out').style.display='block';$('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';}
+  };
+  if($('tl'))$('tl').onclick=()=>{currentView='list';render();};
+  if($('tr'))$('tr').onclick=()=>{currentView='reel';render();};
+  const pg=$('privGo');
+  if(pg)pg.onclick=async()=>{
+    pg.disabled=true;pg.textContent='Running the private AI check\u2026';
+    try{
+      const r=await checkFetch({url:d.url||'',ai_only:true,detect_ai:true,force:true});
+      const j=await r.json();
+      if(!r.ok)throw new Error(j.detail||'Something went wrong.');
+      currentResult=j.job_id?await poll(j.job_id):j;
+      currentView='list';render();
+    }catch(err){pg.disabled=false;pg.textContent='Could not run \u2014 try again';}
+  };
+  const cr=$('copyRes');
+  if(cr)cr.onclick=async()=>{
+    const t=permalink||resultText(d);  // the link IS the result; text only if no permalink exists
+    try{await navigator.clipboard.writeText(t);cr.textContent='✓ Link copied';}catch(e){showCopyBox(cr,t);}
+    try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_result'})});}catch(e){}};
+  const rb=$('repBtn');
+  if(rb)rb.onclick=()=>{
+    // two kinds of report: the score is wrong, or the content itself is
+    // inappropriate (guideline 1.2: readers can flag objectionable material)
+    if(rb.dataset.open)return;rb.dataset.open='1';
+    const row=document.createElement('div');row.className='rep-row';
+    const scamShown=!!(d.scam&&(d.scam.risk==='high'||d.scam.risk==='medium'));
+    row.innerHTML='<button type="button" data-k="wrong">Score is wrong</button><button type="button" data-k="inappropriate">Inappropriate content</button>'+(scamShown||d.private?'':'<button type="button" data-k="scam">It\u2019s a scam</button>');
+    rb.insertAdjacentElement('afterend',row);
+    row.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+      const kind=b.dataset.k;
+      row.querySelectorAll('button').forEach(x=>x.disabled=true);
+      const file=async(msg)=>{
+        try{
+          const r=await fetch('/api/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url_key:d.url_key||'',url:d.url||'',message:msg,kind:kind})});
+          if(r.ok){row.remove();rb.textContent=kind==='wrong'?'\u2713 Report filed \u2014 thank you':'\u2713 Flagged \u2014 thank you, we will review it';rb.disabled=true;}
+          else{const j=await r.json();inlineNote(row,j.detail||'Could not file the report \u2014 try again.','fb-err');row.querySelectorAll('button').forEach(x=>x.disabled=false);}
+        }catch(e){inlineNote(row,'Could not file the report \u2014 try again.','fb-err');row.querySelectorAll('button').forEach(x=>x.disabled=false);}
+      };
+      if(kind==='scam'){
+        // a missed scam is feedback for the scam lens (reviewed on Mondays), not a moderation report
+        inlineAsk(row,'What makes it a scam? (optional)',(msg)=>{sendFeedback(d,'scam_missed',-2,msg);row.remove();rb.textContent='\u2713 Flagged as a possible scam \u2014 thank you';rb.disabled=true;},{skip:true});
+        return;
+      }
+      if(kind==='wrong'){
+        inlineAsk(row,'What looks wrong? (add your email if you want a reply)',file,{min:10,minMsg:'Please describe the problem in a sentence or two.'});
+      }else{
+        inlineAsk(row,'What is inappropriate about it? (optional)',file,{skip:true});
+      }
+    });
+  };
+}
+// NO NATIVE POPUPS (Sept 15): alert/confirm/prompt don't exist inside the
+// iPhone app's web view — confirm() answers "no" and prompt() returns null
+// without ever showing anything. Re-check and "Score is wrong" were dead in
+// the app because of it. Everything asks in-page now.
+function inlineNote(after,text,cls){
+  const n=document.createElement('div');n.className='fb-thanks'+(cls?' '+cls:'');n.textContent=text;
+  after.insertAdjacentElement('afterend',n);setTimeout(()=>{if(n.parentNode)n.remove();},6000);return n;}
+function inlineAsk(after,placeholder,onSend,opts){
+  // a one-line text box with Send (and optional Skip) — returns the box
+  opts=opts||{};
+  const nb=document.createElement('div');nb.className='fb-note';
+  nb.innerHTML='<input type="text" maxlength="400" placeholder="'+esc(placeholder)+'"><button type="button" class="snd">Send</button>'+(opts.skip?'<button type="button" class="skp">Skip</button>':'');
+  after.insertAdjacentElement('afterend',nb);
+  const inp=nb.querySelector('input');inp.focus();
+  const go=(text)=>{nb.remove();onSend(text);};
+  nb.querySelector('.snd').onclick=()=>{const t=inp.value.trim();if(opts.min&&t.length<opts.min){inlineNote(nb,opts.minMsg||'Please write a sentence or two.','fb-err');return;}go(t);};
+  const sk=nb.querySelector('.skp');if(sk)sk.onclick=()=>go('');
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();nb.querySelector('.snd').click();}});
+  return nb;}
+function showCopyBox(after,text){
+  const nb=document.createElement('div');nb.className='fb-note';
+  nb.innerHTML='<input type="text" readonly><button type="button">Done</button>';
+  nb.querySelector('input').value=text;after.insertAdjacentElement('afterend',nb);
+  const i=nb.querySelector('input');i.focus();i.select();
+  nb.querySelector('button').onclick=()=>nb.remove();}
+function setStage(stage){
+  const idx=STAGE_MAP[stage]??-1;
+  document.querySelector('.wrap').classList.add('active');
+  $('steps').style.display='block';
+  for(let i=0;i<4;i++){const el=$('st'+i);el.className='step'+(i<idx?' done':(i===idx?' on':''));}
+}
+function renderLive(p){
+  const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
+  const show=(p.claims||[]).filter(fwd);
+  const queued=show.filter(c=>c.verdict||c.verifying);
+  const done=show.filter(c=>c.verdict).length;
+  let html='<div class="meta">'+esc(p.platform||'')+' · '+esc(p.title||'')+' · '+esc(p.uploader||'')+(p.posted_date?' · posted '+esc(p.posted_date):'')+'</div>';
+  html+='<div class="headline"><div class="hero-ring">'+ringSVG(undefined,170,12)+'</div>'+
+    '<div class="hl-label">Verifying claims — '+done+' of '+(queued.length||show.length)+' judged…</div>'+
+    '<div class="hl-sub">Results appear live · the score arrives when the last claim is judged</div></div>';
+  for(const c of show)html+=claimCard(c);
+  return html;
+}
+// ---- Phase 1: leave-and-return (no permissions, no push) ----
+const _origTitle=document.title;
+// ---- Phase 2 (Sept 15): a real notification when the check finishes ----
+// Browser: the Notification API (asked once, at the moment a fresh check
+// starts — a user gesture). iPhone app: the shell is told the job id when
+// it starts and the answer when it ends, and posts a local notification
+// (it keeps waiting for the answer in the background on its own).
+function shell(msg){try{if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.glowby){window.webkit.messageHandlers.glowby.postMessage(msg);return true;}}catch(e){}return false;}
+let _lastJob='';
+function askNotify(jobId){
+  _lastJob=jobId||'';
+  if(shell({type:'started',job_id:_lastJob}))return;
+  try{if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();}catch(e){}
+}
+function notifyDone(){
+  const d=currentResult||{};const rep=d.report||{};
+  const body=rep.one_line||(d.title?('Result ready: '+d.title):'Your result is ready.');
+  shell({type:'done',title:'Glowby finished checking',body:body,hidden:!!document.hidden,job_id:_lastJob});
+  if(!document.hidden)return;
+  document.title='\u2713 Result ready \u2014 Glowby';
+  const restore=()=>{document.title=_origTitle;
+    document.removeEventListener('visibilitychange',restore);};
+  document.addEventListener('visibilitychange',restore);
+  try{if('Notification' in window&&Notification.permission==='granted'){
+    const n=new Notification('Glowby finished checking',{body:body,icon:'/static/icon-192.png',tag:'glowby-done'});
+    n.onclick=()=>{try{window.focus();}catch(e){}n.close();};}}catch(e){}
+  try{if(navigator.vibrate)navigator.vibrate([120,60,120]);}catch(e){}
+}
+function setPending(p){try{localStorage.setItem('gbPending',JSON.stringify(
+  Object.assign({t:Date.now()},p)));}catch(e){}}
+function clearPending(){try{localStorage.removeItem('gbPending');}catch(e){}}
+
+async function poll(jobId){
+  for(let i=0;i<375;i++){
+    await new Promise(r=>setTimeout(r,800));
+    let j;
+    try{j=await(await fetch('/api/job/'+jobId)).json();}catch(e){continue;}
+    if(j.status==='done'){return j.result;}
+    if(j.status==='error'){throw new Error(j.error||'Something went wrong.');}
+    setStage(j.stage);
+    if(j.partial){$('out').style.display='block';$('out').innerHTML=renderLive(j.partial);}
+  }
+  throw new Error('Timed out. Please try again.');
+}
+
+// ---- image check: screenshot / camera photo ----
+let pendingImage=null;
+const camBtn=$('cam'),camIn=$('camIn');
+// app-mode double lock (2.1a): force library-only BEFORE any tap is
+// possible, even if this script runs ahead of the appmode gate
+if(/[?&]app=1(&|$)/.test(location.search)&&camIn){camIn.setAttribute('multiple','');}
+if(camBtn&&camIn){
+  camBtn.onclick=()=>camIn.click();
+  camIn.onchange=()=>{
+    const file=camIn.files&&camIn.files[0]; if(!file)return;
+    const img=new Image();
+    img.onload=async()=>{
+      const MAX=1568;
+      let w=img.naturalWidth,h=img.naturalHeight;
+      const s=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(img.src);
+      pendingImage=cv.toDataURL('image/jpeg',0.85);
+      camIn.value='';
+      $('url').value='';
+      runImageCheck();
+    };
+    img.onerror=()=>{URL.revokeObjectURL(img.src);camIn.value='';
+      $('out').style.display='block';
+      $('out').innerHTML='<span class="err">Couldn&rsquo;t read that photo &mdash; try a different one (JPEG or PNG work best).</span>';};
+    img.src=URL.createObjectURL(file);
+  };
+}
+// ---- recording check: a voicemail, a call, a voice note ----
+// Whisper hears it, the scam lens reads it, the voice detector listens
+// for a cloned voice. The recording itself is never stored.
+const recBtn=$('recBtn'),recIn=$('recIn');
+if(recBtn&&recIn){
+  recBtn.onclick=(e)=>{e.preventDefault();recIn.click();};
+  recIn.onchange=()=>{
+    const file=recIn.files&&recIn.files[0]; if(!file)return;
+    if(file.size>10*1024*1024){recIn.value='';$('out').style.display='block';$('out').innerHTML='<span class="err">That recording is over 10 MB \u2014 trim it to the part that matters (a few minutes is plenty).</span>';return;}
+    const rd=new FileReader();
+    rd.onload=()=>{const b64=String(rd.result||'');recIn.value='';$('url').value='';runAudioCheck(b64);};
+    rd.onerror=()=>{recIn.value='';$('out').style.display='block';$('out').innerHTML='<span class="err">Couldn\u2019t read that recording \u2014 try an m4a, mp3 or wav.</span>';};
+    rd.readAsDataURL(file);
+  };
+}
+async function runAudioCheck(b64){
+  const go=$('go');go.disabled=true;go.textContent='\u2026';
+  $('out').style.display='none';setStage('fetching');
+  try{
+    const r=await checkFetch({url:'',audio_b64:b64,question:userQuestion()});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Something went wrong.');
+    if(d.job_id){setPending({job_id:d.job_id});askNotify(d.job_id);}
+    currentResult=d.job_id?await poll(d.job_id):d;
+    clearPending();notifyDone();
+    $('steps').style.display='none';
+    currentView='list';render();
+    resetAiChip();
+  }catch(err){
+    clearPending();
+    $('steps').style.display='none';
+    $('out').style.display='block';
+    $('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';
+  }
+  go.disabled=false;go.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';tsReset();
+}
+
+// NATIVE HANDOFF: the iOS share extension saves a shared photo and the
+// app hands it here as a data URL. Same resize + same check path as the
+// camera button, so the app and the website behave identically.
+window.glowbyReceiveImage=function(dataUrl){
+  if(!dataUrl||typeof dataUrl!=='string')return;
+  const img=new Image();
+  img.onload=()=>{
+    const MAX=1568;
+    let w=img.naturalWidth,h=img.naturalHeight;
+    const s=Math.min(1,MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(img,0,0,w,h);
+    pendingImage=cv.toDataURL('image/jpeg',0.85);
+    $('url').value='';
+    runImageCheck();
+  };
+  img.onerror=()=>{$('out').style.display='block';
+    $('out').innerHTML='<span class="err">Couldn&rsquo;t read the shared photo &mdash; try choosing it with the camera button instead.</span>';};
+  img.src=dataUrl;
+};
+// v0.66.4 headcount beacon: an anonymous random device code, made here and
+// kept only on this device (no name, no email, no IP). Crawlers and link
+// previews never run this, so they no longer count as visitors.
+(function(){try{
+  let v=null;try{v=localStorage.getItem('gbVid');}catch(e){}
+  if(!/^[a-f0-9]{32}$/.test(v||'')){v=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');try{localStorage.setItem('gbVid',v);}catch(e){}}
+  const kind=/[?&]app=1(&|$)/.test(location.search)?'app':(/^\/r\//.test(location.pathname)?'result':(location.pathname==='/'||location.pathname==='/app')?'home':'other');
+  fetch('/api/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vid:v,kind}),keepalive:true}).catch(()=>{});
+}catch(e){}})();
+// A shared link (?u=...) lands in the box READY — it does not auto-run.
+// Auto-running fired before the person could choose "+ detect AI" /
+// "AI only", so their choice was silently ignored. Now: prefill, focus,
+// and a visible nudge; the person picks options and taps the arrow.
+(function(){
+  if(!/[?&]u=([^&]+)/.test(location.search))return;
+  window.addEventListener('load',()=>{
+    const go=$('go'); if(go){go.classList.add('pulse');}
+    const hint=document.querySelector('.aihint');
+    if(hint){const n=document.createElement('div');n.className='aihint';n.id='sharedHint';
+      n.style.color='var(--brand)';n.textContent='Link received \u2014 choose an option below if you want, then tap \u2191 to check';
+      hint.parentNode.insertBefore(n,hint);}
+  });
+})();
+async function runImageCheck(){
+  if(!pendingImage)return;
+  const go=$('go');go.disabled=true;go.textContent='…';
+  $('out').style.display='none';setStage('fetching');
+  try{
+    const r=await checkFetch({url:'',image_b64:pendingImage,question:userQuestion()});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Something went wrong.');
+    if(d.job_id){setPending({job_id:d.job_id});askNotify(d.job_id);}
+    currentResult=d.job_id?await poll(d.job_id):d;
+    clearPending();notifyDone();
+    $('steps').style.display='none';
+    currentView='list';render();
+    (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
+      if(window.setAsk)setAsk(false);}})();
+    resetAiChip();
+  }catch(err){
+    clearPending();
+    $('steps').style.display='none';
+    $('out').style.display='block';
+    $('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';
+  }
+  pendingImage=null;
+  go.disabled=false;go.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';tsReset();
+}
+
+$('f').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const go=$('go');go.disabled=true;go.textContent='…';
+  $('out').style.display='none';setStage('fetching');
+  try{
+    const r=await checkFetch({url:$('url').value});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Something went wrong.');
+    if(d.job_id){setPending({job_id:d.job_id,url:$('url').value});askNotify(d.job_id);}
+    currentResult=d.job_id?await poll(d.job_id):d;
+    clearPending();notifyDone();
+    $('steps').style.display='none';
+    currentView='list';render();
+    // question was delivered with this check — reset the +ask chip
+    (function(){const qi=$('qIn');if(qi&&qi.value){qi.value='';
+      if(window.setAsk)setAsk(false);}})();
+    resetAiChip();
+  }catch(err){
+    clearPending();
+    $('steps').style.display='none';
+    $('out').style.display='block';
+    $('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';
+  }
+  go.disabled=false;go.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';tsReset();
+});
+// ---- Phase 1: resume a check left running when the tab was closed ----
+(async function resumePending(){
+  let p=null;try{p=JSON.parse(localStorage.getItem('gbPending')||'null');}catch(e){}
+  if(!p||!p.job_id)return;
+  if(Date.now()-(p.t||0)>30*60*1000){clearPending();return;}
+  try{
+    setStage('fetching');$('steps').style.display='';
+    currentResult=await poll(p.job_id);
+  }catch(e){
+    // job gone (server restarted or expired) - the finished result may be
+    // in the cache: re-ask by URL; cached answers return instantly and
+    // need no bot check
+    currentResult=null;
+    if(p.url){try{
+      const r=await fetch('/api/check',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({url:p.url})});
+      const d=await r.json();
+      if(r.ok&&!d.job_id)currentResult=d;
+    }catch(_){}}
+  }
+  clearPending();
+  $('steps').style.display='none';
+  if(currentResult){
+    currentView='list';render();notifyDone();
+    $('out').insertAdjacentHTML('afterbegin',
+      '<div class="meta" style="color:var(--good)">\u2713 Your earlier check finished while you were away.</div>');
+  }
+})();
+
+// topbar: copy the plain site link (glowby.io) to share
+(function(){
+  const tb=document.getElementById('tbShare');
+  if(!tb)return;
+  tb.onclick=async()=>{
+    const link=location.origin;
+    try{await navigator.clipboard.writeText(link);
+      const old=tb.textContent;tb.textContent='\u2713 Copied';
+      setTimeout(()=>{tb.textContent=old;},1600);
+    }catch(e){const a=document.getElementById('tbShare');if(a)showCopyBox(a,link);}
+    try{fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'copy_link'})});}catch(e){}
+  };
+})();
+
+// ---- sidebar: trending (server) + your checks (this device) ----
+const sb=$('sb');
+$('sbBtn').onclick=()=>{sb.classList.toggle('open');document.body.classList.toggle('sb-open',sb.classList.contains('open'));try{localStorage.setItem('sbOpen',sb.classList.contains('open')?'1':'0');}catch(e){}};
+(function(){const bd=document.getElementById('sbBackdrop');if(bd)bd.addEventListener('click',()=>{sb.classList.remove('open');document.body.classList.remove('sb-open');try{localStorage.setItem('sbOpen','0');}catch(e){}});})();
+try{if(localStorage.getItem('sbOpen')==='1')sb.classList.add('open');}catch(e){}
+function sbItem(c){
+  const col=ringColor(c.score===null||c.score===undefined?null:c.score);
+  const badge=c.answer?'💡':(c.score===null||c.score===undefined?'—':c.score.toFixed(1));
+  const sc=c.scam?('<span title="scam warning" style="color:'+(c.scam==='high'?'#f87171':'#fab219')+';margin-right:4px">\u26a0</span>'):'';
+  return '<a class="sb-item" href="/r/'+encodeURIComponent(c.url_key)+'"><span class="sb-dot" style="color:'+col+';border-color:'+col+'">'+esc(String(badge))+'</span><span>'+sc+esc(c.title||'')+'</span></a>';
+}
+(async function(){
+  try{
+    const r=await fetch('/api/recent');const d=await r.json();
+    $('sbTrend').innerHTML=(d.checks&&d.checks.length)?d.checks.map(sbItem).join(''):'<div class="sb-empty">Nothing checked yet today.</div>';
+  }catch(e){$('sbTrend').innerHTML='<div class="sb-empty">Couldn’t load.</div>';}
+})();
+function myChecks(){try{return JSON.parse(localStorage.getItem('myChecks')||'[]');}catch(e){return [];}}
+function renderMine(){const m=myChecks();if(m.length)$('sbMine').innerHTML=m.map(sbItem).join('');}
+function addMyCheck(d){
+  if(!d||!d.url_key)return;
+  try{
+    const rep=d.report||{};
+    let m=myChecks().filter(c=>c.url_key!==d.url_key);
+    m.unshift({url_key:d.url_key,title:(d.title||'').slice(0,80),
+      score:rep.headline_score===undefined?null:rep.headline_score,
+      state:rep.headline_state||'unverified',answer:!!d.answer_mode,
+      scam:(d.scam&&(d.scam.risk==='high'||d.scam.risk==='medium'))?d.scam.risk:null});
+    localStorage.setItem('myChecks',JSON.stringify(m.slice(0,10)));
+  }catch(e){}
+  renderMine();
+}
+renderMine();
+// handoff from the landing page: /app?u=<link> arrives prefilled
+(function(){
+  const u=new URLSearchParams(location.search).get('u');
+  if(u){const i=$('url');i.value=u;i.focus();}
+})();
+// permalink mode: /r/<key> pages preload the stored result
+(async function(){
+  const m=location.pathname.match(/^\/r\/(.+)$/);
+  if(!m)return;
+  try{
+    const r=await fetch('/api/result/'+m[1]);
+    if(!r.ok)return;
+    currentResult=await r.json();
+    currentView='list';render();
+    window.scrollTo(0,0);
+  }catch(e){}
+})();
+
+// ---- glow: constellation background ----
+(function(){
+  var reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var canvas=document.getElementById("constellation");if(!canvas)return;
+  var ctx=canvas.getContext("2d"),W=0,H=0,DPR=1,parts=[],raf=null,tt=0,mouse={x:-9999,y:-9999,on:false},LINK=134,LIGHT=200;
+  function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=canvas.clientWidth;H=canvas.clientHeight;
+    canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);
+    var lmr=document.documentElement.classList.contains("light");
+    var n=lmr?Math.max(60,Math.min(150,Math.floor(W*H/9500))):Math.max(38,Math.min(90,Math.floor(W*H/17000)));parts=[];
+    for(var i=0;i<n;i++)parts.push({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.3,vy:(Math.random()-.5)*.3,r:Math.random()*1.5+1.1,tw:Math.random()*6.283});}
+  function frame(){tt+=0.016;ctx.clearRect(0,0,W,H);
+    for(var i=0;i<parts.length;i++){var p=parts[i];p.x+=p.vx;p.y+=p.vy;
+      if(p.x<-25)p.x=W+25;if(p.x>W+25)p.x=-25;if(p.y<-25)p.y=H+25;if(p.y>H+25)p.y=-25;
+      if(mouse.on){var dx=p.x-mouse.x,dy=p.y-mouse.y,d2=dx*dx+dy*dy;
+        if(d2<LIGHT*LIGHT&&d2>0.5){var d=Math.sqrt(d2),f=(LIGHT-d)/LIGHT;p.x+=(dx/d)*f*3;p.y+=(dy/d)*f*3;}}}
+    var lm=document.documentElement.classList.contains("light");
+    ctx.lineWidth=lm?1.4:1;
+    for(var a=0;a<parts.length;a++)for(var b=a+1;b<parts.length;b++){
+      var A=parts[a],B=parts[b],ddx=A.x-B.x,ddy=A.y-B.y,dd=ddx*ddx+ddy*ddy;
+      if(dd<LINK*LINK){var base=(1-Math.sqrt(dd)/LINK),lit=0;
+        if(mouse.on){var cx=(A.x+B.x)/2-mouse.x,cy=(A.y+B.y)/2-mouse.y,cm=Math.sqrt(cx*cx+cy*cy);if(cm<LIGHT)lit=(1-cm/LIGHT);}
+        ctx.strokeStyle=(lm?"rgba(5,5,8,":"rgba(158,146,255,")+(base*(lm?(0.45+lit*0.35):(0.26+lit*0.5))).toFixed(3)+")";
+        ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);ctx.stroke();}}
+    for(var k=0;k<parts.length;k++){var q=parts[k],boost=0;
+      if(mouse.on){var bx=q.x-mouse.x,by=q.y-mouse.y,bd=Math.sqrt(bx*bx+by*by);if(bd<LIGHT)boost=(1-bd/LIGHT);}
+      var tw2=0.72+0.28*Math.sin(tt*1.7+q.tw);
+      ctx.shadowBlur=lm?0:7+boost*20;ctx.shadowColor="rgba(150,130,255,0.95)";
+      ctx.fillStyle=(lm?"rgba(5,5,8,":"rgba(220,214,255,")+Math.min(1,(lm?0.9:0.45+boost*0.5)*tw2).toFixed(3)+")";
+      ctx.beginPath();ctx.arc(q.x,q.y,q.r+(lm?0.6:0)+boost*2.4,0,6.2832);ctx.fill();}
+    ctx.shadowBlur=0;raf=requestAnimationFrame(frame);}
+  function start(){resize();if(reduce)return;if(raf)cancelAnimationFrame(raf);frame();}
+  window.addEventListener("resize",start);
+  if(!reduce){
+    window.addEventListener("mousemove",function(e){mouse.x=e.clientX;mouse.y=e.clientY;mouse.on=true;});
+    window.addEventListener("mouseout",function(){mouse.on=false;});
+    document.addEventListener("visibilitychange",function(){if(document.hidden){if(raf){cancelAnimationFrame(raf);raf=null;}}else if(!raf)frame();});
+  }
+  start();
+})();
+// ---- topbar Trending opens the sidebar feed ----
+const tbT=$('tbTrend');
+if(tbT)tbT.onclick=()=>{sb.classList.add('open');try{localStorage.setItem('sbOpen','1');}catch(e){}};
+// ---- light / dark mode ----
+(function(){
+  const btns=[document.getElementById('tbTheme'),document.getElementById('appTheme')].filter(Boolean);
+  function apply(t){
+    document.documentElement.classList.toggle('light',t==='light');
+    btns.forEach(b=>b.textContent=t==='light'?'☀':'☾');
+    const m=document.querySelector('meta[name="theme-color"]');
+    if(m)m.setAttribute('content',t==='light'?'#ffffff':'#08070F');
+    // re-seed the constellation at the theme's density
+    try{window.dispatchEvent(new Event('resize'));}catch(e){}
+  }
+  let theme='dark';
+  try{theme=localStorage.getItem('gbTheme')||'dark';}catch(e){}
+  apply(theme);
+  btns.forEach(b=>b.onclick=()=>{
+    theme=theme==='light'?'dark':'light';
+    try{localStorage.setItem('gbTheme',theme);}catch(e){}
+    apply(theme);
+  });
+})();
+// ---- voice input (browser speech recognition; free, on-device UI) ----
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+let activeRec=null;
+function wireMic(btn,input){
+  if(!btn)return;
+  // App Review 2.2: a control that cannot work must not be visible.
+  // Speech recognition is absent (or non-functional) inside iOS web
+  // views, so the button is removed there, not just disabled.
+  var _ua=navigator.userAgent||'';
+  var _ios=/iPad|iPhone|iPod/.test(_ua)
+           ||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  var _embedded=_ios&&!/Safari\//.test(_ua)&&!/CriOS|FxiOS|EdgiOS/.test(_ua);
+  if(!SR||_embedded){btn.style.display='none';return;}
+  btn.onclick=()=>{
+    if(activeRec){try{activeRec.stop();}catch(e){} return;}
+    let rec;
+    try{rec=new SR();}catch(e){btn.style.display='none';return;}
+    rec.lang=navigator.language||'en-US';
+    rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=1;
+    const base=input.value;
+    rec.onresult=(ev)=>{
+      let t='';for(const r of ev.results)t+=r[0].transcript;
+      input.value=(base?base+' ':'')+t.trim();
+    };
+    const done=()=>{activeRec=null;btn.classList.remove('rec');};
+    rec.onend=done;
+    rec.onerror=(ev)=>{done();if(ev.error==='not-allowed'){const f=document.getElementById('f');if(f)inlineNote(f,'Glowby needs microphone permission to hear you \u2014 allow it in your settings and try again.','fb-err');}};
+    activeRec=rec;btn.classList.add('rec');input.focus();
+    try{rec.start();}catch(e){done();}
+  };
+}
+wireMic(document.getElementById('mic'),document.getElementById('url'));
+if("serviceWorker" in navigator){addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js").catch(()=>{})})}
+</script>
+
+<nav id="tabbar">
+  <button data-tab="check" class="on" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+    Check</button>
+  <button data-tab="trending" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>
+    Trending</button>
+  <button data-tab="history" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
+    History</button>
+  <button data-tab="about" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.4 8 8 10 4.6-2 8-5 8-10V6z"/><path d="M9 12l2 2 4-4"/></svg>
+    About</button>
+</nav>
+
+<script>
+// ================= APP MODE controller ==============================
+(function(){
+  // App format is for the native iOS app. The main app loads ?app=1,
+  // but the SHARE EXTENSION opens the site without it — and App Review
+  // saw the beta label and the dead voice button there. So also detect
+  // an iOS in-app web view directly: Safari's UA carries "Version/" and
+  // "Safari/"; a WKWebView (our shell and the share sheet) carries
+  // neither. Anything embedded gets the app format too.
+  var ua = navigator.userAgent || '';
+  var iOS = /iPad|iPhone|iPod/.test(ua)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var embedded = iOS && !/Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS/.test(ua);
+  var isApp = /[?&]app=1(&|$)/.test(location.search) || embedded;
+  if(!isApp) return;
+  document.documentElement.classList.add('appmode','has-tabbar');
+
+  // NEW-TAB LINKS (Sept 15): inside the app's web view a target="_blank"
+  // link is silently dropped unless the shell handles it — "what's sent",
+  // every source link under every claim, "open the original video" were
+  // all dead taps. Now: the shell is asked to open outside sites in Safari
+  // (v4.4+); shells that can't get the link loaded in place instead, and
+  // the swipe-back gesture returns to the result.
+  document.addEventListener('click', function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[target="_blank"]') : null;
+    if(!a || !a.href) return;
+    ev.preventDefault();
+    var external = a.host && a.host !== location.host;
+    var handled = false;
+    try{
+      var mh = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.glowby;
+      if(mh && external && window.__glowbyShellOpens){ mh.postMessage({type:'open', url:a.href}); handled = true; }
+    }catch(e){}
+    if(!handled) location.href = a.href;
+  }, true);
+
+  // 2.1a CRASH FIX: in the app, image upload is PHOTO-LIBRARY ONLY.
+  // A multi-select image input never offers "Take Photo" on iOS (a camera
+  // returns one photo), so the camera-permission crash path cannot appear.
+  // The library picker is Apple's out-of-process UI: zero permissions.
+  var camI = document.getElementById('camIn');
+  if(camI) camI.setAttribute('multiple','');
+
+  var scoreChip = document.getElementById('appScore');
+  if(scoreChip) scoreChip.onclick = function(){ location.href='/about?app=1#ratings'; };
+
+  // one-tap paste (uses the clipboard the OS shares with the app)
+  var pb = document.getElementById('pasteBtn');
+  if(pb) pb.onclick = async function(){
+    try{
+      var t = await navigator.clipboard.readText();
+      if(t){ var u = document.getElementById('url'); u.value = t.trim();
+        document.getElementById('f').requestSubmit
+          ? document.getElementById('f').requestSubmit()
+          : document.getElementById('go').click(); }
+      else { document.getElementById('url').focus(); }
+    }catch(e){ document.getElementById('url').focus(); }
+  };
+
+  // action cards
+  async function pasteAndCheck(){
+    try{
+      var t = await navigator.clipboard.readText();
+      if(t && t.trim()){ var u=document.getElementById('url'); u.value=t.trim();
+        var f=document.getElementById('f');
+        f.requestSubmit ? f.requestSubmit() : document.getElementById('go').click();
+        return; }
+    }catch(e){}
+    focusInput('Paste a link or type a claim…');
+  }
+  function focusInput(hint){
+    var u=document.getElementById('url');
+    if(hint) u.setAttribute('placeholder', hint);
+    window.scrollTo({top:0,behavior:'smooth'}); u.focus();
+  }
+  var cards = document.getElementById('appCards');
+  if(cards) cards.addEventListener('click', function(e){
+    var c = e.target.closest('.acard'); if(!c) return;
+    var act = c.dataset.act;
+    if(act==='paste') pasteAndCheck();
+    else if(act==='video') focusInput('Paste a YouTube Short or TikTok link…');
+    else if(act==='article') focusInput('Paste a news article link…');
+    else if(act==='ask') focusInput('Ask a question, e.g. is the earth flat?');
+  });
+
+  var bar = document.getElementById('tabbar');
+  function setActive(tab){
+    bar.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.tab===tab); });
+  }
+  var sb = document.getElementById('sb');
+  function openDrawer(scrollToMine){
+    if(sb){ sb.classList.add('open');
+      var anchor = document.getElementById(scrollToMine ? 'sbMineHdr' : 'sbTrendHdr');
+      if(anchor) setTimeout(function(){ anchor.scrollIntoView({block:'start'}); }, 60);
+    }
+  }
+  function closeDrawer(){ if(sb) sb.classList.remove('open'); }
+
+  var currentTab = 'check';
+  function syncBody(){ document.body.classList.toggle('sb-open', !!(sb && sb.classList.contains('open'))); }
+  function goHome(){ closeDrawer(); setActive('check'); currentTab='check'; syncBody();
+    try{localStorage.setItem('sbOpen','0');}catch(e){} }
+
+  bar.addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if(!btn) return;
+    var tab = btn.dataset.tab;
+    // tapping the SAME tab again (Trending/History) closes it — back home
+    if(tab===currentTab && (tab==='trending'||tab==='history') && sb && sb.classList.contains('open')){ goHome(); return; }
+    setActive(tab); currentTab = tab;
+    if(tab==='check'){ goHome(); window.scrollTo({top:0,behavior:'smooth'});
+      var u = document.getElementById('url'); if(u) u.focus(); }
+    else if(tab==='trending'){ openDrawer(false); syncBody(); }
+    else if(tab==='history'){ openDrawer(true); syncBody(); }
+    else if(tab==='about'){ closeDrawer(); syncBody(); location.href='/about?app=1'; }
+  });
+  // tapping the uncovered part of the screen closes the drawer — back home
+  var backdrop = document.getElementById('sbBackdrop');
+  if(backdrop) backdrop.addEventListener('click', goHome);
+  // swipe left on the drawer also closes it
+  if(sb){ var sx=null;
+    sb.addEventListener('touchstart', function(e){ sx=e.touches[0].clientX; }, {passive:true});
+    sb.addEventListener('touchend', function(e){ if(sx!==null && e.changedTouches[0].clientX < sx-60) goHome(); sx=null; }, {passive:true});
+  }
+  syncBody();
+})();
+</script>
+</body>
+</html>

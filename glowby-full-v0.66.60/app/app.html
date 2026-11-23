@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glowby — paste a link, get a fact-check</title>
+<style>
+  :root{color-scheme:dark;
+    --page:#0d0d0d;--surface:#171b26;--surface2:#0f1117;--ink:#e8eaf0;--ink2:#c9cdd8;
+    --muted:#9aa0b0;--track:#2c2c2a;--border:#2a2f3d;
+    --good:#4ade80;--warn:#fab219;--bad:#f87171;--brand:#7c6cf6}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--surface2);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    display:flex;justify-content:center;min-height:100vh}
+  .wrap{width:100%;max-width:680px;padding:40px 18px 60px;text-align:center}
+  h1{font-size:2.4rem;margin:0 0 4px}
+  .tag{color:var(--muted);margin:0 0 6px}
+  .alive{display:inline-block;padding:.35rem .9rem;border-radius:999px;background:#16351f;color:var(--good);font-weight:600;font-size:.85rem}
+  form{margin-top:1.6rem;display:flex;gap:.5rem}
+  input[type=url]{flex:1;padding:.8rem 1rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink);font-size:1rem}
+  button{padding:.8rem 1.3rem;border-radius:10px;border:none;background:var(--brand);color:#fff;font-size:1rem;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.5;cursor:wait}
+  /* progress stepper */
+  #steps{display:none;margin-top:1.4rem;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .step{display:flex;gap:9px;align-items:center;color:var(--muted);font-size:.9rem;padding:4px 0}
+  .step .dot{width:10px;height:10px;border-radius:50%;background:var(--track);flex:0 0 auto}
+  .step.on{color:var(--ink)} .step.on .dot{background:var(--brand);animation:pulse 1s infinite alternate}
+  .step.done{color:var(--ink2)} .step.done .dot{background:var(--good)}
+  @keyframes pulse{from{opacity:.5}to{opacity:1}}
+  /* result */
+  #out{margin-top:1.4rem;text-align:left;display:none}
+  .meta{color:var(--muted);font-size:.85rem;margin-bottom:.6rem}
+  .err{color:var(--bad)}
+  .toggle{display:flex;border:1px solid var(--border);border-radius:999px;overflow:hidden;font-size:.78rem;font-weight:700;margin:0 auto 12px;width:fit-content;cursor:pointer;user-select:none}
+  .toggle span{padding:6px 16px;color:var(--muted)}
+  .toggle span.on{background:var(--brand);color:#fff}
+  .headline{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 16px 18px;margin-bottom:12px;text-align:center}
+  .hero-ring{display:flex;justify-content:center;margin-bottom:8px}
+  .hl-label{font-size:1.05rem;font-weight:700;color:var(--ink);line-height:1.4;margin-top:2px}
+  .ring{position:relative;flex:0 0 auto}
+  .ring svg{transform:rotate(-90deg);display:block}
+  .ring .v{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .num{font-weight:800;line-height:1}
+  .hl-sub{color:var(--muted);font-size:.8rem;margin-top:6px}
+  .safety{background:#3a1414;border:1px solid var(--bad);color:#ffb4b4;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:.9rem;font-weight:600}
+  .claim{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px}
+  .score{flex:0 0 auto;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;border:3px solid var(--muted)}
+  .ctext{font-size:.9rem;line-height:1.45;color:var(--ink2)}
+  .ctext b{color:var(--ink);display:block;margin-bottom:2px}
+  .verdict{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:800;padding:3px 10px;border-radius:999px;margin-top:7px;border:1px solid}
+  .v-g{color:var(--good);border-color:var(--good)} .v-a{color:var(--warn);border-color:var(--warn)}
+  .v-r{color:var(--bad);border-color:var(--bad)} .v-n{color:var(--muted);border-color:var(--muted)}
+  .vsum{margin-top:6px;font-size:.84rem;color:var(--ink2)}
+  .cat{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 8px;border-radius:999px;border:1px solid var(--border);color:var(--muted);margin-top:5px;text-transform:uppercase}
+  .src{margin-top:7px;font-size:.8rem;color:var(--muted);line-height:1.5}
+  .src a{display:inline-block;color:var(--brand);text-decoration:none;font-weight:700;
+    border:1px solid var(--brand);border-radius:999px;padding:1px 10px;margin:2px 2px 2px 0;
+    background:rgba(124,108,246,.08)}
+  .src a:hover{background:rgba(124,108,246,.22)}
+  .src a::after{content:" ↗";font-size:.7em}
+  details{margin-top:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;font-size:.9rem;color:var(--ink2)}
+  summary{cursor:pointer;color:var(--muted);font-weight:600}
+  details.more{margin-top:8px;background:none;border:none;padding:0;font-size:.85rem}
+  details.more summary{color:var(--brand);font-weight:700;font-size:.78rem;list-style:none}
+  details.more summary::before{content:"ⓘ More information ▾"}
+  details.more[open] summary::before{content:"ⓘ Less ▴"}
+  details.more summary span{display:none}
+  details.more .inner{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+  .tr{white-space:pre-wrap;margin-top:8px;max-height:40vh;overflow-y:auto;line-height:1.5;font-size:.85rem}
+  .actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .actions a,.actions button{flex:1;min-width:130px;text-align:center;padding:.6rem .8rem;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink2);font-size:.85rem;font-weight:600;text-decoration:none;cursor:pointer}
+  /* reel view */
+  .reel{position:relative;border-radius:18px;overflow:hidden;min-height:440px;background:linear-gradient(160deg,#2b3350 0%,#171b26 55%,#10131c 100%);border:1px solid var(--border)}
+  .corner{position:absolute;top:14px;right:14px}
+  .chips{position:absolute;left:10px;right:10px;bottom:12px;display:flex;flex-direction:column;gap:7px}
+  .cchip{display:flex;align-items:center;gap:8px;background:rgba(13,13,13,.85);border:1px solid var(--border);border-radius:11px;padding:8px 10px;font-size:.78rem;color:var(--ink2);text-align:left}
+  .reeltitle{position:absolute;top:14px;left:14px;right:90px;color:#fff;font-weight:700;font-size:.85rem;text-align:left;text-shadow:0 1px 4px #000}
+  footer{margin-top:2rem;color:var(--muted);font-size:.8rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Glowby</h1>
+  <p class="tag">Paste a link, get a fact-check.</p>
+  <div class="alive">&#9679; Glowby is alive</div>
+
+  <form id="f">
+    <input type="url" id="url" placeholder="Paste a YouTube, TikTok or news video link..." required>
+    <button id="go" type="submit">Check</button>
+  </form>
+
+  <div id="steps">
+    <div class="step" id="st0"><div class="dot"></div><span>Fetching &amp; transcribing the video</span></div>
+    <div class="step" id="st1"><div class="dot"></div><span>Sorting claims into categories (the gate &amp; router)</span></div>
+    <div class="step" id="st2"><div class="dot"></div><span>Hunting evidence &amp; judging under category rulebooks</span></div>
+    <div class="step" id="st3"><div class="dot"></div><span>Assembling your report</span></div>
+  </div>
+
+  <div id="out"></div>
+  <footer>v0.9.0 &mdash; full fleet + Output agent &middot; one number = the truth score (0.0&ndash;9.9)</footer>
+</div>
+
+<script>
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const STAGE_MAP={fetching:0,routing:1,judging:2,assembling:3};
+const vLabel={supported:'✓ Supported',partly_supported:'⚠ Partly supported',provisional:'⏳ Provisional',insufficient:'⚠ Insufficient evidence',contradicted:'✗ Contradicted',unverifiable:'? Unverifiable',not_scoreable:'∅ Not scoreable'};
+const vClass={supported:'v-g',partly_supported:'v-a',provisional:'v-a',insufficient:'v-a',contradicted:'v-r',unverifiable:'v-n',not_scoreable:'v-n'};
+const stanceIcon={supports:'✓',refutes:'✗',mixed:'⚠',context:'ℹ'};
+const riskColor={critical:'#f87171',high:'#ec835a'};
+const ringColor=(s)=>s===null||s===undefined?'#9aa0b0':(s>=7.5?'#4ade80':(s>=4.0?'#fab219':'#f87171'));
+let currentResult=null, currentView='list';
+
+function ringSVG(score,size,width){
+  const r=(size/2)-width-1, c=2*Math.PI*r;
+  const frac=(score===null||score===undefined)?0:Math.max(.03,score/9.9);
+  const col=ringColor(score===undefined?null:score);
+  return '<div class="ring"><svg width="'+size+'" height="'+size+'" viewBox="0 0 '+size+' '+size+'">'+
+    '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="var(--track)" stroke-width="'+width+'"/>'+
+    '<circle cx="'+size/2+'" cy="'+size/2+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+width+'" stroke-linecap="round" stroke-dasharray="'+c.toFixed(1)+'" stroke-dashoffset="'+(c*(1-frac)).toFixed(1)+'"/></svg>'+
+    '<div class="v"><div class="num" style="font-size:'+(size*.28)+'px;color:'+col+'">'+(score===null||score===undefined?'&mdash;':esc(score.toFixed(1)))+'</div>'+
+    (size>60?'<div style="color:var(--muted);font-size:.62rem;font-weight:700">/ 10</div>':'')+'</div></div>';
+}
+function chips(c){
+  let h='<span class="cat">'+esc(c.bucket)+'</span>';
+  if(c.secondary_bucket)h+=' <span class="cat">+ '+esc(c.secondary_bucket)+'</span>';
+  if(riskColor[c.risk_level])h+=' <span class="cat" style="color:'+riskColor[c.risk_level]+';border-color:'+riskColor[c.risk_level]+'">'+esc(c.risk_level)+' risk</span>';
+  if(c.developing_story)h+=' <span class="cat">⏳ developing</span>';
+  if(c.gate_label==='prediction')h+=' <span class="cat">prediction</span>';
+  if(c.public_safety_risk)h+=' <span class="cat" style="color:var(--bad);border-color:var(--bad)">⚠ public safety</span>';
+  return h;
+}
+function claimCard(c){
+  // GLANCE LAYER: ring + claim + verdict badge only
+  let badge='';
+  if(c.verdict){
+    badge='<br><span class="verdict '+(vClass[c.verdict.verdict_state]||'v-n')+'">'+(vLabel[c.verdict.verdict_state]||esc(c.verdict.verdict_state))+'</span>';
+  }else{
+    badge='<br><span class="meta">Not verified in this pass.</span>';
+  }
+  // DETAIL LAYER: quote, chips, reasoning, verdict sentence, sources
+  let ev='';
+  const fcs=(c.evidence&&c.evidence.fact_checks)||[], webs=(c.evidence&&c.evidence.web_sources)||[];
+  for(const fc of fcs)ev+='<div class="src">📝 <a href="'+esc(fc.url)+'" target="_blank" rel="noopener">'+esc(fc.publisher)+'</a>: rated “'+esc(fc.rating)+'”</div>';
+  for(const w of webs)ev+='<div class="src">'+(stanceIcon[w.stance]||'ℹ')+' <a href="'+esc(w.url)+'" target="_blank" rel="noopener">'+esc(w.source)+'</a> ('+esc(w.stance)+'): “'+esc(w.quote)+'”</div>';
+  if(c.verdict&&!ev)ev='<div class="src meta">No sources found.</div>';
+  let detail='<details class="more"><summary><span></span></summary><div class="inner">';
+  detail+='<div class="meta">“'+esc(c.quote)+'”</div>';
+  detail+=chips(c)+' <span class="meta">'+esc(c.reason||'')+'</span>';
+  if(c.verdict)detail+='<div class="vsum">'+esc(c.verdict.verdict)+' <span class="meta">(evidence: '+esc(c.verdict.evidence_strength)+')</span></div>';
+  detail+=ev+'</div></details>';
+  const circle=c.verdict
+    ?'<div style="flex:0 0 auto">'+ringSVG(c.verdict.truth_score===null?null:c.verdict.truth_score,46,4)+'</div>'
+    :'<div class="score">···</div>';
+  return '<div class="claim">'+circle+'<div class="ctext" style="flex:1"><b>'+esc(c.claim)+'</b>'+badge+detail+'</div></div>';
+}
+function renderList(d){
+  const rep=d.report||{};
+  let html='';
+  if(d.cached)html+='<div class="meta">⚡ Instant result — first checked '+esc((d.first_checked_at||'').slice(0,10))+', served from Glowby’s memory.</div>';
+  html+='<div class="meta">'+esc(d.platform)+' · '+esc(d.title)+' · '+esc(d.uploader)+' · transcript: '+esc(d.transcript_source)+'</div>';
+  if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
+  const cnt=rep.counts||{};
+  html+='<div class="headline"><div class="hero-ring">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,170,12)+'</div>'+
+    '<div class="hl-label">'+esc(rep.headline_label||'')+'</div>'+
+    '<div class="hl-sub">Glowby Score · '+(cnt.judged||0)+' of '+(cnt.claim_units||0)+' claims judged · the lowest judged claim sets the score</div></div>';
+  const claims=d.claims||[];
+  const fwd=(c)=>c.gate_label==='factual'||c.gate_label==='prediction';
+  const checked=claims.filter(c=>c.verdict);
+  const waiting=claims.filter(c=>!c.verdict&&fwd(c));
+  const parked=claims.filter(c=>!c.verdict&&!fwd(c));
+  for(const c of checked)html+=claimCard(c);
+  if(waiting.length){
+    html+='<details><summary>🔍 Found, not judged ('+waiting.length+') — click to view</summary>';
+    for(const c of waiting)html+=claimCard(c);
+    html+='</details>';
+  }
+  if(parked.length){
+    html+='<details><summary>💬 Parked by the gate ('+parked.length+') — opinion, satire &amp; other non-factual content</summary>';
+    for(const c of parked)html+='<div class="claim"><div class="ctext"><b>'+esc(c.claim)+'</b><span class="cat">'+esc(c.gate_label)+'</span> <span class="meta">'+esc(c.reason||'')+'</span></div></div>';
+    html+='</details>';
+  }
+  if(d.transcript)html+='<details><summary>Full transcript</summary><div class="tr">'+esc(d.transcript)+'</div></details>';
+  return html;
+}
+function renderReel(d){
+  const rep=d.report||{};
+  const claims=(d.claims||[]).filter(c=>c.verdict);
+  let chipsHtml='';
+  for(const c of claims.slice(0,4)){
+    const ts=c.verdict.truth_score;
+    const col=ringColor(ts===null?null:ts);
+    chipsHtml+='<div class="cchip"><span style="color:'+col+';font-weight:800">'+(ts===null?'?':esc(ts.toFixed(1)))+'</span> “'+esc(c.claim)+'” — <b style="color:'+col+'">'+(vLabel[c.verdict.verdict_state]||'').replace(/^\S+ /,'')+'</b></div>';
+  }
+  chipsHtml+='<div class="cchip" style="justify-content:center;color:var(--muted)">'+esc(rep.share_text||'')+'</div>';
+  let html='';
+  if(rep.safety_notice)html+='<div class="safety">'+esc(rep.safety_notice)+'</div>';
+  html+='<div class="reel"><div class="reeltitle">'+esc(d.title)+'</div><div class="corner">'+ringSVG(rep.headline_score===undefined?null:rep.headline_score,64,6)+'</div><div class="chips">'+chipsHtml+'</div></div>'+
+    '<div class="meta" style="text-align:center;margin-top:10px">Screenshot this view to share · the link below travels with it</div>';
+  return html;
+}
+function render(){
+  const d=currentResult; if(!d)return;
+  const out=$('out'); out.style.display='block';
+  let html='<div class="toggle" id="vt"><span id="tl" class="'+(currentView==='list'?'on':'')+'">List</span><span id="tr" class="'+(currentView==='reel'?'on':'')+'">Reel view</span></div>';
+  html+=currentView==='list'?renderList(d):renderReel(d);
+  const permalink=d.url_key?location.origin+'/r/'+encodeURIComponent(d.url_key):null;
+  html+='<div class="actions">';
+  if(permalink)html+='<button id="copyLink">🔗 Copy share link</button>';
+  html+='<a href="mailto:reports@glowby.app?subject='+encodeURIComponent('Glowby mistake report')+'&body='+encodeURIComponent('Video: '+(d.url||'')+'\n\nWhat looks wrong:')+'">🛠 Report a mistake</a>';
+  html+='</div>';
+  out.innerHTML=html;
+  $('tl').onclick=()=>{currentView='list';render();};
+  $('tr').onclick=()=>{currentView='reel';render();};
+  const cb=$('copyLink');
+  if(cb)cb.onclick=async()=>{try{await navigator.clipboard.writeText(permalink);cb.textContent='✓ Link copied';}catch(e){prompt('Copy this link:',permalink);}};
+}
+function setStage(stage){
+  const idx=STAGE_MAP[stage]??-1;
+  $('steps').style.display='block';
+  for(let i=0;i<4;i++){const el=$('st'+i);el.className='step'+(i<idx?' done':(i===idx?' on':''));}
+}
+async function poll(jobId){
+  for(let i=0;i<150;i++){
+    await new Promise(r=>setTimeout(r,2000));
+    let j;
+    try{j=await(await fetch('/api/job/'+jobId)).json();}catch(e){continue;}
+    if(j.status==='done'){return j.result;}
+    if(j.status==='error'){throw new Error(j.error||'Something went wrong.');}
+    setStage(j.stage);
+  }
+  throw new Error('Timed out. Please try again.');
+}
+$('f').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const go=$('go');go.disabled=true;go.textContent='Working...';
+  $('out').style.display='none';setStage('fetching');
+  try{
+    const r=await fetch('/api/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:$('url').value})});
+    const d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Something went wrong.');
+    currentResult=d.job_id?await poll(d.job_id):d;
+    $('steps').style.display='none';
+    currentView='list';render();
+  }catch(err){
+    $('steps').style.display='none';
+    $('out').style.display='block';
+    $('out').innerHTML='<span class="err">'+esc(err.message)+'</span>';
+  }
+  go.disabled=false;go.textContent='Check';
+});
+// permalink mode: /r/<key> pages preload the stored result
+(async function(){
+  const m=location.pathname.match(/^\/r\/(.+)$/);
+  if(!m)return;
+  try{
+    const r=await fetch('/api/result/'+m[1]);
+    if(!r.ok)return;
+    currentResult=await r.json();
+    currentView='list';render();
+    window.scrollTo(0,0);
+  }catch(e){}
+})();
+</script>
+</body>
+</html>

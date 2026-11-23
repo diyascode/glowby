@@ -1,0 +1,16 @@
+{
+  "name": "Glowby",
+  "short_name": "Glowby",
+  "description": "Paste any Short, TikTok, claim, or question — Glowby checks it and shows its work.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#08070F",
+  "theme_color": "#08070F",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

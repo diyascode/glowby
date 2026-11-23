@@ -1,0 +1,269 @@
+"""
+ONE LINE — the plain-English answer above the score.
+
+Why: readers said the scores are not really understandable on their own.
+A number and a band word tell you HOW MUCH; they don't tell you WHAT.
+"Yes — Trump dyed his hair, but the video itself is AI-generated" does,
+in one breath, the way a search engine's highlighted summary does.
+
+Rules (enforced, not just intended):
+- The line is written FROM the verdicts. It can never contradict a score,
+  the AI finding, or the scam lens: those are handed in as facts, and the
+  model is told it is captioning them, not re-judging.
+- Deterministic fallback when there is no key, no budget, or the model
+  fails — a check never waits on the caption.
+- ≤ 26 words, one sentence, no hedging filler, no "this video", no
+  intensifiers, never "is a scam" about a named party.
+- Costs ~0.2¢ (Haiku, ~600 tokens in, ~40 out).
+"""
+
+import os
+import re
+from app.agents import llm as _llm
+
+FAST_MODEL = os.environ.get("GLOWBY_ROUTER_MODEL", "claude-haiku-4-5")
+MAX_WORDS = 32
+
+_BANNED = re.compile(r"\b(definitely|absolutely|completely|totally|clearly|obviously|100%)\b", re.I)
+_AI_WORD = re.compile(r"\b(AI|A\.I\.|synthetic|generated|deepfake|cloned|fake)\b", re.I)
+_ACCUSE = re.compile(r"\b(is|are) (a |an )?(scam|scammer|fraud|liar)s?\b", re.I)
+
+# v0.66.58: the edges live in app/bands.py now — one table, env-tunable,
+# and even-width. BAND stays as a module attribute because older code and
+# tests read it; it is built from the shared source, never edited here.
+from app import bands as _bands  # noqa: E402
+
+BAND = _bands.table()
+
+PROMPT = """You write the one-line answer shown above a fact-check score. \
+You are CAPTIONING verdicts that were already decided — never re-judging them.
+
+Facts decided by the system (treat as fixed):
+{facts}
+
+Write ONE sentence, at most {max_words} words, plain English a 12-year-old \
+reads at a glance, that says what the reader most wants to know: is the \
+main thing in the video true, and is the video itself real. Start with \
+exactly this word, which is the score band shown on the card: "{lead}" — \
+then a dash and the rest: what is actually true or false here, in plain \
+words (e.g. "Inaccurate — diesel is near record highs at $6–8, but nowhere \
+near needing gold to buy"). If the main claim is false or only \
+partly true and the verdict says what is actually true, put the correction \
+in the same sentence ("No — X did not …; in fact …"), taken from the \
+verdict text, never from your own knowledge. If the footage is AI-generated \
+or the message matches scam patterns, that goes in the same sentence after \
+a comma or dash — it is the most important part. Name the subject the way \
+the claim does (a person, a product, an event). No intensifiers, no \
+"this video", no advice, no hedging beyond what the verdicts say. Never \
+say a named person or company "is a scam"; say the message "matches scam \
+patterns". If the facts look odd or incomplete, still write the sentence \
+from the overall score — never comment on the facts, the task, or these \
+instructions. Output the sentence only."""
+
+
+def _band(score, prev=None):
+    """The band a score falls in. `prev` is the word this same check
+    carried last time: a re-check keeps it when the score has only
+    twitched across an edge (app/bands.py)."""
+    return _bands.band_of(score, prev)
+
+
+def facts_for(result: dict) -> str:
+    """Pure: the fixed facts the caption must respect, as text."""
+    rep = result.get("report") or {}
+    lines = []
+    hs = rep.get("headline_score")
+    lines.append(f"Overall score: {hs if hs is not None else 'none'} → {_band(hs)}"
+                 + (f" ({rep.get('headline_state')})" if rep.get("headline_state") else ""))
+    if rep.get("safety_notice"):
+        lines.append("SAFETY ALERT: unconfirmed safety instructions — the caption must say do not act on them.")
+    if rep.get("nothing_to_check"):
+        lines.append(f"No checkable claims: the content is {rep['nothing_to_check']} — nothing here can be true or false.")
+    claims = [c for c in (result.get("claims") or []) if c.get("verdict")]
+    claims.sort(key=lambda c: (not c.get("central", True), c["verdict"].get("truth_score") if c["verdict"].get("truth_score") is not None else 99))
+    for c in claims[:4]:
+        v = c["verdict"]
+        ts = v.get("truth_score")
+        lines.append(f"Claim: \"{str(c.get('claim',''))[:160]}\" → {v.get('verdict_state')}"
+                     + (f" {ts}/10 ({_band(ts)})" if ts is not None else "")
+                     + (" [central]" if c.get("central", True) else " [side detail]")
+                     + (f" — {str(v.get('verdict',''))[:160]}" if v.get("verdict") else ""))
+    au = result.get("authenticity") or {}
+    o = au.get("origin_result")
+    if o == "likely_synthetic":
+        lines.append("Footage: strong signals the video/audio is AI-generated" + (" (the voice is cloned)" if au.get("manipulation_scope") == "voice" else "") + ".")
+    elif o == "verified_ai_provenance":
+        lines.append("Footage: signed as AI-generated by its maker.")
+    elif o == "declared_ai":
+        lines.append("Footage: the creator labels it AI-generated.")
+    elif o == "inconclusive":
+        lines.append("Footage: authenticity unclear — not proven AI, not proven real.")
+    elif au.get("stage") == 2 and o == "no_synthetic_signal":
+        lines.append("Footage: no AI signal found (not proof it is real).")
+    sc = result.get("scam") or {}
+    if sc.get("risk") in ("high", "medium"):
+        lines.append(f"Scam lens: {sc.get('risk')} risk — matches scam patterns: {', '.join((sc.get('pattern_names') or [])[:3])}.")
+    if result.get("answer_mode") and result.get("answer"):
+        lines.append(f"Reader asked a question; the answer was: {str(result.get('answer'))[:200]}")
+    return "\n".join(lines)
+
+
+def fallback_line(result: dict) -> str:
+    """Pure (unit-tested): a caption with no model at all."""
+    rep = result.get("report") or {}
+    if rep.get("safety_notice"):
+        return "Do not act on the safety instructions in this video — they could not be confirmed."
+    if rep.get("nothing_to_check"):
+        return "Nothing here can be true or false — it's " + {
+            "opinion": "an opinion", "satire": "satire", "fiction-joke": "a joke",
+            "personal-experience": "a personal story", "question": "a question",
+            "advertisement": "an ad"}.get(rep["nothing_to_check"], "not a factual claim") + "."
+    hs = rep.get("headline_score")
+    au = (result.get("authenticity") or {}).get("origin_result")
+    ai = au in ("likely_synthetic", "verified_ai_provenance", "declared_ai")
+    sc = (result.get("scam") or {}).get("risk")
+    claims = [c for c in (result.get("claims") or []) if c.get("verdict") and c.get("central", True)]
+    subject = ""
+    if claims:
+        claims.sort(key=lambda c: c["verdict"].get("truth_score") if c["verdict"].get("truth_score") is not None else 99)
+        subject = str(claims[0].get("claim", "")).strip().rstrip(".")
+        if len(subject) > 90:
+            subject = subject[:87].rsplit(" ", 1)[0] + "…"
+    lead = LEAD_FOR_BAND[_band(hs)]
+    if hs is None:
+        states = {c["verdict"].get("verdict_state") for c in claims}
+        if claims and states <= {"not_scoreable"}:
+            core = "Unclear — Glowby couldn't score this one" + (f" (“{subject}”)" if subject else "") + "; tap Re-check to try again"
+        else:
+            core = f"{lead} — no reliable evidence either way" + (f" on “{subject}”" if subject else "")
+    else:
+        core = f"{lead} — “{subject}” is {_band(hs)}" if subject else f"{lead} — the main claims are {_band(hs)}"
+        if claims and _band(hs) in ("false", "partly true"):
+            fix = _correction(claims[0]["verdict"].get("verdict") or "")
+            if fix:
+                core += f"; {fix}"
+    tail = ""
+    if ai:
+        tail = ", but the video itself is AI-generated"
+    if sc == "high":
+        tail += (" and" if tail else ", and") + " the message matches scam patterns"
+    return (core + tail + ".").replace("  ", " ")
+
+
+def _correction(verdict_text: str) -> str:
+    """Pure: the first clause of a verdict that states what is actually
+    true, trimmed to ~16 words — the correction a reader can repeat."""
+    t = re.sub(r"\s+", " ", verdict_text or "").strip()
+    if not t:
+        return ""
+    # prefer the sentence that carries the correction
+    for sent in re.split(r"(?<=[.;])\s+", t):
+        if re.search(r"\b(actually|in fact|allow|allows|is|are|was|were|not only|rather|instead|confirm|confirms|show|shows)\b", sent, re.I):
+            t = sent
+            break
+    t = t.rstrip(".;: ")
+    words = t.split(" ")
+    if len(words) > 16:
+        t = " ".join(words[:16]).rstrip(",;—- ") + "…"
+    return t[0].lower() + t[1:] if t and t[0].isupper() and not t.split(" ")[0].isupper() else t
+
+
+def clean(line: str) -> str:
+    """Pure: enforce the length and wording rules on a model line."""
+    s = re.sub(r"\s+", " ", (line or "")).strip().strip('"').strip()
+    s = s.split("\n")[0]
+    s = _BANNED.sub("", s).replace("  ", " ").strip()
+    if _ACCUSE.search(s):
+        s = _ACCUSE.sub("matches scam patterns", s)
+    words = s.split(" ")
+    if len(words) > MAX_WORDS:
+        s = " ".join(words[:MAX_WORDS]).rstrip(",;—- ") + "."
+    if s and s[-1] not in ".!?":
+        s += "."
+    return s[:220]
+
+
+_LEADS = ("accurate", "mostly accurate", "mixed", "inaccurate", "misleading", "unverified",
+          "yes", "no", "partly", "mostly", "unclear", "nothing", "do not", "don't")
+# THE LEAD WORD IS THE BAND (Sept 15, Diya: "Partly" over a "Mostly accurate"
+# pill). Accurate → Yes · Mostly accurate → Mostly · Mixed → Partly ·
+# Misleading → No · Unverified → Unclear. The model writes the rest.
+# v0.66.3: the lead word IS the pill word, letter for letter (Diya: "No and
+# Misleading should match").
+LEAD_FOR_BAND = {"true": "Accurate", "mostly true": "Mostly accurate", "partly true": "Mixed",
+                 "false": "Inaccurate", "unverified": "Unverified"}  # v0.66.17: "Misleading" implies intent
+_LEAD_RE = re.compile(r"^(mostly accurate|accurate|mixed|inaccurate|misleading|unverified|mostly yes|mostly no|mostly true|mostly|yes|no|partly true|partly|unclear|true|false)\b[\s,:—–-]*", re.I)
+
+
+def canonical_lead(result: dict):
+    """Pure: the lead word the card's band dictates, or None for the
+    special cards (nothing to check / safety alert) that have their own."""
+    rep = result.get("report") or {}
+    if rep.get("safety_notice") or rep.get("nothing_to_check"):
+        return None
+    return LEAD_FOR_BAND[_band(rep.get("headline_score"), rep.get("prev_band"))]
+
+
+def force_lead(line: str, result: dict) -> str:
+    """Pure (unit-tested): replace whatever lead the model wrote with the
+    band's word, joined with an em dash."""
+    lead = canonical_lead(result)
+    if not lead:
+        return line
+    rest = _LEAD_RE.sub("", (line or "").strip().lstrip("\"'“ "), count=1).strip()
+    if not rest:
+        return line
+    return f"{lead} — {rest}"
+_META = re.compile(r"\b(I appreciate|I notice|I can't|I cannot|I'm unable|as an AI|instructions?|caption|you've asked|you asked|logical issue|the facts you|verdicts? (that|you)|system prompt)\b", re.I)
+
+
+def consistent(line: str, result: dict) -> bool:
+    """Pure: a cheap contradiction guard — the line must BE an answer (a
+    Yes/No/Partly/Unclear lead, never a remark about the task), the lead
+    must agree with the band, and an AI finding must be mentioned when
+    there is one. (The succulents caption, Sept 15: Haiku wrote "I
+    appreciate the detailed instructions, but…" and it shipped.)"""
+    rep = result.get("report") or {}
+    hs = rep.get("headline_score")
+    low = line.lower().lstrip("\"'“ ")
+    if not low.startswith(_LEADS):
+        return False
+    if _META.search(line):
+        return False
+    lead = canonical_lead(result)
+    if lead and not low.startswith(lead.lower() + " "):
+        return False
+    band = _band(hs)
+    if not rep.get("safety_notice") and not rep.get("nothing_to_check") and hs is not None:
+        if band == "true" and low.startswith(("no ", "no,", "no —", "false")):
+            return False
+        if band == "false" and low.startswith(("yes", "true")):
+            return False
+    au = (result.get("authenticity") or {}).get("origin_result")
+    if au in ("likely_synthetic", "verified_ai_provenance", "declared_ai") and not _AI_WORD.search(line):
+        return False
+    return True
+
+
+def one_line(result: dict, client=None) -> str:
+    """The caption. Model when possible, fallback always available."""
+    fb = fallback_line(result)
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if client is None and not api_key:
+        return fb
+    try:
+        if client is None:
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key)
+        msg = _llm.create(client, 
+            model=FAST_MODEL, max_tokens=80, temperature=0,
+            messages=[{"role": "user", "content": PROMPT.format(
+                facts=facts_for(result), max_words=MAX_WORDS,
+                lead=canonical_lead(result) or "Nothing here")}])
+        raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        line = force_lead(clean(raw), result)
+        if len(line.split()) >= 3 and consistent(line, result):
+            return line
+    except Exception:
+        pass
+    return fb

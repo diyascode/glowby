@@ -1,0 +1,20 @@
+{
+  "recurring": [
+    {"id":"railway","name":"Railway","purpose":"Hosting + Postgres","amount":18,"cadence":"monthly","status":"estimate"},
+    {"id":"anthropic","name":"Anthropic API","purpose":"Router, evidence, judges, vision — ACTUAL from usage, shown in the AI bars","amount":15,"cadence":"monthly","status":"actual"},
+    {"id":"webshare","name":"Webshare proxy","purpose":"Residential proxy for yt-dlp / captions","amount":11,"cadence":"monthly","status":"estimate"},
+    {"id":"openai","name":"OpenAI (Whisper, narrator voice)","purpose":"Transcription + the daily clip's voice — ACTUAL from usage","amount":4,"cadence":"monthly","status":"actual"},
+    {"id":"apple","name":"Apple Developer","purpose":"iOS signing + App Store","amount":99,"cadence":"yearly","status":"actual"},
+    {"id":"domain","name":"glowby.io domain","purpose":"DNS → Railway","amount":25,"cadence":"yearly","status":"estimate"},
+    {"id":"ensemble","name":"EnsembleData","purpose":"Rescue scraping (trial, 40/day)","amount":0,"cadence":"monthly","status":"free"},
+    {"id":"freebies","name":"Google Fact Check · Turnstile · GitHub · Fonts","purpose":"Free tiers","amount":0,"cadence":"monthly","status":"free"}
+  ],
+  "entries": [
+    {"id":"s1","date":"2026-08-01","cat":"Hosting (Railway)","amount":18,"note":"Hosting + Postgres — docs say $10–25/mo","kind":"estimate"},
+    {"id":"s2","date":"2026-08-01","cat":"Proxy (Webshare)","amount":11,"note":"Residential proxy — docs say $7–15/mo","kind":"estimate"},
+    {"id":"ag20261011-sep-railway","date":"2026-09-01","cat":"Hosting (Railway)","amount":18,"note":"auto-logged by agent","kind":"estimate"},
+    {"id":"ag20261011-sep-webshare","date":"2026-09-01","cat":"Proxy (Webshare)","amount":11,"note":"auto-logged by agent","kind":"estimate"},
+    {"id":"ag20261011-oct-railway","date":"2026-10-01","cat":"Hosting (Railway)","amount":18,"note":"auto-logged by agent","kind":"estimate"},
+    {"id":"ag20261011-oct-webshare","date":"2026-10-01","cat":"Proxy (Webshare)","amount":11,"note":"auto-logged by agent","kind":"estimate"}
+  ]
+}

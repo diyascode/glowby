@@ -1,0 +1,1233 @@
+"""
+Ingest agent — turns a media URL into a transcript.
+
+Strategy (cheapest first):
+1. yt-dlp reads the video's metadata + caption tracks (no download).
+2. If captions exist (manual preferred, else auto-generated), fetch and
+   parse them into plain text. Free and fast.
+3. If no captions, download the audio track and transcribe it with
+   OpenAI Whisper. Costs a little; needed for most TikTok/X videos.
+
+Returns a dict:
+{
+  "url": ..., "platform": "youtube"|"tiktok"|"x"|"other",
+  "title": ..., "uploader": ..., "duration_seconds": ...,
+  "transcript": "full text ...",
+  "transcript_source": "captions"|"whisper",
+}
+Raises IngestError with a human-readable message on failure.
+"""
+
+import json
+import os
+import re
+import tempfile
+import time
+import urllib.parse
+import urllib.request
+
+MAX_DURATION_SECONDS = 20 * 60  # v1 scope: no videos longer than 20 minutes
+
+
+class IngestError(Exception):
+    """Raised when a URL cannot be ingested. Message is user-facing."""
+
+
+GEO_RE = re.compile(r"not made this video available in your country|not available in your country|geo.?restrict|blocked it in your country", re.I)
+
+
+# ---------------------------------------------------------------- proxy
+# YouTube bot-challenges datacenter IPs. A residential proxy makes our
+# requests come from a normal-home address. Two config options:
+#   WEBSHARE_PROXY_USERNAME / WEBSHARE_PROXY_PASSWORD  (recommended:
+#     Webshare rotating residential)
+#   PROXY_URL  (any provider, e.g. http://user:pass@host:port)
+# With neither set, everything works exactly as before (no proxy).
+
+
+def _proxy_url():
+    user = os.environ.get("WEBSHARE_PROXY_USERNAME")
+    pw = os.environ.get("WEBSHARE_PROXY_PASSWORD")
+    if user and pw:
+        # v0.66.31: pin the exit COUNTRY. "username-rotate" hands out a
+        # random country each request, and a US-only YouTube video then
+        # fails with "not made available in your country" (Oct 11).
+        # Webshare's format is username-XX-rotate; "" keeps it random.
+        cc = os.environ.get("WEBSHARE_PROXY_COUNTRY", "US").strip().upper()
+        tag = f"-{cc}-rotate" if cc else "-rotate"
+        return f"http://{user}{tag}:{pw}@p.webshare.io:80"
+    return os.environ.get("PROXY_URL") or None
+
+
+def _yta_client():
+    """youtube-transcript-api client, proxied when configured."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    user = os.environ.get("WEBSHARE_PROXY_USERNAME")
+    pw = os.environ.get("WEBSHARE_PROXY_PASSWORD")
+    generic = os.environ.get("PROXY_URL")
+    try:
+        if user and pw:
+            from youtube_transcript_api.proxies import WebshareProxyConfig
+
+            return YouTubeTranscriptApi(
+                proxy_config=WebshareProxyConfig(proxy_username=user,
+                                                 proxy_password=pw)
+            )
+        if generic:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+
+            return YouTubeTranscriptApi(
+                proxy_config=GenericProxyConfig(http_url=generic,
+                                                https_url=generic)
+            )
+    except Exception:
+        pass  # fall through to unproxied client
+    return YouTubeTranscriptApi()
+
+
+def detect_platform(url: str) -> str:
+    host = re.sub(r"^www\.", "", (re.findall(r"https?://([^/]+)", url) or [""])[0]).lower()
+    if "youtube.com" in host or "youtu.be" in host:
+        return "youtube"
+    if "tiktok.com" in host:
+        return "tiktok"
+    if "instagram.com" in host:
+        return "instagram"
+    if "twitter.com" in host or host == "x.com":
+        return "x"
+    if "facebook.com" in host or host in ("fb.watch", "fb.com"):
+        return "facebook"
+    return "other"
+
+
+_EXTRACTOR_FAULT = re.compile(
+    r"(cannot parse data|unsupported url|unable to extract|no video formats|"
+    r"this video is unavailable|video unavailable|private video|members-only|"
+    r"has been removed|is not available|requested format is not available)", re.I)
+
+
+def _is_extractor_fault(err: str) -> bool:
+    """Pure: did the downloader fail to READ the page, rather than fail to
+    REACH it? A parse error says the network path was fine."""
+    return bool(_EXTRACTOR_FAULT.search(err or ""))
+
+
+FB_TEXT_MIN_WORDS = 8
+
+
+def _fb_text_post(url: str, rescued):
+    """A Facebook post with no video still has the thing that matters:
+    what the poster wrote. The rescue vendor returns it as `description`,
+    and a claim typed into a caption is as checkable as one spoken aloud
+    — the router already treats a caption as content. Returns an ingest
+    result shaped like the article path, or None when there is too
+    little to judge (v0.66.60)."""
+    if not isinstance(rescued, dict):
+        return None
+    body = (rescued.get("title") or "").strip()
+    if len(body.split()) < FB_TEXT_MIN_WORDS:
+        return None
+    return {
+        "url": url,
+        "platform": "facebook",
+        "title": body[:120] + ("…" if len(body) > 120 else ""),
+        "uploader": rescued.get("uploader") or "(unknown)",
+        "duration_seconds": 0,
+        "posted_date": rescued.get("posted_date"),
+        "transcript": body[:8000],
+        "transcript_source": "post text",
+    }
+
+
+def _fb_looks_like_video(url: str) -> bool:
+    """Facebook VIDEO urls sometimes open without login; posts never do."""
+    u = url.lower()
+    return ("fb.watch" in u or "/videos/" in u or "/reel/" in u
+            or "/watch" in u)
+
+
+FB_POST_MSG = (
+    "Facebook posts are locked behind Facebook's login wall, so Glowby "
+    "can't open them. Two easy workarounds: if the post shares a news "
+    "article, paste the article's own link instead — or just type the "
+    "claim itself and Glowby will check it."
+)
+FB_VIDEO_MSG = (
+    "Facebook wouldn't hand over this video — most Facebook videos are "
+    "locked behind a login. If the same video exists on YouTube or "
+    "TikTok, paste that link, or type the claim as text instead."
+)
+
+
+def post_caption(info: dict, limit: int = 2000) -> str:
+    """Pure: the poster's own words from the platform metadata, minus the
+    noise. Empty when there is nothing beyond the title."""
+    if not isinstance(info, dict):
+        return ""
+    text = (info.get("description") or "").strip()
+    title = (info.get("title") or "").strip()
+    if not text or text == title:
+        return ""
+    # a caption that merely repeats the title plus hashtags is not new content
+    body = re.sub(r"#\S+", "", text).strip()
+    if title and body and body.lower() in title.lower():
+        return ""
+    return text[:limit]
+
+
+def ingest(url: str) -> dict:
+    """Main entry point: URL in, transcript dict out."""
+    import yt_dlp  # imported here so the app can boot even if install fails
+
+    platform = detect_platform(url)
+
+    # FACEBOOK POSTS: never downloadable without login — say so honestly
+    # and helpfully, instead of failing with a raw downloader error.
+    # (Video-shaped FB links still get a yt-dlp attempt below; some
+    # public videos do open.)
+    # FACEBOOK: v0.66.52 wired the rescue tier in — and then left this
+    # gate in FRONT of it, so only video-shaped links ever reached it. A
+    # plain post was refused one line before the door it needed. Which is
+    # absurd twice over, because the rescue endpoint is literally
+    # /v1/facebook/post: posts are what it is for. (Inderpreet, Nov 22:
+    # "I thought we fixed it" — we fixed reels, not posts.)
+    #
+    # Every Facebook link now tries the rescue tier first. Three outcomes:
+    #   media back      -> treat it as a video, as before
+    #   only text back  -> check the post's OWN WORDS, which is what a
+    #                      fact-checker should do with a text post anyway
+    #   nothing back    -> the honest refusal, as before
+    if platform == "facebook":
+        try:
+            from app.agents.rescue import rescue_media
+
+            rescued = rescue_media(url, "facebook")
+        except Exception:
+            rescued = None
+        if rescued and rescued.get("media_url"):
+            saved = _ingest_rescued(url, "facebook", rescued)
+            if saved is not None:
+                return saved
+        text_only = _fb_text_post(url, rescued)
+        if text_only is not None:
+            return text_only
+        if not _fb_looks_like_video(url):
+            raise IngestError(FB_POST_MSG)
+        # a video-shaped link with nothing from rescue — fall through to
+        # yt-dlp; some public Facebook videos do still open without it
+
+    # INSTAGRAM: yt-dlp almost never gets a Reel (login wall) and when it
+    # "succeeds" it often yields an empty file. Go straight to the rescue
+    # tier, which is the only door that reliably opens for Instagram.
+    if platform == "instagram":
+        try:
+            from app.agents.rescue import rescue_media
+
+            rescued = rescue_media(url, "instagram")
+        except Exception:
+            rescued = None
+        if rescued and rescued.get("media_url"):
+            saved = _ingest_rescued(url, "instagram", rescued)
+            if saved is not None:
+                return saved
+        # say WHY when the reason is on our side, not the reader's
+        try:
+            from app.agents.rescue import LAST as _last, provider as _prov, _allowed as _ok
+            _why = _last.get("http")
+            _tok = _prov() != "none"
+            _cap = (not _ok()) if _tok else False
+        except Exception:
+            _why, _tok, _cap = None, True, False
+        if not _tok or _why in (401, 402, 403) or _cap:
+            raise IngestError(
+                "Instagram fetching is temporarily unavailable on Glowby's "
+                "side (the fetch service needs attention — the team has "
+                "been notified). Paste the claim as text instead, or try "
+                "the same video from Facebook or YouTube."
+            )
+        raise IngestError(
+            "Instagram wouldn't hand over this Reel. Make sure it's a "
+            "PUBLIC reel (private accounts are locked to everyone), or "
+            "paste the claim as text instead."
+        )
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": True,
+        # datacenter IPs get bot-challenged by YouTube's web client; the
+        # android/ios player clients are challenged far less often
+        "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+    }
+    if _proxy_url():
+        ydl_opts["proxy"] = _proxy_url()
+    info = None
+    bot_blocked = False
+    err_text = ""
+    _TIMES.data = {}
+    _t_meta = time.time()
+    # blocks are often luck-of-the-draw: a second knock seconds later
+    # frequently gets in. Two attempts before giving up.
+    for attempt in (1, 2):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            _health("proxy", True)
+            break
+        except Exception as e:
+            err_text = str(e)
+            if attempt == 1:
+                time.sleep(1.5)
+    if info is None:
+        # v0.66.53: only blame the proxy for things the proxy did. A
+        # yt-dlp parser error ("Cannot parse data", "Unsupported URL") means
+        # the connection worked fine and the extractor could not read the
+        # page — recording that as a proxy failure put a red light on a
+        # healthy service and sent us looking in the wrong place (Nov 9).
+        if _is_extractor_fault(err_text):
+            _health("proxy", True)
+        else:
+            _health("proxy", False, err_text)
+    _mark("meta", _t_meta)
+    if info is None:
+        bot_blocked = "Sign in to confirm" in err_text or "not a bot" in err_text
+        if platform == "youtube":
+            # Plan B: a different transcript door that is rarely bot-challenged
+            fallback = _youtube_fallback(url)
+            if fallback is not None:
+                return fallback
+        if bot_blocked:
+            raise IngestError(
+                "YouTube is temporarily challenging our server ('are you a "
+                "bot?'). This usually passes in a few minutes — please try "
+                "again shortly, or try a different video."
+            )
+        if platform in ("tiktok", "instagram"):
+            # RESCUE TIER: the professional scraper may still get in
+            try:
+                from app.agents.rescue import rescue_media
+
+                rescued = rescue_media(url, platform)
+            except Exception:
+                rescued = None
+            if rescued and rescued.get("media_url"):
+                saved = _ingest_rescued(url, platform, rescued)
+                if saved is not None:
+                    return saved
+        if platform == "tiktok":
+            # photo slideshows have no video file — but the EYES can still
+            # read the cover image via TikTok's public oEmbed door
+            photo = _tiktok_photo_result(url)
+            if photo is not None:
+                return photo
+            raise IngestError(
+                "TikTok blocked this video even after a retry — that "
+                "happens with some TikToks (they fight automated tools "
+                "hard). Try again in a few minutes, or try a different link."
+            )
+        if platform == "instagram":
+            raise IngestError(
+                "Instagram wouldn't hand over this Reel — it locks its "
+                "videos harder than any other platform. Try again in a "
+                "few minutes, or paste the claim as text instead."
+            )
+        if platform == "facebook":
+            raise IngestError(FB_VIDEO_MSG)
+        if platform == "other":
+            # not a video the downloader knows — maybe it's a NEWS ARTICLE
+            article = _article_ingest(url)
+            if article is not None:
+                return article
+        if GEO_RE.search(err_text or ""):
+            raise IngestError(
+                "This video isn't available in the country Glowby's servers "
+                "fetch from (the uploader limited where it can be watched). "
+                "Paste the claim as text instead, or try a different upload "
+                "of the same clip.")
+        raise IngestError(
+            f"Could not read this {platform} link. It may be private, deleted, "
+            f"age-restricted, or an unsupported URL. (Details: {err_text[:200]})"
+        )
+
+    duration = info.get("duration") or 0
+
+    # a generic web page (news article) often "succeeds" here with no
+    # real video attached — read it as an ARTICLE instead of limping
+    # down the video path just to fail at the download.
+    if platform == "other" and not duration:
+        article = _article_ingest(url)
+        if article is not None:
+            return article
+
+    if duration > MAX_DURATION_SECONDS:
+        raise IngestError(
+            f"This video is {duration // 60} minutes long — Glowby v1 supports "
+            f"videos up to {MAX_DURATION_SECONDS // 60} minutes."
+        )
+
+    raw_date = str(info.get("upload_date") or "")  # yt-dlp: YYYYMMDD
+    posted = (
+        f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+        if len(raw_date) == 8 else None
+    )
+    result = {
+        "url": url,
+        "platform": platform,
+        "title": info.get("title") or "(untitled)",
+        "uploader": info.get("uploader") or info.get("channel") or "(unknown)",
+        "duration_seconds": duration,
+        "posted_date": posted,
+        # v0.66.38: the POST CAPTION — what the poster wrote above the
+        # video. On Facebook and Instagram the claim usually lives here,
+        # not in the speech, and until now Glowby never saw it: only
+        # `title` was passed on, which for a reel is often just the page
+        # name. (Inderpreet, Oct 24: "there were claims in the text and
+        # it didn't catch them".)
+        "post_text": post_caption(info),
+        "transcript": None,
+        "transcript_source": None,
+    }
+
+    # --- Path 1: caption tracks (free) ---
+    _t_cap = time.time()
+    transcript = _transcript_from_captions(info)
+    _mark("captions", _t_cap)
+    if transcript:
+        result["transcript"] = transcript
+        result["transcript_source"] = "captions"
+        if _is_thin(transcript):  # rare: caption track is just music tags
+            frames = _frames_from_video(url)
+            if frames:
+                result["frames"] = frames
+        return result
+
+    # --- Path 2+3 combined: no captions -> download the video ONCE and
+    # feed both the ears (audio -> Whisper) and the eyes (frames) — in
+    # PARALLEL. Silent videos no longer wait for the ears to finish
+    # before the eyes start.
+    text, frames, visual_desc, whisper_err = _transcribe_and_see(url, duration_s=duration, info=info)
+    speech = (text or "").strip()
+    _ex = take_extras()
+    if _ex.get("audio_clip_b64"):
+        result["audio_clip_b64"] = _ex["audio_clip_b64"]
+
+    # EARS + EYES TOGETHER: whenever the eyes read something, merge it with
+    # the speech so BOTH a spoken claim and an on-screen-text claim reach
+    # the router — not one or the other.
+    merged = speech
+    if visual_desc:
+        vis = "[WHAT THE VIDEO VISUALLY SHOWS] " + visual_desc
+        merged = (speech + "\n\n" + vis) if speech else vis
+
+    if merged.strip():
+        result["transcript"] = merged
+        parts = []
+        if speech:
+            parts.append("whisper")
+        if visual_desc:
+            parts.append("visual analysis")
+        result["transcript_source"] = "+".join(parts) or "none"
+        # the frames were downloaded and already read by the eyes; keep
+        # them for the AI-media lane instead of throwing them away
+        if frames:
+            result["frames_media"] = frames
+        return result
+
+    # nothing heard, nothing seen — last door: maybe it's an article
+    if platform == "other":
+        article = _article_ingest(url)
+        if article is not None:
+            return article
+    if frames and not visual_desc:
+        # frames existed but the vision agent couldn't read them
+        result["transcript"] = ""
+        result["transcript_source"] = "none"
+        result["frames"] = frames
+        return result
+    raise whisper_err or IngestError(
+        "This video has no captions or speech, and its visuals "
+        "could not be read either."
+    )
+
+
+class _ArticleParser:
+    """Small, dependency-free article reader: title, published date,
+    and paragraph text out of a news page's HTML."""
+
+    def __init__(self):
+        from html.parser import HTMLParser
+
+        outer = self
+
+        class P(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=True)
+                self.in_p = 0
+                self.in_title = False
+                self.skip = 0  # inside script/style/nav/aside/footer
+
+            def handle_starttag(self, tag, attrs):
+                a = dict(attrs)
+                if tag == "meta":
+                    key = a.get("property") or a.get("name") or ""
+                    if key == "og:title" and a.get("content"):
+                        outer.og_title = a["content"]
+                    if key == "og:site_name" and a.get("content"):
+                        outer.site = a["content"]
+                    if key in ("article:published_time",
+                               "og:article:published_time") and a.get("content"):
+                        outer.published = a["content"][:10]
+                elif tag == "title":
+                    self.in_title = True
+                elif tag in ("script", "style", "nav", "aside", "footer",
+                             "header", "form"):
+                    self.skip += 1
+                elif tag == "p" and not self.skip:
+                    self.in_p += 1
+                    outer.paras.append("")
+
+            def handle_endtag(self, tag):
+                if tag == "title":
+                    self.in_title = False
+                elif tag in ("script", "style", "nav", "aside", "footer",
+                             "header", "form"):
+                    self.skip = max(0, self.skip - 1)
+                elif tag == "p" and self.in_p:
+                    self.in_p -= 1
+
+            def handle_data(self, data):
+                if self.skip:
+                    return
+                if self.in_title:
+                    outer.title += data
+                elif self.in_p and outer.paras:
+                    outer.paras[-1] += data
+
+        self.parser = P()
+        self.title = ""
+        self.og_title = ""
+        self.site = ""
+        self.published = None
+        self.paras = []
+
+    def feed(self, html: str):
+        try:
+            self.parser.feed(html)
+        except Exception:
+            pass
+
+
+def _article_ingest(url: str):
+    """News-article URL -> ingest-shaped result (transcript = article
+    text). None when the page can't be fetched or has no readable body —
+    the caller then shows the honest unsupported-link error."""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/126.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-US,en;q=0.9",
+        })
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            ctype = (resp.headers.get("Content-Type") or "")
+            if "html" not in ctype:
+                return None
+            html = resp.read(2_000_000).decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+    ap = _ArticleParser()
+    ap.feed(html)
+    # keep substantial paragraphs; drop nav crumbs and cookie banners
+    paras = [p.strip() for p in ap.paras if len(p.split()) >= 8]
+    body = "\n\n".join(paras)[:8000]
+    if len(body.split()) < 60:  # not enough text to be a real article
+        return None
+    title = (ap.og_title or ap.title or "(untitled article)").strip()[:200]
+    host = re.sub(r"^www\.", "",
+                  (re.findall(r"https?://([^/]+)", url) or ["(unknown)"])[0])
+    return {
+        "url": url,
+        "platform": "article",
+        "title": title,
+        "uploader": (ap.site or host),
+        "duration_seconds": 0,
+        "posted_date": ap.published,
+        "transcript": body,
+        "transcript_source": "article text",
+    }
+
+
+def _ingest_rescued(url: str, platform: str, rescued: dict):
+    """Full ingest via a rescue-tier direct link. None -> caller falls
+    back to the honest error path."""
+    duration = rescued.get("duration_seconds") or 0
+    if duration > MAX_DURATION_SECONDS:
+        raise IngestError(
+            f"This video is {duration // 60} minutes long — Glowby v1 "
+            f"supports videos up to {MAX_DURATION_SECONDS // 60} minutes.")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        direct = os.path.join(tmpdir, "vid.mp4")
+        if not _download_direct(rescued["media_url"], direct):
+            return None
+        text, frames, visual_desc, err = _process_video_file(direct, tmpdir)
+    result = {
+        "url": url,
+        "platform": platform,
+        "title": rescued.get("title") or "(untitled)",
+        "uploader": rescued.get("uploader") or "(unknown)",
+        "duration_seconds": duration,
+        "posted_date": rescued.get("posted_date"),
+        **({"platform_ai_label": rescued["platform_ai_label"]} if rescued.get("platform_ai_label") else {}),
+        "transcript": text or "",
+        "transcript_source": "whisper" if text else "none",
+    }
+    if _is_thin(result["transcript"]):
+        if frames:
+            result["frames"] = frames
+            if visual_desc:
+                result["visual_desc"] = visual_desc
+        elif not result["transcript"]:
+            raise err or IngestError(
+                "This video has no captions or speech, and its visuals "
+                "could not be read either.")
+    return result
+
+
+def _tiktok_photo_result(url: str):
+    """TikTok photo slideshows have no video to download — but the EYES
+    can still read the COVER image, fetched through TikTok's public
+    oEmbed endpoint (which is served to everyone, no bot wall).
+
+    Returns an ingest-shaped result with the cover as a frame, or None
+    when even oEmbed won't talk (then the caller shows the blocked error).
+    """
+    import base64
+
+    try:
+        oembed = ("https://www.tiktok.com/oembed?url="
+                  + urllib.parse.quote(url, safe=""))
+        req = urllib.request.Request(oembed, headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like "
+                          "Mac OS X) AppleWebKit/605.1.15"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            meta = json.loads(resp.read().decode())
+        thumb = meta.get("thumbnail_url")
+        if not thumb:
+            return None
+        req2 = urllib.request.Request(thumb, headers={
+            "User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req2, timeout=15) as resp2:
+            img = resp2.read()
+        if not img or len(img) > 8 * 1024 * 1024:
+            return None
+        frame = base64.b64encode(img).decode()
+        title = (meta.get("title") or "(TikTok photo post)")[:200]
+        return {
+            "url": url,
+            "platform": "tiktok",
+            "title": title,
+            "uploader": meta.get("author_name") or "(unknown)",
+            "duration_seconds": 0,
+            "posted_date": None,
+            "transcript": "",
+            "transcript_source": "none",
+            "frames": [frame],
+            "photo_post": True,  # cover slide only — said in the output
+        }
+    except Exception:
+        return None
+
+
+def _is_thin(text) -> bool:
+    """A transcript too thin to carry the video's claims by itself."""
+    return len((text or "").split()) < 20
+
+
+# speculative vision: on no-caption videos, run the EYES while Whisper
+# is still listening (parallel, not sequential). If the audio turns out
+# rich, the visual description is simply discarded (~1 cent). Silent
+# videos — which need it anyway — save the whole listening wait.
+SPECULATIVE_VISION = os.environ.get(
+    "GLOWBY_SPECULATIVE_VISION", "on").lower() in ("on", "true", "1", "yes")
+
+
+# DETECTOR-GRADE FRAMES: AI detectors read fine texture and edge artifacts.
+# A 270x480 "worst" download upscaled to 640 wide erases exactly that, and
+# a polished AI reel then reads as "no synthetic signal" (the Unreel
+# incident). Short videos — the reels/shorts that are nearly all of what
+# Glowby checks — are downloaded at up to 720p (a 30-second reel is a few
+# MB); longer videos step down so a 20-minute file stays small.
+SHORT_VIDEO_S = int(os.environ.get("GLOWBY_HQ_FRAMES_UNDER_S", "240"))
+FRAME_MAX_W = int(os.environ.get("GLOWBY_FRAME_MAX_W", "1280"))
+
+
+def pick_download_format(duration_s) -> str:
+    """Pure (unit-tested): yt-dlp format string by duration. Unknown
+    duration is treated as short (most links are)."""
+    try:
+        d = float(duration_s or 0)
+    except Exception:
+        d = 0.0
+    if d <= 0 or d <= SHORT_VIDEO_S:
+        return "best[height<=720]/best[height<=480]/worst/bestvideo+bestaudio/best"
+    if d <= 15 * 60:
+        return "best[height<=480]/worst/bestvideo+bestaudio/best"
+    return "worst[height>=240]/worst/bestvideo+bestaudio/best"
+
+
+def _transcribe_and_see(url: str, max_frames: int = 12, duration_s=0, info=None):
+    """Download the video ONCE; feed both ears and eyes from it — at
+    the same time.
+
+    Returns (transcript, frames, visual_desc, error): transcript is None
+    when audio failed or was silent; frames may still be present (silent
+    videos make their claims visually); visual_desc is the eyes' report
+    when speculative vision ran (None otherwise); error is the
+    user-facing IngestError explaining the audio side.
+    """
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+
+    import yt_dlp
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        outpath = os.path.join(tmpdir, "vid.%(ext)s")
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "noplaylist": True,
+            "format": pick_download_format(duration_s),
+            "outtmpl": outpath,
+            # same bot-challenge dodge as the metadata step (finding #15)
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+            **({"proxy": _proxy_url()} if _proxy_url() else {}),
+        }
+        dl_err = None
+        _t_dl = time.time()
+        for attempt in (1, 2):  # blocks are often transient — knock twice
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # v0.66.32: the metadata was already fetched once (three
+                    # player clients through the proxy); reuse it instead of
+                    # extracting everything a second time before downloading.
+                    if info is not None and attempt == 1 and info.get("formats"):
+                        ydl.process_ie_result(dict(info), download=True)
+                    else:
+                        ydl.download([url])
+                dl_err = None
+                break
+            except Exception as e:
+                dl_err = e
+                if attempt == 1:
+                    time.sleep(2)
+        _mark("download", _t_dl)
+        if dl_err is not None:
+            platform = detect_platform(url)
+            # RESCUE TIER: ask the professional scraper for a direct
+            # CDN link and download that instead (no bot wall there).
+            try:
+                from app.agents.rescue import rescue_media
+
+                rescued = rescue_media(url, platform)
+            except Exception:
+                rescued = None
+            if rescued and rescued.get("media_url"):
+                direct = os.path.join(tmpdir, "vid.mp4")
+                if _download_direct(rescued["media_url"], direct):
+                    return _process_video_file(direct, tmpdir, max_frames)
+            if platform == "tiktok":
+                return None, [], None, IngestError(
+                    "TikTok blocked this video even after a retry — that "
+                    "happens with some TikToks (they fight automated tools "
+                    "hard). Try again in a few minutes, or try a "
+                    "different link.")
+            return None, [], None, IngestError(
+                "This video has no captions and could not be downloaded "
+                f"for analysis. (Details: {str(dl_err)[:200]})")
+        vids = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
+        if not vids:
+            return None, [], None, IngestError(
+                "The video download produced no file.")
+        vid = max(vids, key=os.path.getsize)
+
+        return _process_video_file(vid, tmpdir, max_frames)
+
+
+def _download_direct(media_url: str, dest: str) -> bool:
+    """Fetch a direct CDN video link to disk. False on any failure."""
+    try:
+        req = urllib.request.Request(media_url, headers={
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like "
+                          "Mac OS X) AppleWebKit/605.1.15"})
+        with urllib.request.urlopen(req, timeout=60) as resp, \
+                open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                f.write(chunk)
+                if f.tell() > 200 * 1024 * 1024:  # 200MB sanity ceiling
+                    return False
+        return os.path.getsize(dest) > 10_000
+    except Exception:
+        return False
+
+
+def _process_video_file(vid: str, tmpdir: str, max_frames: int = 12):
+    """Downloaded video file -> (transcript, frames, visual_desc, error).
+    The shared back half of every download door (yt-dlp or rescue)."""
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+
+    # SPEED (Sept 15): the ears start FIRST. The audio track is pulled
+    # out (a one-second ffmpeg job) and sent to Whisper right away, on
+    # its own thread; frame sampling and the eyes run while Whisper is
+    # busy. Before, frames were sampled, THEN audio encoded, THEN Whisper
+    # called — three waits in a row. Same audio, same model, same words.
+    #
+    # The file is mono 16 kHz at 48 kbps — exactly what Whisper listens
+    # to internally (it downmixes and resamples every upload to that), so
+    # the transcript is identical and the upload is ~4× smaller/faster.
+    audio = os.path.join(tmpdir, "audio.mp3")
+    _t_audio = time.time()
+    try:
+        subprocess.run(
+            ["ffmpeg", "-i", vid, "-vn", "-ac", "1", "-ar", "16000",
+             "-acodec", "libmp3lame", "-b:a", "48k", "-y", audio],
+            capture_output=True, timeout=120)
+    except Exception:
+        pass
+    _mark("audio", _t_audio)
+    audio_ok = os.path.exists(audio) and os.path.getsize(audio) > 0
+    audio_big = audio_ok and os.path.getsize(audio) > 25 * 1024 * 1024
+
+    whisper_future = None
+    _t_whisper = time.time()
+    if audio_ok and not audio_big:
+        wpool = ThreadPoolExecutor(max_workers=1)
+        whisper_future = wpool.submit(_whisper_file, audio)
+        wpool.shutdown(wait=False)
+
+    # v0.66.32: the six PRIMARY frames come out first (three ffmpeg seeks
+    # at a time) and the eyes start on them at once; the scene-aware
+    # EXTRA frames — a whole-video decode — are found on a side thread
+    # and only matter for the detector's second pass.
+    _t_frames = time.time()
+    frames, extras_future = _sample_frames(vid, tmpdir, max_frames, background_extras=True)
+    _mark("frames", _t_frames)
+    try:
+        _EXTRAS.data = {"audio_clip_b64": _audio_clip_b64(vid, tmpdir)}
+    except Exception:
+        _EXTRAS.data = {}
+
+    # eyes start looking NOW, in parallel with whatever the ears do
+    vision_future = None
+    _t_vision = time.time()
+    if frames and SPECULATIVE_VISION:
+        pool = ThreadPoolExecutor(max_workers=1)
+        vision_future = pool.submit(_describe_safely, frames)
+        pool.shutdown(wait=False)
+
+    def _vision_result():
+        if vision_future is None:
+            return None
+        try:
+            r = vision_future.result(timeout=60)
+            _mark("vision", _t_vision)
+            return r
+        except Exception:
+            return None
+
+    def _with_extras():
+        # extras that are ready by now ride along; otherwise the 6 primary
+        # frames are plenty for the first detector pass
+        if extras_future is not None:
+            try:
+                frames.extend(extras_future.result(timeout=2))
+            except Exception:
+                pass
+        return frames
+
+    if not audio_ok:
+        return None, _with_extras(), _vision_result(), IngestError(
+            "This video's audio could not be extracted (it may be silent).")
+    if audio_big:
+        return None, _with_extras(), _vision_result(), IngestError(
+            "The audio for this video is too large to transcribe (over 25MB).")
+    try:
+        text = whisper_future.result(timeout=180)
+        _mark("whisper", _t_whisper)
+    except IngestError as e:
+        return None, _with_extras(), _vision_result(), e
+    except Exception as e:
+        return None, _with_extras(), _vision_result(), IngestError(
+            f"Transcription failed. (Details: {str(e)[:200]})")
+    # ALWAYS take the eyes' description — a video can SPEAK one claim and
+    # SHOW another (on-screen text, charts). Both must reach the router,
+    # so the visual read is merged with the audio, never discarded.
+    desc = _vision_result()
+    return text, _with_extras(), desc, None
+
+
+def _describe_safely(frames: list):
+    """Vision call that never raises (runs on a worker thread)."""
+    try:
+        from app.agents.vision import describe_frames
+
+        return describe_frames(frames)
+    except Exception:
+        return None
+
+
+# whisper-1 by default. OpenAI's newer "gpt-4o-mini-transcribe" is faster
+# and scores better on word-error benchmarks; flip it with one Railway
+# variable after a side-by-side on a few real videos, never blind.
+TRANSCRIBE_MODEL = os.environ.get("GLOWBY_TRANSCRIBE_MODEL", "whisper-1")
+
+
+def _whisper_file(audio_file: str):
+    """Transcribe one audio file with Whisper. None when it hears nothing."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise IngestError(
+            "This video has no captions, and Whisper transcription is not "
+            "configured (missing OPENAI_API_KEY).")
+
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key)
+    try:
+        with open(audio_file, "rb") as f:
+            transcription = client.audio.transcriptions.create(
+                model=TRANSCRIBE_MODEL, file=f,
+                temperature=0)  # deterministic: same audio -> same text
+        _health("openai", True)
+    except Exception as e:
+        _health("openai", False, str(e))
+        raise IngestError(f"Transcription failed. (Details: {str(e)[:200]})")
+    return (transcription.text or "").strip() or None
+
+
+import threading as _threading
+
+
+def _health(service, ok, err=""):
+    try:
+        from app.apihealth import note
+        note(service, ok, err)
+    except Exception:
+        pass
+
+
+_EXTRAS = _threading.local()  # per-pipeline-thread side channel (audio clip)
+_TIMES = _threading.local()   # per-pipeline-thread fetch timings (v0.66.32)
+
+
+def _mark(name: str, t0: float) -> None:
+    """Add seconds since t0 under `name` for this thread's check."""
+    d = getattr(_TIMES, "data", None)
+    if d is None:
+        d = _TIMES.data = {}
+    d[name] = round(d.get(name, 0.0) + (time.time() - t0), 2)
+
+
+def take_timings() -> dict:
+    """The fetch stage's parts for this thread, then reset."""
+    d = getattr(_TIMES, "data", None) or {}
+    _TIMES.data = {}
+    return d
+
+
+def take_extras() -> dict:
+    """Pop anything the download step left for the pipeline (audio clip)."""
+    out = dict(getattr(_EXTRAS, "data", {}) or {})
+    _EXTRAS.data = {}
+    return out
+
+
+def _scene_times(vid: str, duration: float, limit: int = 12) -> list:
+    """Timestamps of scene changes (ffmpeg scdet); [] when none/failed."""
+    import re as _re
+    import subprocess
+    try:
+        # v0.66.32: decode KEYFRAMES only. Encoders put a keyframe on every
+        # scene cut, so the cuts are all still there — and the pass is
+        # ~20× cheaper than decoding every frame (4.6s → 0.2s on a 90s clip).
+        r = subprocess.run(
+            ["ffmpeg", "-skip_frame", "nokey", "-i", vid, "-vf", "select='gt(scene,0.35)',showinfo",
+             "-an", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=60)
+        ts = [float(x) for x in _re.findall(r"pts_time:([0-9.]+)", r.stderr or "")]
+        ts = [t for t in ts if 0.2 < t < duration - 0.2]
+        return ts[:limit * 4]
+    except Exception:
+        return []
+
+
+def pick_frame_times(duration: float, scene_times: list, primary: int = 6, extra: int = 6) -> list:
+    """Pure (unit-tested): the PRIMARY set is evenly spread (stable,
+    deterministic, same as before); the EXTRA set prefers scene changes
+    not already within 1s of a primary, then fills with midpoints. The
+    extras feed the adaptive second pass only when the first pass is
+    uncertain. Returns primary + extra timestamps."""
+    duration = max(1.0, float(duration or 1.0))
+    prim = [duration * (i + 0.5) / primary for i in range(primary)]
+    chosen = []
+    for t in sorted(scene_times or []):
+        if all(abs(t - p) > 1.0 for p in prim) and all(abs(t - c) > 1.0 for c in chosen):
+            chosen.append(t)
+        if len(chosen) >= extra:
+            break
+    if len(chosen) < extra:
+        mids = [duration * (i + 1) / (primary + 1) for i in range(primary)]
+        for t in mids:
+            if len(chosen) >= extra:
+                break
+            if all(abs(t - p) > 0.5 for p in prim) and all(abs(t - c) > 0.5 for c in chosen):
+                chosen.append(t)
+    return prim + chosen[:extra]
+
+
+def _grab_frame(vid: str, fp: str, t: float):
+    """One frame at t (fast input seek) -> base64 JPEG or None."""
+    import base64
+    import subprocess
+    try:
+        subprocess.run(
+            ["ffmpeg", "-ss", f"{t:.2f}", "-i", vid, "-frames:v", "1",
+             "-vf", f"scale='min({FRAME_MAX_W},iw)':-2", "-q:v", "2", "-y", fp],
+            capture_output=True, timeout=30)
+    except Exception:
+        return None
+    if os.path.exists(fp) and os.path.getsize(fp) > 0:
+        with open(fp, "rb") as fh:
+            return base64.b64encode(fh.read()).decode()
+    return None
+
+
+def _sample_frames(vid: str, tmpdir: str, max_frames: int = 12, background_extras: bool = False):
+    """Sample frames from a downloaded video file -> base64 JPEGs.
+    First 6 = evenly spread (vision + primary detector pass); next 6 =
+    scene-aware alternates (adaptive second pass). With
+    background_extras=True returns (primary_frames, extras_future) so the
+    eyes can start while the scene pass runs on the side."""
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", vid],
+            capture_output=True, text=True, timeout=30)
+        duration = max(1.0, float(probe.stdout.strip()))
+    except Exception:
+        duration = 30.0
+    primary = min(6, max_frames)
+    extra = max(0, min(6, max_frames - primary))
+
+    def grab_many(times, offset):
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            got = list(pool.map(lambda it: _grab_frame(vid, os.path.join(tmpdir, f"frame{offset + it[0]}.jpg"), it[1]), enumerate(times)))
+        return [g for g in got if g]
+
+    prim_times = pick_frame_times(duration, [], primary, 0)
+    frames = grab_many(prim_times, 0)
+
+    def extras():
+        if not extra:
+            return []
+        times = pick_frame_times(duration, _scene_times(vid, duration), primary, extra)[primary:]
+        return grab_many(times, primary)
+
+    if background_extras:
+        pool = ThreadPoolExecutor(max_workers=1)
+        fut = pool.submit(extras) if extra else None
+        pool.shutdown(wait=False)
+        return frames, fut
+    return frames + extras()
+
+
+def _audio_clip_b64(vid: str, tmpdir: str, seconds: int = 12):
+    """A short mono clip for the AI-voice detector (skips the first second
+    of intros/music beds). None on failure or silence."""
+    import base64
+    import subprocess
+    fp = os.path.join(tmpdir, "clip.mp3")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-ss", "1", "-i", vid, "-t", str(seconds), "-vn", "-ac", "1",
+             "-ar", "16000", "-b:a", "48k", "-y", fp],
+            capture_output=True, timeout=60)
+        if os.path.exists(fp) and os.path.getsize(fp) > 4000:
+            with open(fp, "rb") as fh:
+                return base64.b64encode(fh.read()).decode()
+    except Exception:
+        pass
+    return None
+
+
+def _frames_from_video(url: str, max_frames: int = 12) -> list:
+    """Download the video (lowest usable quality) and sample frames.
+
+    Returns a list of base64 JPEG strings, [] on any failure — vision is
+    an enhancement, never a reason to kill a check.
+    """
+    import base64
+    import subprocess
+
+    import yt_dlp
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outpath = os.path.join(tmpdir, "vid.%(ext)s")
+            ydl_opts = {
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+                "format": pick_download_format(0),
+                "outtmpl": outpath,
+                "extractor_args": {"youtube": {"player_client": ["android", "ios", "web"]}},
+                **({"proxy": _proxy_url()} if _proxy_url() else {}),
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            vids = [os.path.join(tmpdir, f) for f in os.listdir(tmpdir)]
+            if not vids:
+                return []
+            vid = max(vids, key=os.path.getsize)
+            return _sample_frames(vid, tmpdir, max_frames)
+    except Exception:
+        return []
+
+
+# ------------------------------------------------------- youtube fallback
+
+
+def _youtube_video_id(url: str):
+    """Extract the 11-char video id from any YouTube URL spelling."""
+    parsed_host = re.findall(r"https?://([^/]+)", url)
+    host = (parsed_host[0] if parsed_host else "").lower().removeprefix("www.").removeprefix("m.")
+    if host == "youtu.be":
+        m = re.match(r"https?://[^/]+/([A-Za-z0-9_-]{6,})", url)
+        return m.group(1) if m else None
+    m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", url)
+    if m:
+        return m.group(1)
+    m = re.search(r"/(shorts|embed|live)/([A-Za-z0-9_-]{6,})", url)
+    return m.group(2) if m else None
+
+
+def _youtube_fallback(url: str):
+    """Get transcript via youtube-transcript-api + metadata via oEmbed.
+
+    Used when yt-dlp is bot-challenged. Returns a result dict, or None if
+    this door is closed too (then the caller raises a friendly error).
+    """
+    video_id = _youtube_video_id(url)
+    if not video_id:
+        return None
+
+    # transcript (works for videos with captions, incl. auto-captions)
+    text = None
+    try:
+        api = _yta_client()
+        try:  # v1.x API
+            fetched = api.fetch(video_id)
+            segments = getattr(fetched, "snippets", fetched)
+        except AttributeError:  # pre-1.0 API
+            from youtube_transcript_api import YouTubeTranscriptApi
+
+            segments = YouTubeTranscriptApi.get_transcript(video_id)
+        parts = []
+        for seg in segments:
+            t = getattr(seg, "text", None)
+            if t is None and isinstance(seg, dict):
+                t = seg.get("text")
+            if t:
+                parts.append(t.strip())
+        text = re.sub(r"\s+", " ", " ".join(parts)).strip() or None
+    except Exception:
+        return None
+    if not text:
+        return None
+
+    # metadata via oEmbed (public endpoint, rarely challenged)
+    title, uploader = "(untitled)", "(unknown)"
+    try:
+        oembed = (
+            "https://www.youtube.com/oembed?format=json&url="
+            + urllib.parse.quote(f"https://www.youtube.com/watch?v={video_id}")
+        )
+        req = urllib.request.Request(oembed, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            meta = json.loads(resp.read().decode("utf-8"))
+        title = meta.get("title") or title
+        uploader = meta.get("author_name") or uploader
+    except Exception:
+        pass  # transcript is what matters; metadata is garnish
+
+    return {
+        "url": url,
+        "platform": "youtube",
+        "title": title,
+        "uploader": uploader,
+        "duration_seconds": 0,  # unknown via this door
+        "posted_date": None,
+        "transcript": text,
+        "transcript_source": "captions",
+    }
+
+
+# ---------------------------------------------------------------- captions
+
+
+def _pick_caption_track(info: dict):
+    """Prefer manual subtitles over auto-captions; prefer English; json3 format."""
+    for source_key in ("subtitles", "automatic_captions"):
+        tracks = info.get(source_key) or {}
+        for lang in ("en", "en-US", "en-GB", "en-orig"):
+            for fmt in tracks.get(lang, []):
+                if fmt.get("ext") == "json3":
+                    return fmt
+        # fall back to any language's json3 track
+        for fmts in tracks.values():
+            for fmt in fmts:
+                if fmt.get("ext") == "json3":
+                    return fmt
+    return None
+
+
+def _transcript_from_captions(info: dict):
+    track = _pick_caption_track(info)
+    if not track or not track.get("url"):
+        return None
+    try:
+        req = urllib.request.Request(track["url"], headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return None
+    return parse_json3_captions(data)
+
+
+def parse_json3_captions(data: dict):
+    """Parse YouTube's json3 caption format into plain text."""
+    lines = []
+    for event in data.get("events", []):
+        segs = event.get("segs")
+        if not segs:
+            continue
+        text = "".join(seg.get("utf8", "") for seg in segs).strip()
+        if text and text != "\n":
+            lines.append(text)
+    if not lines:
+        return None
+    text = " ".join(lines)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
